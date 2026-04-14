@@ -27,6 +27,9 @@ impl Scanner {
         mots_clés.insert("tantque", Token::TantQue);
         mots_clés.insert("pour", Token::Pour);
         mots_clés.insert("dans", Token::Dans);
+        mots_clés.insert("de", Token::De);
+        mots_clés.insert("à", Token::À);
+        mots_clés.insert("pas", Token::Pas);
         mots_clés.insert("faire", Token::Faire);
         mots_clés.insert("interrompre", Token::Interrompre);
         mots_clés.insert("continuer", Token::Continuer);

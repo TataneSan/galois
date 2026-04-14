@@ -537,6 +537,10 @@ impl Parser {
                     self.avancer();
                     let cond = self.parser_expression()?;
                     self.sauter_nouvelles_lignes();
+                    if self.token_actuel() == &Token::Alors {
+                        self.avancer();
+                        self.sauter_nouvelles_lignes();
+                    }
                     let bloc = self.parser_bloc()?;
                     branches_sinonsi.push((cond, bloc));
                 }
@@ -598,11 +602,43 @@ impl Parser {
             self.avancer();
             let itérable = self.parser_expression()?;
             self.sauter_nouvelles_lignes();
+            if self.token_actuel() == &Token::Faire {
+                self.avancer();
+                self.sauter_nouvelles_lignes();
+            }
             let bloc = self.parser_bloc()?;
 
             Ok(InstrAST::Pour {
                 variable,
                 itérable,
+                bloc,
+                position,
+            })
+        } else if self.token_actuel() == &Token::De {
+            self.avancer();
+            let début = self.parser_expression()?;
+            self.attendre(&Token::À, "Attendu 'à' dans boucle pour")?;
+            let fin = self.parser_expression()?;
+
+            let pas = if self.token_actuel() == &Token::Pas {
+                self.avancer();
+                Some(self.parser_expression()?)
+            } else {
+                None
+            };
+
+            self.sauter_nouvelles_lignes();
+            if self.token_actuel() == &Token::Faire {
+                self.avancer();
+                self.sauter_nouvelles_lignes();
+            }
+            let bloc = self.parser_bloc()?;
+
+            Ok(InstrAST::PourCompteur {
+                variable,
+                début,
+                fin,
+                pas,
                 bloc,
                 position,
             })
@@ -619,6 +655,10 @@ impl Parser {
             };
 
             self.sauter_nouvelles_lignes();
+            if self.token_actuel() == &Token::Faire {
+                self.avancer();
+                self.sauter_nouvelles_lignes();
+            }
             let bloc = self.parser_bloc()?;
 
             Ok(InstrAST::PourCompteur {
@@ -653,13 +693,34 @@ impl Parser {
                     self.avancer();
                     let pattern = self.parser_pattern()?;
                     self.sauter_nouvelles_lignes();
-                    let bloc = self.parser_bloc()?;
-                    cas.push((pattern, bloc));
+                    if self.token_actuel() == &Token::DoubleFlèche {
+                        self.avancer();
+                        let expr = self.parser_expression()?;
+                        cas.push((
+                            pattern,
+                            BlocAST {
+                                instructions: vec![InstrAST::Expression(expr)],
+                                position: position.clone(),
+                            },
+                        ));
+                    } else {
+                        let bloc = self.parser_bloc()?;
+                        cas.push((pattern, bloc));
+                    }
                 }
                 Token::ParDéfaut => {
                     self.avancer();
                     self.sauter_nouvelles_lignes();
-                    par_défaut = Some(self.parser_bloc()?);
+                    if self.token_actuel() == &Token::DoubleFlèche {
+                        self.avancer();
+                        let expr = self.parser_expression()?;
+                        par_défaut = Some(BlocAST {
+                            instructions: vec![InstrAST::Expression(expr)],
+                            position: position.clone(),
+                        });
+                    } else {
+                        par_défaut = Some(self.parser_bloc()?);
+                    }
                 }
                 Token::Désindentation | Token::Fin | Token::FinDeFichier => {
                     if self.token_actuel() == &Token::Désindentation {
@@ -1602,33 +1663,61 @@ impl Parser {
                         } else {
                             break;
                         }
+                        if self.token_actuel() == &Token::ParenthèseFermante {
+                            break;
+                        }
                         éléments.push(self.parser_expression()?);
                     }
                     self.attendre(&Token::ParenthèseFermante, "Attendu ')'")?;
-                    Ok(ExprAST::InitialisationTuple {
-                        éléments, position
-                    })
-                } else if self.token_actuel() == &Token::DoubleFlèche {
-                    self.avancer();
-                    let corps = self.parser_expression()?;
-                    self.attendre(&Token::ParenthèseFermante, "Attendu ')'")?;
-                    let param = ParamètreAST {
-                        nom: match &premier {
-                            ExprAST::Identifiant(n, _) => n.clone(),
-                            _ => "_".to_string(),
-                        },
-                        type_ann: None,
-                        valeur_défaut: None,
-                        position: premier.position().clone(),
-                    };
-                    Ok(ExprAST::Lambda {
-                        paramètres: vec![param],
-                        corps: Box::new(corps),
-                        position,
-                    })
+
+                    if self.token_actuel() == &Token::DoubleFlèche {
+                        self.avancer();
+                        let corps = self.parser_expression()?;
+                        let paramètres: Vec<ParamètreAST> = éléments
+                            .iter()
+                            .map(|e| ParamètreAST {
+                                nom: match e {
+                                    ExprAST::Identifiant(n, _) => n.clone(),
+                                    _ => "_".to_string(),
+                                },
+                                type_ann: None,
+                                valeur_défaut: None,
+                                position: e.position().clone(),
+                            })
+                            .collect();
+                        Ok(ExprAST::Lambda {
+                            paramètres,
+                            corps: Box::new(corps),
+                            position,
+                        })
+                    } else {
+                        Ok(ExprAST::InitialisationTuple {
+                            éléments, position
+                        })
+                    }
                 } else {
                     self.attendre(&Token::ParenthèseFermante, "Attendu ')'")?;
-                    Ok(premier)
+
+                    if self.token_actuel() == &Token::DoubleFlèche {
+                        self.avancer();
+                        let corps = self.parser_expression()?;
+                        let param = ParamètreAST {
+                            nom: match &premier {
+                                ExprAST::Identifiant(n, _) => n.clone(),
+                                _ => "_".to_string(),
+                            },
+                            type_ann: None,
+                            valeur_défaut: None,
+                            position: premier.position().clone(),
+                        };
+                        Ok(ExprAST::Lambda {
+                            paramètres: vec![param],
+                            corps: Box::new(corps),
+                            position,
+                        })
+                    } else {
+                        Ok(premier)
+                    }
                 }
             }
             Token::CrochetOuvrant => {
