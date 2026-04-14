@@ -1,5 +1,0 @@
-soit x = 42
-soit y = 10
-soit z = x + y
-afficher(z)
-afficher(x * y)

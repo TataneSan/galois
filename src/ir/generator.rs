@@ -178,13 +178,28 @@ impl GénérateurIR {
         }
 
         let mut blocs_init = Vec::new();
+        let mut blocs_suppl = Vec::new();
         for instr in &programme.instructions {
             match instr {
                 InstrAST::Déclaration { .. }
                 | InstrAST::Expression(_)
-                | InstrAST::Affectation { .. } => {
+                | InstrAST::Affectation { .. }
+                | InstrAST::Retourne { .. } => {
                     if let Some(bloc) = self.générer_instruction_top_level(instr) {
                         blocs_init.push(bloc);
+                    }
+                }
+                InstrAST::Si { .. } | InstrAST::TantQue { .. } => {
+                    let bloc_ast = BlocAST {
+                        instructions: vec![instr.clone()],
+                        position: crate::error::Position::nouvelle(1, 1, ""),
+                    };
+                    let blocs = self.générer_bloc(&bloc_ast);
+                    if let Some(first) = blocs.first() {
+                        blocs_init.push(first.clone());
+                    }
+                    for b in blocs.iter().skip(1) {
+                        blocs_suppl.push(b.clone());
                     }
                 }
                 _ => {}
@@ -198,16 +213,19 @@ impl GénérateurIR {
             }
             instructions.push(IRInstruction::Retourner(Some(IRValeur::Entier(0))));
 
+            let mut tous_blocs = vec![IRBloc {
+                nom: "entree".to_string(),
+                instructions,
+            }];
+            tous_blocs.append(&mut blocs_suppl);
+
             module.fonctions.insert(
                 0,
                 IRFonction {
                     nom: "gallois_principal".to_string(),
                     paramètres: Vec::new(),
                     type_retour: IRType::Entier,
-                    blocs: vec![IRBloc {
-                        nom: "entree".to_string(),
-                        instructions,
-                    }],
+                    blocs: tous_blocs,
                     est_externe: false,
                 },
             );

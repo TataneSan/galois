@@ -1,5 +1,0 @@
-fonction double(n: entier): entier
-    retourne n * 2
-fin
-soit résultat = double(21)
-afficher(résultat)

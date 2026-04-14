@@ -563,6 +563,11 @@ impl Parser {
         let condition = self.parser_expression()?;
         self.sauter_nouvelles_lignes();
 
+        if self.token_actuel() == &Token::Faire {
+            self.avancer();
+            self.sauter_nouvelles_lignes();
+        }
+
         let bloc = self.parser_bloc()?;
 
         Ok(InstrAST::TantQue {

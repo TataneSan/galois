@@ -314,12 +314,20 @@ fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
     let compilateur = CompilateurNatif::nouveau(options);
     let exécutable = compilateur.compiler(&llvm_ir)?;
 
-    let status = process::Command::new(&exécutable).status().map_err(|e| {
-        error::Erreur::runtime(
-            error::Position::nouvelle(1, 1, chemin),
-            &format!("Impossible d'exécuter {}: {}", exécutable.display(), e),
-        )
-    })?;
+    let chemin_exécutable = if exécutable.is_relative() {
+        format!("./{}", exécutable.display())
+    } else {
+        format!("{}", exécutable.display())
+    };
+
+    let status = process::Command::new(&chemin_exécutable)
+        .status()
+        .map_err(|e| {
+            error::Erreur::runtime(
+                error::Position::nouvelle(1, 1, chemin),
+                &format!("Impossible d'exécuter {}: {}", chemin_exécutable, e),
+            )
+        })?;
 
     let code = status.code().unwrap_or(1);
     if code != 0 {
