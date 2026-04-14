@@ -203,27 +203,7 @@ void gal_gc_collecter() {
     if (gc_global.seuil_collecte < 1024) gc_global.seuil_collecte = 1024;
 }
 
-// ===== Fonctions d'affichage =====
-
-void gal_afficher_entier(gal_entier v) {
-    printf("%ld\n", (long)v);
-}
-
-void gal_afficher_décimal(gal_décimal v) {
-    printf("%f\n", v);
-}
-
-void gal_afficher_texte(const char* v) {
-    printf("%s\n", v);
-}
-
-void gal_afficher_booléen(gal_booléen v) {
-    printf("%s\n", v ? "vrai" : "faux");
-}
-
-void gal_afficher_nul() {
-    printf("nul\n");
-}
+// ===== Point d'entrée principal =====
 
 // ===== Opérations sur les textes =====
 
@@ -513,13 +493,4 @@ gal_entier gal_ppcm(gal_entier a, gal_entier b) {
 }
 
 // ===== Point d'entrée principal =====
-
-int main(int argc, char** argv) {
-    if (argc > 1 && strcmp(argv[1], "--gallois-runtime-test") == 0) {
-        printf("Gallois Runtime OK\n");
-        return 0;
-    }
-
-    extern int gallois_principal();
-    return gallois_principal();
-}
+// main() is provided by the LLVM IR generated code

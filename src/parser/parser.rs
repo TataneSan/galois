@@ -486,6 +486,9 @@ impl Parser {
         loop {
             self.sauter_nouvelles_lignes();
             if self.est_fin_bloc() || self.token_actuel() == &Token::FinDeFichier {
+                if self.token_actuel() == &Token::Désindentation {
+                    self.avancer();
+                }
                 break;
             }
 
@@ -513,6 +516,11 @@ impl Parser {
 
         let condition = self.parser_expression()?;
         self.sauter_nouvelles_lignes();
+
+        if self.token_actuel() == &Token::Alors {
+            self.avancer();
+            self.sauter_nouvelles_lignes();
+        }
 
         let bloc_alors = self.parser_bloc()?;
 

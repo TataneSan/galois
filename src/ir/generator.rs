@@ -36,6 +36,54 @@ impl GénérateurIR {
         IRType::from(type_ast)
     }
 
+    fn chercher_type_var(&self, nom: &str) -> IRType {
+        if let Some(symbole) = self.table.chercher(nom) {
+            match &symbole.genre {
+                GenreSymbole::Variable { type_sym, .. } => IRType::from(type_sym),
+                GenreSymbole::Fonction { type_retour, .. } => IRType::from(type_retour),
+                GenreSymbole::ParamètreType => IRType::Entier,
+                _ => IRType::Entier,
+            }
+        } else {
+            IRType::Entier
+        }
+    }
+
+    fn type_pour_déclaration(&self, nom: &str, type_ann: &Option<TypeAST>) -> IRType {
+        if let Some(t) = type_ann {
+            self.convertir_type_ir(&self.convertir_type_ast(t))
+        } else {
+            self.chercher_type_var(nom)
+        }
+    }
+
+    fn type_pour_expression(&self, expr: &ExprAST) -> IRType {
+        match expr {
+            ExprAST::LittéralEntier(_, _) => IRType::Entier,
+            ExprAST::LittéralDécimal(_, _) => IRType::Décimal,
+            ExprAST::LittéralTexte(_, _) => IRType::Texte,
+            ExprAST::LittéralBooléen(_, _) => IRType::Booléen,
+            ExprAST::LittéralNul(_) => IRType::Nul,
+            ExprAST::Identifiant(nom, _) => self.chercher_type_var(nom),
+            ExprAST::Binaire { .. } => IRType::Entier,
+            ExprAST::AppelFonction { appelé, .. } => match appelé.as_ref() {
+                ExprAST::Identifiant(n, _) => {
+                    if let Some(symbole) = self.table.chercher(n) {
+                        if let GenreSymbole::Fonction { type_retour, .. } = &symbole.genre {
+                            IRType::from(type_retour)
+                        } else {
+                            IRType::Entier
+                        }
+                    } else {
+                        IRType::Entier
+                    }
+                }
+                _ => IRType::Entier,
+            },
+            _ => IRType::Entier,
+        }
+    }
+
     pub fn générer(&mut self, programme: &ProgrammeAST) -> IRModule {
         let mut module = IRModule {
             fonctions: Vec::new(),
@@ -54,11 +102,7 @@ impl GénérateurIR {
                     let mut champs = Vec::new();
                     for membre in &décl.membres {
                         if let MembreClasseAST::Champ { nom, type_ann, .. } = membre {
-                            let type_ir = if let Some(t) = type_ann {
-                                self.convertir_type_ir(&self.convertir_type_ast(t))
-                            } else {
-                                IRType::Vide
-                            };
+                            let type_ir = self.type_pour_déclaration(nom, type_ann);
                             champs.push((nom.clone(), type_ir));
                         }
                     }
@@ -96,7 +140,7 @@ impl GénérateurIR {
                                     let type_ir = if let Some(t) = &p.type_ann {
                                         self.convertir_type_ir(&self.convertir_type_ast(t))
                                     } else {
-                                        IRType::Vide
+                                        self.chercher_type_var(&p.nom)
                                     };
                                     param_ir.push((p.nom.clone(), type_ir));
                                 }
@@ -152,16 +196,16 @@ impl GénérateurIR {
             for bloc in &blocs_init {
                 instructions.extend(bloc.instructions.clone());
             }
-            instructions.push(IRInstruction::Retourner(None));
+            instructions.push(IRInstruction::Retourner(Some(IRValeur::Entier(0))));
 
             module.fonctions.insert(
                 0,
                 IRFonction {
-                    nom: "principal".to_string(),
+                    nom: "gallois_principal".to_string(),
                     paramètres: Vec::new(),
-                    type_retour: IRType::Vide,
+                    type_retour: IRType::Entier,
                     blocs: vec![IRBloc {
-                        nom: "entrée".to_string(),
+                        nom: "entree".to_string(),
                         instructions,
                     }],
                     est_externe: false,
@@ -227,13 +271,19 @@ impl GénérateurIR {
             let type_ir = if let Some(t) = &p.type_ann {
                 self.convertir_type_ir(&self.convertir_type_ast(t))
             } else {
-                IRType::Vide
+                self.chercher_type_var(&p.nom)
             };
             paramètres.push((p.nom.clone(), type_ir));
         }
 
         let type_retour = if let Some(rt) = &décl.type_retour {
             self.convertir_type_ir(&self.convertir_type_ast(rt))
+        } else if let Some(symbole) = self.table.chercher(nom) {
+            if let GenreSymbole::Fonction { type_retour, .. } = &symbole.genre {
+                IRType::from(type_retour)
+            } else {
+                IRType::Vide
+            }
         } else {
             IRType::Vide
         };
@@ -251,6 +301,7 @@ impl GénérateurIR {
 
     fn générer_bloc(&mut self, bloc: &BlocAST) -> Vec<IRBloc> {
         let mut instructions = Vec::new();
+        let mut blocs_supplémentaires = Vec::new();
 
         for instr in &bloc.instructions {
             match instr {
@@ -260,11 +311,7 @@ impl GénérateurIR {
                     valeur,
                     ..
                 } => {
-                    let type_ir = if let Some(t) = type_ann {
-                        self.convertir_type_ir(&self.convertir_type_ast(t))
-                    } else {
-                        IRType::Vide
-                    };
+                    let type_ir = self.type_pour_déclaration(nom, type_ann);
                     instructions.push(IRInstruction::Allocation {
                         nom: nom.clone(),
                         type_var: type_ir.clone(),
@@ -282,10 +329,11 @@ impl GénérateurIR {
                     let val = self.générer_expression(valeur);
                     match cible {
                         ExprAST::Identifiant(nom, _) => {
+                            let type_ir = self.chercher_type_var(nom);
                             instructions.push(IRInstruction::Affecter {
                                 destination: nom.clone(),
                                 valeur: val,
-                                type_var: IRType::Vide,
+                                type_var: type_ir,
                             });
                         }
                         ExprAST::AccèsMembre { objet, membre, .. } => {
@@ -307,13 +355,30 @@ impl GénérateurIR {
                     }
                 }
                 InstrAST::Expression(expr) => {
-                    let val = self.générer_expression(expr);
-                    let temp = self.temp_suivant();
-                    instructions.push(IRInstruction::Affecter {
-                        destination: temp,
-                        valeur: val,
-                        type_var: IRType::Vide,
-                    });
+                    let est_afficher = matches!(expr, ExprAST::AppelFonction { appelé, .. } if matches!(appelé.as_ref(), ExprAST::Identifiant(n, _) if n == "afficher"));
+                    if est_afficher {
+                        if let ExprAST::AppelFonction { arguments, .. } = expr {
+                            let args: Vec<IRValeur> = arguments
+                                .iter()
+                                .map(|a| self.générer_expression(a))
+                                .collect();
+                            instructions.push(IRInstruction::AppelFonction {
+                                destination: None,
+                                fonction: "afficher".to_string(),
+                                arguments: args,
+                                type_retour: IRType::Vide,
+                            });
+                        }
+                    } else {
+                        let val = self.générer_expression(expr);
+                        let temp = self.temp_suivant();
+                        let type_ir = self.type_pour_expression(expr);
+                        instructions.push(IRInstruction::Affecter {
+                            destination: temp,
+                            valeur: val,
+                            type_var: type_ir,
+                        });
+                    }
                 }
                 InstrAST::Retourne { valeur, .. } => {
                     let val = valeur.as_ref().map(|v| self.générer_expression(v));
@@ -322,7 +387,7 @@ impl GénérateurIR {
                 InstrAST::Si {
                     condition,
                     bloc_alors,
-                    branches_sinonsi,
+                    branches_sinonsi: _,
                     bloc_sinon,
                     ..
                 } => {
@@ -337,14 +402,17 @@ impl GénérateurIR {
                         bloc_sinon: bloc_sinon_nom.clone(),
                     });
 
-                    let mut blocs_ir = Vec::new();
-
                     let mut instrs_alors = Vec::new();
                     for i in &bloc_alors.instructions {
                         instrs_alors.extend(self.générer_instructions_bloc(i));
                     }
-                    instrs_alors.push(IRInstruction::Saut(bloc_suite_nom.clone()));
-                    blocs_ir.push(IRBloc {
+                    let alors_termine_par_retour = instrs_alors
+                        .last()
+                        .map_or(false, |i| matches!(i, IRInstruction::Retourner(_)));
+                    if !alors_termine_par_retour {
+                        instrs_alors.push(IRInstruction::Saut(bloc_suite_nom.clone()));
+                    }
+                    blocs_supplémentaires.push(IRBloc {
                         nom: bloc_alors_nom,
                         instructions: instrs_alors,
                     });
@@ -355,13 +423,21 @@ impl GénérateurIR {
                             instrs_sinon.extend(self.générer_instructions_bloc(i));
                         }
                     }
-                    instrs_sinon.push(IRInstruction::Saut(bloc_suite_nom.clone()));
-                    blocs_ir.push(IRBloc {
+                    let sinon_termine_par_retour = instrs_sinon
+                        .last()
+                        .map_or(false, |i| matches!(i, IRInstruction::Retourner(_)));
+                    if !sinon_termine_par_retour {
+                        instrs_sinon.push(IRInstruction::Saut(bloc_suite_nom.clone()));
+                    }
+                    blocs_supplémentaires.push(IRBloc {
                         nom: bloc_sinon_nom,
                         instructions: instrs_sinon,
                     });
 
-                    return blocs_ir;
+                    blocs_supplémentaires.push(IRBloc {
+                        nom: bloc_suite_nom,
+                        instructions: Vec::new(),
+                    });
                 }
                 InstrAST::TantQue {
                     condition, bloc, ..
@@ -378,7 +454,6 @@ impl GénérateurIR {
                         bloc_alors: corps_bloc.clone(),
                         bloc_sinon: suite_bloc.clone(),
                     }];
-                    cond_instrs.push(IRInstruction::Saut(cond_bloc.clone()));
 
                     let mut corps_instrs = Vec::new();
                     for i in &bloc.instructions {
@@ -386,26 +461,30 @@ impl GénérateurIR {
                     }
                     corps_instrs.push(IRInstruction::Saut(cond_bloc.clone()));
 
-                    return vec![
-                        IRBloc {
-                            nom: cond_bloc,
-                            instructions: cond_instrs,
-                        },
-                        IRBloc {
-                            nom: corps_bloc,
-                            instructions: corps_instrs,
-                        },
-                    ];
+                    blocs_supplémentaires.push(IRBloc {
+                        nom: cond_bloc,
+                        instructions: cond_instrs,
+                    });
+                    blocs_supplémentaires.push(IRBloc {
+                        nom: corps_bloc,
+                        instructions: corps_instrs,
+                    });
+                    blocs_supplémentaires.push(IRBloc {
+                        nom: suite_bloc,
+                        instructions: Vec::new(),
+                    });
                 }
                 InstrAST::Interrompre(_) | InstrAST::Continuer(_) => {}
                 _ => {}
             }
         }
 
-        vec![IRBloc {
-            nom: "entrée".to_string(),
+        let mut résultat = vec![IRBloc {
+            nom: "entree".to_string(),
             instructions,
-        }]
+        }];
+        résultat.append(&mut blocs_supplémentaires);
+        résultat
     }
 
     fn générer_instructions_bloc(&mut self, instr: &InstrAST) -> Vec<IRInstruction> {
@@ -417,11 +496,7 @@ impl GénérateurIR {
                 valeur,
                 ..
             } => {
-                let type_ir = if let Some(t) = type_ann {
-                    self.convertir_type_ir(&self.convertir_type_ast(t))
-                } else {
-                    IRType::Vide
-                };
+                let type_ir = self.type_pour_déclaration(nom, type_ann);
                 result.push(IRInstruction::Allocation {
                     nom: nom.clone(),
                     type_var: type_ir.clone(),
@@ -438,21 +513,39 @@ impl GénérateurIR {
             InstrAST::Affectation { cible, valeur, .. } => {
                 let val = self.générer_expression(valeur);
                 if let ExprAST::Identifiant(nom, _) = cible {
+                    let type_ir = self.chercher_type_var(nom);
                     result.push(IRInstruction::Affecter {
                         destination: nom.clone(),
                         valeur: val,
-                        type_var: IRType::Vide,
+                        type_var: type_ir,
                     });
                 }
             }
             InstrAST::Expression(expr) => {
-                let val = self.générer_expression(expr);
-                let temp = self.temp_suivant();
-                result.push(IRInstruction::Affecter {
-                    destination: temp,
-                    valeur: val,
-                    type_var: IRType::Vide,
-                });
+                let est_afficher = matches!(expr, ExprAST::AppelFonction { appelé, .. } if matches!(appelé.as_ref(), ExprAST::Identifiant(n, _) if n == "afficher"));
+                if est_afficher {
+                    if let ExprAST::AppelFonction { arguments, .. } = expr {
+                        let args: Vec<IRValeur> = arguments
+                            .iter()
+                            .map(|a| self.générer_expression(a))
+                            .collect();
+                        result.push(IRInstruction::AppelFonction {
+                            destination: None,
+                            fonction: "afficher".to_string(),
+                            arguments: args,
+                            type_retour: IRType::Vide,
+                        });
+                    }
+                } else {
+                    let val = self.générer_expression(expr);
+                    let temp = self.temp_suivant();
+                    let type_ir = self.type_pour_expression(expr);
+                    result.push(IRInstruction::Affecter {
+                        destination: temp,
+                        valeur: val,
+                        type_var: type_ir,
+                    });
+                }
             }
             InstrAST::Retourne { valeur, .. } => {
                 let val = valeur.as_ref().map(|v| self.générer_expression(v));
@@ -469,7 +562,7 @@ impl GénérateurIR {
             None
         } else {
             Some(IRBloc {
-                nom: "principal".to_string(),
+                nom: "gallois_principal".to_string(),
                 instructions,
             })
         }
