@@ -232,12 +232,13 @@ impl Parser {
         let paramètres = self.parser_paramètres()?;
         self.attendre(&Token::ParenthèseFermante, "Attendu ')' après paramètres")?;
 
-        let type_retour = if self.token_actuel() == &Token::Flèche {
-            self.avancer();
-            Some(self.parser_type()?)
-        } else {
-            None
-        };
+        let type_retour =
+            if self.token_actuel() == &Token::Flèche || self.token_actuel() == &Token::DeuxPoints {
+                self.avancer();
+                Some(self.parser_type()?)
+            } else {
+                None
+            };
 
         self.sauter_nouvelles_lignes();
         let corps = self.parser_bloc()?;
@@ -1169,12 +1170,13 @@ impl Parser {
         let paramètres = self.parser_paramètres()?;
         self.attendre(&Token::ParenthèseFermante, "Attendu ')'")?;
 
-        let type_retour = if self.token_actuel() == &Token::Flèche {
-            self.avancer();
-            Some(self.parser_type()?)
-        } else {
-            None
-        };
+        let type_retour =
+            if self.token_actuel() == &Token::Flèche || self.token_actuel() == &Token::DeuxPoints {
+                self.avancer();
+                Some(self.parser_type()?)
+            } else {
+                None
+            };
 
         Ok(InstrAST::Externe {
             nom,

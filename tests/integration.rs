@@ -202,3 +202,114 @@ fn test_pipeline_complet() {
     let mut vérif = Vérificateur::nouveau();
     vérif.vérifier(&programme).expect("Vérification échouée");
 }
+
+// ===== Tests FFI =====
+
+#[test]
+fn test_lexer_ffi() {
+    let tokens =
+        tokens_significatifs("externe pointeur pointeur_vide c_int c_long c_double c_char");
+    assert!(tokens.iter().any(|t| matches!(t.token, Token::Externe)));
+    assert!(tokens
+        .iter()
+        .any(|t| matches!(t.token, Token::PointeurType)));
+    assert!(tokens
+        .iter()
+        .any(|t| matches!(t.token, Token::PointeurVideType)));
+    assert!(tokens.iter().any(|t| matches!(t.token, Token::CIntType)));
+    assert!(tokens.iter().any(|t| matches!(t.token, Token::CLongType)));
+    assert!(tokens.iter().any(|t| matches!(t.token, Token::CDoubleType)));
+    assert!(tokens.iter().any(|t| matches!(t.token, Token::CCharType)));
+}
+
+#[test]
+fn test_parser_externe() {
+    let programme = parser_source("externe \"c\" fonction printf(format): entier");
+    assert_eq!(programme.instructions.len(), 1);
+}
+
+#[test]
+fn test_parser_externe_sans_convention() {
+    let programme = parser_source("externe fonction malloc(taille): pointeur_vide");
+    assert_eq!(programme.instructions.len(), 1);
+}
+
+// ===== Tests Types FFI =====
+
+#[test]
+fn test_lexer_types_ffi() {
+    let tokens = tokens_significatifs("pointeur<entier> c_int c_double");
+    assert!(tokens
+        .iter()
+        .any(|t| matches!(t.token, Token::PointeurType)));
+    assert!(tokens.iter().any(|t| matches!(t.token, Token::CIntType)));
+    assert!(tokens.iter().any(|t| matches!(t.token, Token::CDoubleType)));
+}
+
+// ===== Tests Packages =====
+
+#[test]
+fn test_manifeste_nouveau() {
+    let manifeste = gallois::package::Manifeste::nouveau("mon_projet");
+    assert_eq!(manifeste.package.nom, "mon_projet");
+    assert_eq!(manifeste.package.version, "0.1.0");
+}
+
+#[test]
+fn test_manifeste_sérialiser() {
+    let manifeste = gallois::package::Manifeste::nouveau("test");
+    let toml = manifeste.sérialiser_toml();
+    assert!(toml.contains("nom = \"test\""));
+    assert!(toml.contains("version = \"0.1.0\""));
+}
+
+#[test]
+fn test_manifeste_parser() {
+    let toml = "[package]\nnom = \"hello\"\nversion = \"1.0.0\"\n";
+    let manifeste = gallois::package::Manifeste::parser_toml(toml).expect("Parsing échoué");
+    assert_eq!(manifeste.package.nom, "hello");
+    assert_eq!(manifeste.package.version, "1.0.0");
+}
+
+#[test]
+fn test_manifeste_dépendances() {
+    let toml = "[package]\nnom = \"test\"\nversion = \"0.1.0\"\n\n[dépendances]\nmaths = \"1.0\"\nhttp = \"0.3\"\n";
+    let manifeste = gallois::package::Manifeste::parser_toml(toml).expect("Parsing échoué");
+    assert_eq!(manifeste.dépendances.len(), 2);
+    assert!(manifeste.dépendances.contains_key("maths"));
+    assert!(manifeste.dépendances.contains_key("http"));
+}
+
+// ===== Tests Documentation =====
+
+#[test]
+fn test_générateur_doc() {
+    let programme = parser_source("fonction test(x) retourne x");
+    let mut générateur = gallois::doc::GénérateurDoc::nouveau();
+    générateur
+        .générer_depuis_programme(&programme)
+        .expect("Génération doc échouée");
+}
+
+// ===== Tests Débogueur =====
+
+#[test]
+fn test_table_debug() {
+    let programme = parser_source("fonction test(x) retourne x");
+    let mut table = gallois::debugger::TableDebug::nouvelle();
+    table.générer_depuis_programme(&programme);
+}
+
+// ===== Tests Pipeline complet avec FFI =====
+
+#[test]
+fn test_pipeline_ffi() {
+    let source = "externe fonction printf(format): entier\nsoit x = 42";
+    let tokens = scanner_source(source);
+    let mut parser = Parser::nouveau(tokens);
+    let programme = parser.parser_programme().expect("Parsing FFI échoué");
+    let mut vérif = Vérificateur::nouveau();
+    vérif
+        .vérifier(&programme)
+        .expect("Vérification FFI échouée");
+}

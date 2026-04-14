@@ -71,7 +71,7 @@ impl Manifeste {
         })
     }
 
-    fn parser_toml(contenu: &str) -> Resultat<Self> {
+    pub fn parser_toml(contenu: &str) -> Resultat<Self> {
         let mut manifeste = Manifeste::nouveau("inconnu");
         let mut section_courante = "";
 
@@ -138,7 +138,7 @@ impl Manifeste {
         Ok(manifeste)
     }
 
-    fn sérialiser_toml(&self) -> String {
+    pub fn sérialiser_toml(&self) -> String {
         let mut sortie = String::new();
 
         sortie.push_str("[package]\n");
