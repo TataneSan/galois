@@ -1,4 +1,5 @@
 mod codegen;
+mod compiler;
 mod error;
 mod ir;
 mod lexer;
@@ -12,6 +13,7 @@ use std::path::Path;
 use std::process;
 
 use codegen::GénérateurLLVM;
+use compiler::{CompilateurNatif, OptionsCompilation};
 use error::Resultat;
 use ir::GénérateurIR;
 use lexer::Scanner;
@@ -19,11 +21,31 @@ use parser::Parser;
 use semantic::Vérificateur;
 
 enum Commande {
-    Compiler { entrée: String, sortie: String },
-    Lexer { entrée: String },
-    Parser { entrée: String },
-    Vérifier { entrée: String },
-    IR { entrée: String },
+    Build {
+        entrée: String,
+        sortie: Option<String>,
+        release: bool,
+    },
+    Run {
+        entrée: String,
+        release: bool,
+    },
+    Compiler {
+        entrée: String,
+        sortie: String,
+    },
+    Lexer {
+        entrée: String,
+    },
+    Parser {
+        entrée: String,
+    },
+    Vérifier {
+        entrée: String,
+    },
+    IR {
+        entrée: String,
+    },
     Aide,
 }
 
@@ -35,6 +57,33 @@ fn analyser_arguments() -> Commande {
     }
 
     match args[1].as_str() {
+        "build" | "b" => {
+            if args.len() < 3 {
+                eprintln!("Erreur: fichier source requis");
+                process::exit(1);
+            }
+            let entrée = args[2].clone();
+            let release = args.iter().any(|a| a == "--release" || a == "-r");
+            let sortie = if let Some(idx) = args.iter().position(|a| a == "-o" || a == "--output") {
+                args.get(idx + 1).cloned()
+            } else {
+                None
+            };
+            Commande::Build {
+                entrée,
+                sortie,
+                release,
+            }
+        }
+        "run" | "r" => {
+            if args.len() < 3 {
+                eprintln!("Erreur: fichier source requis");
+                process::exit(1);
+            }
+            let entrée = args[2].clone();
+            let release = args.iter().any(|a| a == "--release" || a == "-r");
+            Commande::Run { entrée, release }
+        }
         "compiler" | "comp" | "c" => {
             if args.len() < 3 {
                 eprintln!("Erreur: fichier source requis");
@@ -109,15 +158,24 @@ fn afficher_aide() {
     println!("  gallois <commande> [options]");
     println!();
     println!("COMMANDES:");
-    println!("  compiler, comp, c <fichier> [-o sortie]  Compiler vers LLVM IR");
-    println!("  lexer, lex <fichier>                      Afficher les tokens");
-    println!("  parser, parse, p <fichier>                Afficher l'AST");
-    println!("  vérifier, v <fichier>                     Vérifier les types");
-    println!("  ir <fichier>                              Afficher l'IR");
-    println!("  aide, help                                Afficher cette aide");
+    println!("  build, b <fichier> [-o sortie] [--release]  Compiler vers exécutable natif");
+    println!("  run, r <fichier> [--release]                 Compiler et exécuter");
+    println!("  compiler, comp, c <fichier> [-o sortie]     Compiler vers LLVM IR");
+    println!("  lexer, lex <fichier>                        Afficher les tokens");
+    println!("  parser, parse, p <fichier>                  Afficher l'AST");
+    println!("  vérifier, v <fichier>                       Vérifier les types");
+    println!("  ir <fichier>                                Afficher l'IR");
+    println!("  aide, help                                  Afficher cette aide");
+    println!();
+    println!("OPTIONS:");
+    println!("  -o, --output <fichier>  Fichier de sortie");
+    println!("  -r, --release           Optimisations (-O3, strip)");
+    println!("  --keep                  Garder les fichiers intermédiaires");
     println!();
     println!("EXEMPLES:");
-    println!("  gallois compiler programme.gal");
+    println!("  gallois build programme.gal");
+    println!("  gallois build programme.gal --release -o app");
+    println!("  gallois run programme.gal");
     println!("  gallois compiler programme.gal -o programme.ll");
     println!("  gallois lexer programme.gal");
     println!("  gallois parser programme.gal");
@@ -134,6 +192,73 @@ fn compiler_pipeline(chemin: &str) -> Resultat<()> {
 
     let mut vérificateur = Vérificateur::nouveau();
     vérificateur.vérifier(&programme)?;
+
+    Ok(())
+}
+
+fn pipeline_llvm(chemin: &str) -> Resultat<Vec<u8>> {
+    let source = lire_source(chemin)?;
+
+    let mut scanner = Scanner::nouveau(&source, chemin);
+    let tokens = scanner.scanner()?;
+
+    let mut parser = Parser::nouveau(tokens);
+    let programme = parser.parser_programme()?;
+
+    let mut vérificateur = Vérificateur::nouveau();
+    vérificateur.vérifier(&programme)?;
+
+    let table = vérificateur.table.clone();
+    let mut générateur_ir = GénérateurIR::nouveau(table);
+    let module_ir = générateur_ir.générer(&programme);
+
+    let mut générateur_llvm = GénérateurLLVM::nouveau();
+    Ok(générateur_llvm.générer(&module_ir))
+}
+
+fn exécuter_build(chemin: &str, sortie: Option<String>, release: bool) -> Resultat<()> {
+    let llvm_ir = pipeline_llvm(chemin)?;
+
+    let options = OptionsCompilation {
+        fichier_entrée: chemin.into(),
+        fichier_sortie: sortie.map(|s| s.into()),
+        release,
+        garder_intermédiaires: false,
+        verbose: false,
+    };
+
+    let compilateur = CompilateurNatif::nouveau(options);
+    let exécutable = compilateur.compiler(&llvm_ir)?;
+
+    println!("Compilation réussie: {}", exécutable.display());
+    Ok(())
+}
+
+fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
+    let llvm_ir = pipeline_llvm(chemin)?;
+
+    let options = OptionsCompilation {
+        fichier_entrée: chemin.into(),
+        fichier_sortie: None,
+        release,
+        garder_intermédiaires: false,
+        verbose: false,
+    };
+
+    let compilateur = CompilateurNatif::nouveau(options);
+    let exécutable = compilateur.compiler(&llvm_ir)?;
+
+    let status = process::Command::new(&exécutable).status().map_err(|e| {
+        error::Erreur::runtime(
+            error::Position::nouvelle(1, 1, chemin),
+            &format!("Impossible d'exécuter {}: {}", exécutable.display(), e),
+        )
+    })?;
+
+    let code = status.code().unwrap_or(1);
+    if code != 0 {
+        process::exit(code);
+    }
 
     Ok(())
 }
@@ -420,6 +545,12 @@ fn main() {
     let commande = analyser_arguments();
 
     let résultat = match commande {
+        Commande::Build {
+            entrée,
+            sortie,
+            release,
+        } => exécuter_build(&entrée, sortie, release),
+        Commande::Run { entrée, release } => exécuter_run(&entrée, release),
         Commande::Compiler { entrée, sortie } => exécuter_compilation(&entrée, &sortie),
         Commande::Lexer { entrée } => exécuter_lexer(&entrée),
         Commande::Parser { entrée } => exécuter_parser(&entrée),
