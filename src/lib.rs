@@ -1,5 +1,6 @@
 pub mod codegen;
 pub mod compiler;
+pub mod doc;
 pub mod error;
 pub mod ir;
 pub mod lexer;
