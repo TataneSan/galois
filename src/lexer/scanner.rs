@@ -98,6 +98,7 @@ impl Scanner {
 
         Self {
             source: source.chars().collect(),
+            source_str: source.to_string(),
             position: 0,
             ligne: 1,
             colonne: 1,
@@ -110,6 +111,20 @@ impl Scanner {
 
     fn position_actuelle(&self) -> Position {
         Position::nouvelle(self.ligne, self.colonne, &self.fichier)
+    }
+
+    pub fn extraire_snippet(
+        &self,
+        ligne: usize,
+        colonne_début: usize,
+        colonne_fin: usize,
+    ) -> Snippet {
+        let ligne_source = self
+            .source_str
+            .lines()
+            .nth(ligne.saturating_sub(1))
+            .unwrap_or("");
+        Snippet::nouveau(ligne_source, ligne, colonne_début, colonne_fin)
     }
 
     fn caractère_actuel(&self) -> Option<char> {
