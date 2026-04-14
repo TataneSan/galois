@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::error::Position;
 use crate::semantic::types::Type;
 
 #[derive(Debug, Clone)]
@@ -27,6 +28,7 @@ pub enum GenreSymbole {
         interfaces: Vec<String>,
         champs: HashMap<String, Type>,
         méthodes: HashMap<String, MéthodeClasseSymbole>,
+        constructeur: Option<MéthodeClasseSymbole>,
         est_abstraite: bool,
     },
     Interface {
@@ -43,6 +45,7 @@ pub struct Symbole {
     pub nom: String,
     pub genre: GenreSymbole,
     pub portée: usize,
+    pub position: Option<Position>,
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +76,21 @@ impl TableSymboles {
             nom: nom.to_string(),
             genre,
             portée,
+            position: None,
+        };
+        self.portées
+            .last_mut()
+            .unwrap()
+            .insert(nom.to_string(), symbole);
+    }
+
+    pub fn définir_avec_position(&mut self, nom: &str, genre: GenreSymbole, position: Position) {
+        let portée = self.portées.len() - 1;
+        let symbole = Symbole {
+            nom: nom.to_string(),
+            genre,
+            portée,
+            position: Some(position),
         };
         self.portées
             .last_mut()
@@ -112,5 +130,17 @@ impl TableSymboles {
 
     pub fn portée_actuelle(&self) -> usize {
         self.portées.len() - 1
+    }
+
+    pub fn variables_définies(&self) -> Vec<String> {
+        let mut variables = Vec::new();
+        for portée in &self.portées {
+            for (nom, sym) in portée {
+                if matches!(sym.genre, GenreSymbole::Variable { .. }) {
+                    variables.push(nom.clone());
+                }
+            }
+        }
+        variables
     }
 }

@@ -1,4 +1,4 @@
-use crate::error::{Erreur, Position, Resultat};
+use crate::error::{Diagnostics, Erreur, GenreWarning, Position, Resultat, Warning};
 use crate::parser::ast::*;
 use crate::semantic::symbols::{GenreSymbole, MéthodeClasseSymbole, TableSymboles};
 use crate::semantic::types::{Type, Unificateur};
@@ -8,8 +8,10 @@ pub struct Vérificateur {
     pub table: TableSymboles,
     unificateur: Unificateur,
     erreurs: Vec<Erreur>,
+    warnings: Vec<Warning>,
     dans_constructeur: bool,
     classe_courante: Option<String>,
+    variables_utilisées: HashSet<String>,
 }
 
 impl Vérificateur {
@@ -44,23 +46,39 @@ impl Vérificateur {
             table,
             unificateur: Unificateur::nouveau(),
             erreurs: Vec::new(),
+            warnings: Vec::new(),
             dans_constructeur: false,
             classe_courante: None,
+            variables_utilisées: HashSet::new(),
         }
     }
 
-    pub fn vérifier(&mut self, programme: &ProgrammeAST) -> Resultat<()> {
+    pub fn vérifier(&mut self, programme: &ProgrammeAST) -> Resultat<Diagnostics> {
         for instr in &programme.instructions {
-            self.vérifier_instruction(instr)?;
+            if let Err(e) = self.vérifier_instruction(instr) {
+                self.erreurs.push(e);
+            }
         }
+
+        self.vérifier_variables_utilisées();
+
         if !self.erreurs.is_empty() {
-            return Err(self.erreurs[0].clone());
+            return Err(self.erreurs.remove(0));
         }
-        Ok(())
+
+        Ok(Diagnostics {
+            erreurs: self.erreurs.clone(),
+            warnings: self.warnings.clone(),
+        })
     }
 
     fn erreur(&mut self, position: Position, message: &str) {
         self.erreurs.push(Erreur::typage(position, message));
+    }
+
+    fn warning(&mut self, genre: GenreWarning, position: Position, message: &str) {
+        self.warnings
+            .push(Warning::nouveau(genre, position, message));
     }
 
     fn classe_hérite_de(&self, classe: &str, ancêtre: &str) -> bool {
@@ -150,6 +168,24 @@ impl Vérificateur {
         None
     }
 
+    fn constructeur_classe(&self, classe: &str) -> Option<MéthodeClasseSymbole> {
+        self.table.chercher(classe).and_then(|sym| {
+            if let GenreSymbole::Classe { constructeur, .. } = &sym.genre {
+                constructeur.clone()
+            } else {
+                None
+            }
+        })
+    }
+
+    fn instruction_est_appel_base(instr: &InstrAST) -> bool {
+        matches!(
+            instr,
+            InstrAST::Expression(ExprAST::AppelFonction { appelé, .. })
+                if matches!(appelé.as_ref(), ExprAST::Base(_))
+        )
+    }
+
     fn type_compatible(&mut self, source: &Type, cible: &Type) -> bool {
         if source == cible {
             return true;
@@ -163,6 +199,37 @@ impl Vérificateur {
                 self.classe_implémente_interface(src, dst)
             }
             _ => self.unificateur.unifier(source, cible),
+        }
+    }
+
+    fn type_clé_dictionnaire_hachable(&self, t: &Type) -> bool {
+        match t {
+            Type::Entier
+            | Type::Décimal
+            | Type::Texte
+            | Type::Booléen
+            | Type::Nul
+            | Type::CInt
+            | Type::CLong
+            | Type::CDouble
+            | Type::CChar
+            | Type::Inconnu
+            | Type::Variable(_) => true,
+            _ => false,
+        }
+    }
+
+    fn vérifier_type_dictionnaire(&mut self, t: &Type, position: &Position) {
+        if let Type::Dictionnaire(k, _) = t {
+            if !self.type_clé_dictionnaire_hachable(k) {
+                self.erreur(
+                    position.clone(),
+                    &format!(
+                        "Type de clé de dictionnaire non hachable: {}. Clés autorisées: entier, décimal, texte, booléen, nul",
+                        k
+                    ),
+                );
+            }
         }
     }
 
@@ -194,6 +261,8 @@ impl Vérificateur {
                     self.unificateur.résoudre(&type_valeur)
                 };
 
+                self.vérifier_type_dictionnaire(&type_final, position);
+
                 self.table.définir(
                     nom,
                     GenreSymbole::Variable {
@@ -221,6 +290,7 @@ impl Vérificateur {
                 } else {
                     self.unificateur.résoudre(&type_valeur)
                 };
+                self.vérifier_type_dictionnaire(&type_final, position);
                 self.table.définir(
                     nom,
                     GenreSymbole::Variable {
@@ -486,6 +556,7 @@ impl Vérificateur {
     fn vérifier_déclaration_classe(&mut self, décl: &DéclarationClasseAST) -> Resultat<()> {
         let mut champs = HashMap::new();
         let mut méthodes = HashMap::new();
+        let mut constructeur: Option<MéthodeClasseSymbole> = None;
 
         if let Some(parent) = &décl.parent {
             match self.table.chercher(parent) {
@@ -655,7 +726,40 @@ impl Vérificateur {
                         },
                     );
                 }
-                MembreClasseAST::Constructeur { .. } => {}
+                MembreClasseAST::Constructeur {
+                    paramètres,
+                    position,
+                    ..
+                } => {
+                    if constructeur.is_some() {
+                        self.erreur(
+                            position.clone(),
+                            &format!(
+                                "La classe '{}' déclare plusieurs constructeurs; un seul constructeur est supporté",
+                                décl.nom
+                            ),
+                        );
+                        continue;
+                    }
+
+                    let mut param_types = Vec::new();
+                    for p in paramètres {
+                        let t = if let Some(type_ann) = &p.type_ann {
+                            self.convertir_type(type_ann)
+                        } else {
+                            Type::Inconnu
+                        };
+                        param_types.push((p.nom.clone(), t));
+                    }
+
+                    constructeur = Some(MéthodeClasseSymbole {
+                        paramètres: param_types,
+                        type_retour: Type::Rien,
+                        est_virtuelle: false,
+                        est_abstraite: false,
+                        est_surcharge: false,
+                    });
+                }
             }
         }
 
@@ -666,6 +770,7 @@ impl Vérificateur {
                 interfaces: décl.interfaces.clone(),
                 champs,
                 méthodes,
+                constructeur,
                 est_abstraite: décl.est_abstraite,
             },
         );
@@ -802,8 +907,53 @@ impl Vérificateur {
                 MembreClasseAST::Constructeur {
                     paramètres,
                     corps,
-                    position: _,
+                    position,
                 } => {
+                    if let Some(parent) = &décl.parent {
+                        let indices_base: Vec<usize> = corps
+                            .instructions
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, instr)| {
+                                if Self::instruction_est_appel_base(instr) {
+                                    Some(i)
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+
+                        if indices_base.len() > 1 {
+                            self.erreur(
+                                position.clone(),
+                                "Un constructeur ne peut contenir qu'un seul appel base(...)",
+                            );
+                        }
+
+                        if let Some(idx) = indices_base.first() {
+                            if *idx != 0 {
+                                self.erreur(
+                                    position.clone(),
+                                    "L'appel base(...) doit être la première instruction du constructeur",
+                                );
+                            }
+                        } else {
+                            let params_parent = self
+                                .constructeur_classe(parent)
+                                .map(|c| c.paramètres.len())
+                                .unwrap_or(0);
+                            if params_parent > 0 {
+                                self.erreur(
+                                    position.clone(),
+                                    &format!(
+                                        "Le constructeur de '{}' doit appeler base(...) car le parent '{}' exige des arguments",
+                                        décl.nom, parent
+                                    ),
+                                );
+                            }
+                        }
+                    }
+
                     let ancien_constructeur = self.dans_constructeur;
                     self.dans_constructeur = true;
 
@@ -881,7 +1031,11 @@ impl Vérificateur {
             ExprAST::Identifiant(nom, position) => {
                 if let Some(sym) = self.table.chercher(nom) {
                     match &sym.genre {
-                        GenreSymbole::Variable { type_sym, .. } => type_sym.clone(),
+                        GenreSymbole::Variable { type_sym, .. } => {
+                            let type_retour = type_sym.clone();
+                            self.enregistrer_utilisation(nom);
+                            type_retour
+                        }
                         GenreSymbole::Fonction {
                             paramètres,
                             type_retour,
@@ -1069,6 +1223,91 @@ impl Vérificateur {
                 arguments,
                 position,
             } => {
+                if matches!(appelé.as_ref(), ExprAST::Base(_)) {
+                    if !self.dans_constructeur {
+                        self.erreur(
+                            position.clone(),
+                            "L'appel base(...) est autorisé uniquement dans un constructeur",
+                        );
+                        return Ok(Type::Inconnu);
+                    }
+
+                    let parent = self.classe_courante.as_ref().and_then(|classe| {
+                        self.table.chercher(classe).and_then(|sym| {
+                            if let GenreSymbole::Classe { parent, .. } = &sym.genre {
+                                parent.clone()
+                            } else {
+                                None
+                            }
+                        })
+                    });
+
+                    if let Some(parent) = parent {
+                        let arguments_types: Vec<Type> = arguments
+                            .iter()
+                            .map(|arg| self.vérifier_expression(arg))
+                            .collect::<Resultat<_>>()?;
+
+                        let constructeur_parent = self.table.chercher(&parent).and_then(|sym| {
+                            if let GenreSymbole::Classe { constructeur, .. } = &sym.genre {
+                                constructeur.clone()
+                            } else {
+                                None
+                            }
+                        });
+
+                        if let Some(constructeur_parent) = constructeur_parent {
+                            if arguments_types.len() != constructeur_parent.paramètres.len() {
+                                self.erreur(
+                                    position.clone(),
+                                    &format!(
+                                        "base(...) pour '{}' attend {} argument(s), reçu {}",
+                                        parent,
+                                        constructeur_parent.paramètres.len(),
+                                        arguments_types.len()
+                                    ),
+                                );
+                            } else {
+                                for (i, (type_arg, (_, type_param))) in arguments_types
+                                    .iter()
+                                    .zip(constructeur_parent.paramètres.iter())
+                                    .enumerate()
+                                {
+                                    if !self.type_compatible(type_arg, type_param) {
+                                        self.erreur(
+                                            arguments
+                                                .get(i)
+                                                .map(|a| a.position().clone())
+                                                .unwrap_or_else(|| position.clone()),
+                                            &format!(
+                                                "Argument {} de base(...) incompatible: attendu {}, obtenu {}",
+                                                i + 1,
+                                                type_param,
+                                                type_arg
+                                            ),
+                                        );
+                                    }
+                                }
+                            }
+                        } else if !arguments_types.is_empty() {
+                            self.erreur(
+                                position.clone(),
+                                &format!(
+                                    "Le parent '{}' n'a pas de constructeur explicite; base(...) n'accepte pas d'arguments",
+                                    parent
+                                ),
+                            );
+                        }
+                    } else {
+                        self.erreur(
+                            position.clone(),
+                            "base(...) utilisé dans une classe sans parent",
+                        );
+                    }
+
+                    return Ok(Type::Rien);
+                }
+
                 let type_appelé = self.vérifier_expression(appelé)?;
                 match &type_appelé {
                     Type::Fonction(params, ret) => {
@@ -1247,6 +1486,12 @@ impl Vérificateur {
                         Type::Texte
                     }
                     Type::Dictionnaire(k, v) => {
+                        if !self.type_clé_dictionnaire_hachable(k) {
+                            self.erreur(
+                                position.clone(),
+                                &format!("Type de clé de dictionnaire non hachable: {}", k),
+                            );
+                        }
                         if !self.type_compatible(&type_idx, k) {
                             self.erreur(position.clone(), "Type de clé incorrect");
                         }
@@ -1368,6 +1613,15 @@ impl Vérificateur {
                         type_k = self.unificateur.résoudre(&type_k);
                         type_v = self.unificateur.résoudre(&type_v);
                     }
+                    if !self.type_clé_dictionnaire_hachable(&type_k) {
+                        self.erreur(
+                            paires[0].0.position().clone(),
+                            &format!(
+                                "Type de clé de dictionnaire non hachable: {}. Clés autorisées: entier, décimal, texte, booléen, nul",
+                                type_k
+                            ),
+                        );
+                    }
                     Type::Dictionnaire(Box::new(type_k), Box::new(type_v))
                 }
             }
@@ -1385,25 +1639,82 @@ impl Vérificateur {
             }
 
             ExprAST::Nouveau {
-                classe, position, ..
+                classe,
+                arguments,
+                position,
             } => {
-                let est_abstraite = self.table.chercher(classe).and_then(|sym| {
-                    if let GenreSymbole::Classe { est_abstraite, .. } = &sym.genre {
-                        Some(*est_abstraite)
+                let arguments_types: Vec<Type> = arguments
+                    .iter()
+                    .map(|arg| self.vérifier_expression(arg))
+                    .collect::<Resultat<_>>()?;
+
+                let infos_classe = self.table.chercher(classe).and_then(|sym| {
+                    if let GenreSymbole::Classe {
+                        est_abstraite,
+                        constructeur,
+                        ..
+                    } = &sym.genre
+                    {
+                        Some((*est_abstraite, constructeur.clone()))
                     } else {
                         None
                     }
                 });
 
-                match est_abstraite {
-                    Some(true) => {
+                match infos_classe {
+                    Some((true, _)) => {
                         self.erreur(
                             position.clone(),
                             &format!("Impossible d'instancier la classe abstraite '{}'", classe),
                         );
                         Type::Inconnu
                     }
-                    Some(false) => Type::Classe(classe.clone(), None),
+                    Some((false, constructeur)) => {
+                        if let Some(constructeur) = constructeur {
+                            if arguments_types.len() != constructeur.paramètres.len() {
+                                self.erreur(
+                                    position.clone(),
+                                    &format!(
+                                        "Constructeur de '{}' attend {} argument(s), reçu {}",
+                                        classe,
+                                        constructeur.paramètres.len(),
+                                        arguments_types.len()
+                                    ),
+                                );
+                            } else {
+                                for (i, (type_arg, (_, type_param))) in arguments_types
+                                    .iter()
+                                    .zip(constructeur.paramètres.iter())
+                                    .enumerate()
+                                {
+                                    if !self.type_compatible(type_arg, type_param) {
+                                        self.erreur(
+                                            arguments
+                                                .get(i)
+                                                .map(|a| a.position().clone())
+                                                .unwrap_or_else(|| position.clone()),
+                                            &format!(
+                                                "Argument {} du constructeur de '{}' incompatible: attendu {}, obtenu {}",
+                                                i + 1,
+                                                classe,
+                                                type_param,
+                                                type_arg
+                                            ),
+                                        );
+                                    }
+                                }
+                            }
+                        } else if !arguments_types.is_empty() {
+                            self.erreur(
+                                position.clone(),
+                                &format!(
+                                    "La classe '{}' n'a pas de constructeur explicite; aucun argument n'est accepté",
+                                    classe
+                                ),
+                            );
+                        }
+                        Type::Classe(classe.clone(), None)
+                    }
                     None => {
                         self.erreur(
                             position.clone(),
@@ -1771,5 +2082,27 @@ impl Vérificateur {
                 Type::Inconnu
             }
         }
+    }
+
+    fn vérifier_variables_utilisées(&mut self) {
+        let définies = self.table.variables_définies();
+        for nom in définies {
+            if !self.variables_utilisées.contains(&nom) {
+                if let Some(sym) = self.table.chercher(&nom) {
+                    if let GenreSymbole::Variable { .. } = &sym.genre {
+                        let position = sym.position.clone().unwrap_or_else(|| Position::debut(""));
+                        self.warning(
+                            GenreWarning::VariableNonUtilisée,
+                            position,
+                            &format!("la variable '{}' n'est jamais utilisée", nom),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn enregistrer_utilisation(&mut self, nom: &str) {
+        self.variables_utilisées.insert(nom.to_string());
     }
 }
