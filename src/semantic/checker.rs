@@ -295,6 +295,35 @@ impl Vérificateur {
                 );
             }
             InstrAST::Importe { .. } => {}
+            InstrAST::Externe {
+                nom,
+                paramètres,
+                type_retour,
+                ..
+            } => {
+                let mut param_types = Vec::new();
+                for p in paramètres {
+                    let t = if let Some(type_ann) = &p.type_ann {
+                        self.convertir_type(type_ann)
+                    } else {
+                        Type::Inconnu
+                    };
+                    param_types.push((p.nom.clone(), t));
+                }
+                let type_ret = if let Some(rt) = type_retour {
+                    self.convertir_type(rt)
+                } else {
+                    Type::Rien
+                };
+                self.table.définir(
+                    nom,
+                    GenreSymbole::Fonction {
+                        paramètres: param_types,
+                        type_retour: type_ret,
+                        est_async: false,
+                    },
+                );
+            }
         }
         Ok(())
     }
@@ -1052,6 +1081,12 @@ impl Vérificateur {
                 nom.clone(),
                 args.iter().map(|t| self.convertir_type(t)).collect(),
             ),
+            TypeAST::Pointeur(inner) => Type::Pointeur(Box::new(self.convertir_type(inner))),
+            TypeAST::PointeurVide => Type::PointeurVide,
+            TypeAST::CInt => Type::CInt,
+            TypeAST::CLong => Type::CLong,
+            TypeAST::CDouble => Type::CDouble,
+            TypeAST::CChar => Type::CChar,
         }
     }
 

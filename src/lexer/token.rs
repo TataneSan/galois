@@ -75,6 +75,15 @@ pub enum Token {
     Exporte,
     Depuis,
 
+    // Mots-clés - FFI
+    Externe,
+    PointeurType,
+    PointeurVideType,
+    CIntType,
+    CLongType,
+    CDoubleType,
+    CCharType,
+
     // Mots-clés - Divers
     Soit,
     Constante,
@@ -220,6 +229,13 @@ impl fmt::Display for Token {
             Token::Importe => write!(f, "importe"),
             Token::Exporte => write!(f, "exporte"),
             Token::Depuis => write!(f, "depuis"),
+            Token::Externe => write!(f, "externe"),
+            Token::PointeurType => write!(f, "pointeur"),
+            Token::PointeurVideType => write!(f, "pointeur_vide"),
+            Token::CIntType => write!(f, "c_int"),
+            Token::CLongType => write!(f, "c_long"),
+            Token::CDoubleType => write!(f, "c_double"),
+            Token::CCharType => write!(f, "c_char"),
             Token::Soit => write!(f, "soit"),
             Token::Constante => write!(f, "constante"),
             Token::Mutable => write!(f, "mutable"),

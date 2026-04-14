@@ -23,6 +23,12 @@ pub enum TypeAST {
     Classe(String),
     Interface(String),
     Paramétré(String, Vec<TypeAST>),
+    Pointeur(Box<TypeAST>),
+    PointeurVide,
+    CInt,
+    CLong,
+    CDouble,
+    CChar,
 }
 
 impl fmt::Display for TypeAST {
@@ -79,6 +85,12 @@ impl fmt::Display for TypeAST {
                 }
                 write!(f, ">")
             }
+            TypeAST::Pointeur(inner) => write!(f, "pointeur<{}>", inner),
+            TypeAST::PointeurVide => write!(f, "pointeur_vide"),
+            TypeAST::CInt => write!(f, "c_int"),
+            TypeAST::CLong => write!(f, "c_long"),
+            TypeAST::CDouble => write!(f, "c_double"),
+            TypeAST::CChar => write!(f, "c_char"),
         }
     }
 }
@@ -379,6 +391,14 @@ pub enum InstrAST {
         nom: String,
         type_ann: Option<TypeAST>,
         valeur: ExprAST,
+        position: Position,
+    },
+
+    Externe {
+        nom: String,
+        convention: String,
+        paramètres: Vec<ParamètreAST>,
+        type_retour: Option<TypeAST>,
         position: Position,
     },
 }

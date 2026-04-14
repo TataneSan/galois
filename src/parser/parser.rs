@@ -97,6 +97,7 @@ impl Parser {
             Token::Fonction => self.parser_fonction(),
             Token::Classe => self.parser_classe(),
             Token::Interface => self.parser_interface(),
+            Token::Externe => self.parser_externe(),
             Token::Si => self.parser_si(),
             Token::TantQue => self.parser_tantque(),
             Token::Pour => self.parser_pour(),
@@ -438,6 +439,33 @@ impl Parser {
                 }
                 self.attendre(&Token::ParenthèseFermante, "Attendu ')'")?;
                 Ok(TypeAST::Tuple(types))
+            }
+            Token::PointeurType => {
+                self.avancer();
+                self.attendre(&Token::Inférieur, "Attendu '<' après 'pointeur'")?;
+                let type_interne = self.parser_type()?;
+                self.attendre(&Token::Supérieur, "Attendu '>'")?;
+                Ok(TypeAST::Pointeur(Box::new(type_interne)))
+            }
+            Token::PointeurVideType => {
+                self.avancer();
+                Ok(TypeAST::PointeurVide)
+            }
+            Token::CIntType => {
+                self.avancer();
+                Ok(TypeAST::CInt)
+            }
+            Token::CLongType => {
+                self.avancer();
+                Ok(TypeAST::CLong)
+            }
+            Token::CDoubleType => {
+                self.avancer();
+                Ok(TypeAST::CDouble)
+            }
+            Token::CCharType => {
+                self.avancer();
+                Ok(TypeAST::CChar)
             }
             t => Err(Erreur::syntaxique(
                 self.position_actuelle(),
@@ -1109,6 +1137,50 @@ impl Parser {
         Ok(InstrAST::Importe {
             chemin,
             symboles,
+            position,
+        })
+    }
+
+    fn parser_externe(&mut self) -> Resultat<InstrAST> {
+        let position = self.position_actuelle();
+        self.avancer();
+
+        let convention = match self.token_actuel().clone() {
+            Token::Texte(s) => {
+                self.avancer();
+                s
+            }
+            _ => "c".to_string(),
+        };
+
+        self.attendre(&Token::Fonction, "Attendu 'fonction' après 'externe'")?;
+
+        let nom = match self.avancer() {
+            Token::Identifiant(n) => n,
+            t => {
+                return Err(Erreur::syntaxique(
+                    self.position_actuelle(),
+                    &format!("Attendu nom de fonction externe, obtenu: {}", t),
+                ))
+            }
+        };
+
+        self.attendre(&Token::ParenthèseOuvrante, "Attendu '('")?;
+        let paramètres = self.parser_paramètres()?;
+        self.attendre(&Token::ParenthèseFermante, "Attendu ')'")?;
+
+        let type_retour = if self.token_actuel() == &Token::Flèche {
+            self.avancer();
+            Some(self.parser_type()?)
+        } else {
+            None
+        };
+
+        Ok(InstrAST::Externe {
+            nom,
+            convention,
+            paramètres,
+            type_retour,
             position,
         })
     }

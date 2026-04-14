@@ -75,6 +75,14 @@ impl Scanner {
         mots_clés.insert("exporte", Token::Exporte);
         mots_clés.insert("depuis", Token::Depuis);
 
+        mots_clés.insert("externe", Token::Externe);
+        mots_clés.insert("pointeur", Token::PointeurType);
+        mots_clés.insert("pointeur_vide", Token::PointeurVideType);
+        mots_clés.insert("c_int", Token::CIntType);
+        mots_clés.insert("c_long", Token::CLongType);
+        mots_clés.insert("c_double", Token::CDoubleType);
+        mots_clés.insert("c_char", Token::CCharType);
+
         mots_clés.insert("soit", Token::Soit);
         mots_clés.insert("constante", Token::Constante);
         mots_clés.insert("mutable", Token::Mutable);

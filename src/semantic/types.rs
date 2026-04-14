@@ -23,6 +23,13 @@ pub enum Type {
     Paramétré(String, Vec<Type>),
     Inconnu,
     Variable(u64),
+    Pointeur(Box<Type>),
+    PointeurVide,
+    CInt,
+    CLong,
+    CDouble,
+    CChar,
+    Externe(String, Vec<Type>, Box<Type>),
 }
 
 impl fmt::Display for Type {
@@ -81,6 +88,22 @@ impl fmt::Display for Type {
             }
             Type::Inconnu => write!(f, "?"),
             Type::Variable(id) => write!(f, "T{}", id),
+            Type::Pointeur(inner) => write!(f, "pointeur<{}>", inner),
+            Type::PointeurVide => write!(f, "pointeur_vide"),
+            Type::CInt => write!(f, "c_int"),
+            Type::CLong => write!(f, "c_long"),
+            Type::CDouble => write!(f, "c_double"),
+            Type::CChar => write!(f, "c_char"),
+            Type::Externe(nom, params, ret) => {
+                write!(f, "externe {}(", nom)?;
+                for (i, p) in params.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", p)?;
+                }
+                write!(f, ") -> {}", ret)
+            }
         }
     }
 }

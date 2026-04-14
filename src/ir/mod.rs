@@ -53,6 +53,13 @@ impl From<&Type> for IRType {
             Type::Paramétré(nom, _) => IRType::Struct(nom.clone(), Vec::new()),
             Type::Inconnu => IRType::Vide,
             Type::Variable(_) => IRType::Vide,
+            Type::Pointeur(inner) => IRType::Pointeur(Box::new(IRType::from(inner.as_ref()))),
+            Type::PointeurVide => IRType::Pointeur(Box::new(IRType::Entier)),
+            Type::CInt => IRType::Entier,
+            Type::CLong => IRType::Entier,
+            Type::CDouble => IRType::Décimal,
+            Type::CChar => IRType::Entier,
+            Type::Externe(_, _, ret) => IRType::from(ret.as_ref()),
         }
     }
 }

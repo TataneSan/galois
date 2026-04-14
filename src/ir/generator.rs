@@ -202,6 +202,14 @@ impl GénérateurIR {
             TypeAST::Classe(nom) => Type::Classe(nom.clone(), None),
             TypeAST::Interface(nom) => Type::Interface(nom.clone()),
             TypeAST::Paramétré(nom, _) => Type::Classe(nom.clone(), None),
+            TypeAST::Pointeur(inner) => {
+                Type::Classe(format!("pointeur_{}", self.convertir_type_ast(inner)), None)
+            }
+            TypeAST::PointeurVide => Type::Classe("pointeur_vide".to_string(), None),
+            TypeAST::CInt => Type::Entier,
+            TypeAST::CLong => Type::Entier,
+            TypeAST::CDouble => Type::Décimal,
+            TypeAST::CChar => Type::Entier,
         }
     }
 
