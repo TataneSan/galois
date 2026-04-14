@@ -114,3 +114,33 @@ galois init mon_projet
 cd mon_projet
 galois run principal.gal
 ```
+
+## Comprendre les Erreurs
+
+Galois fournit des diagnostics détaillés avec des snippets de code:
+
+```bash
+galois build programme.gal
+```
+
+Exemple d'erreur:
+
+```
+Erreur de type[E004]: type incompatible
+  --> programme.gal:5:9
+   |
+5  | soit x: entier = "texte"
+   |         ^^^^^^^ attendu entier, trouvé texte
+   |
+   = suggestion: utilisez une valeur entière
+```
+
+Les avertissements (warnings) signalent les problèmes non bloquants:
+
+```
+Avertissement[W001]: variable non utilisée
+  --> programme.gal:3:5
+   |
+3  | soit inutilisé = 42
+   |     ^ la variable 'inutilisé' n'est jamais utilisée
+```

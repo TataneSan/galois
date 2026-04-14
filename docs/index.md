@@ -14,6 +14,7 @@ Galois a été conçu avec les principes suivants :
 - **POO optionnelle** — Classes, héritage, interfaces, méthodes abstraites et virtuelles
 - **Interopérabilité C** — Appels de fonctions C natives via FFI
 - **Ramasse-miettes** — Collecte automatique de la mémoire
+- **Diagnostics avancés** — Messages d'erreur contextuels avec snippets de code et suggestions
 
 ## Exemple rapide
 
