@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
-use crate::error::{Erreur, Position, Resultat};
+use crate::error::{Erreur, Position, Resultat, Snippet};
 use crate::lexer::token::{Token, TokenAvecPosition};
 
 pub struct Scanner {
     source: Vec<char>,
+    source_str: String,
     position: usize,
     ligne: usize,
     colonne: usize,

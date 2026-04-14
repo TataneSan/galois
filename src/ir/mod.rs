@@ -95,7 +95,32 @@ pub enum IRValeur {
     Nul,
     Référence(String),
     Index(Box<IRValeur>, Box<IRValeur>),
-    Membre(Box<IRValeur>, String),
+    Membre {
+        objet: Box<IRValeur>,
+        membre: String,
+        classe: String,
+        type_membre: IRType,
+    },
+    AccèsDictionnaire {
+        dictionnaire: Box<IRValeur>,
+        clé: Box<IRValeur>,
+        type_clé: IRType,
+        type_valeur: IRType,
+    },
+    InitialisationDictionnaire {
+        paires: Vec<(IRValeur, IRValeur)>,
+        type_clé: IRType,
+        type_valeur: IRType,
+    },
+    AppelMéthode {
+        objet: Box<IRValeur>,
+        base: String,
+        est_interface: bool,
+        méthode: String,
+        arguments: Vec<IRValeur>,
+        types_arguments: Vec<IRType>,
+        type_retour: IRType,
+    },
     Opération(IROp, Box<IRValeur>, Option<Box<IRValeur>>),
     Appel(String, Vec<IRValeur>),
     Allocation(IRType),
@@ -104,6 +129,34 @@ pub enum IRValeur {
     Stocker(Box<IRValeur>, Box<IRValeur>),
     Transtypage(Box<IRValeur>, IRType),
     Phi(Vec<(IRValeur, String)>),
+    InitialisationTuple {
+        éléments: Vec<IRValeur>,
+        types: Vec<IRType>,
+    },
+    AccèsTuple {
+        tuple: Box<IRValeur>,
+        index: usize,
+        types: Vec<IRType>,
+    },
+    Slice {
+        objet: Box<IRValeur>,
+        début: Option<Box<IRValeur>>,
+        fin: Option<Box<IRValeur>>,
+        pas: Option<Box<IRValeur>>,
+        type_élément: IRType,
+    },
+    FonctionAnonyme {
+        nom: String,
+        paramètres: Vec<(String, IRType)>,
+        corps: Box<IRValeur>,
+        type_retour: IRType,
+        captures: Vec<(String, IRType)>,
+    },
+    Clôture {
+        fn_ptr: String,
+        env_ptr: Box<IRValeur>,
+        captures: Vec<(String, IRType)>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -160,6 +213,8 @@ pub struct IRFonction {
 #[derive(Debug, Clone)]
 pub struct IRStruct {
     pub nom: String,
+    pub parent: Option<String>,
+    pub interfaces: Vec<String>,
     pub champs: Vec<(String, IRType)>,
 }
 

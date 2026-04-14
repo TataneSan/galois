@@ -695,7 +695,7 @@ impl Parser {
                 self.avancer();
                 Ok(PatternAST::LittéralBooléen(v, position))
             }
-            Token::Nul => {
+            Token::Nul | Token::NulType => {
                 self.avancer();
                 Ok(PatternAST::Nul(position))
             }
@@ -1540,7 +1540,7 @@ impl Parser {
                 self.avancer();
                 Ok(ExprAST::LittéralBooléen(v, position))
             }
-            Token::Nul => {
+            Token::Nul | Token::NulType => {
                 self.avancer();
                 Ok(ExprAST::LittéralNul(position))
             }
