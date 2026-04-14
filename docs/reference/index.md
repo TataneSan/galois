@@ -2,7 +2,7 @@
 
 Cette section contient la documentation complète de la syntaxe et des fonctionnalités du langage Galois.
 
-## 📖 Documentation
+## Documentation
 
 ### Langage
 
@@ -30,13 +30,11 @@ Cette section contient la documentation complète de la syntaxe et des fonctionn
 | [FFI](ffi.md) | Interopérabilité avec C |
 | [Diagnostics](diagnostics.md) | Erreurs, warnings, messages |
 
-## 🔍 Recherche rapide
+## Recherche rapide
 
-!!! tip "Conseil"
+Utilisez la barre de recherche (raccourci `Ctrl+K` ou `Cmd+K`) pour trouver rapidement ce que vous cherchez.
 
-    Utilisez la barre de recherche (raccourci `Ctrl+K` ou `Cmd+K`) pour trouver rapidement ce que vous cherchez.
-
-## 📋 Table des matières rapide
+## Table des matières rapide
 
 ### Types primitifs
 

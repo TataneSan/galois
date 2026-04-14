@@ -2,7 +2,7 @@
 
 Galois inclut une bibliothèque standard riche pour faciliter le développement.
 
-## 📦 Modules disponibles
+## Modules disponibles
 
 | Module | Description | Fonctions |
 |--------|-------------|-----------|
@@ -11,7 +11,7 @@ Galois inclut une bibliothèque standard riche pour faciliter le développement.
 | [entrée_sortie](entree-sortie.md) | Lecture/écriture | ~5 |
 | [collections](collections.md) | Utilitaires collections | ~10 |
 
-## 🚀 Utilisation
+## Utilisation
 
 ```galois
 -- Les fonctions de la bibliothèque standard sont disponibles globalement
@@ -20,9 +20,9 @@ soit s = texte.majuscule("hello")   -- "HELLO"
 afficher(x)
 ```
 
-## 📚 Contenu par module
+## Contenu par module
 
-### 📐 maths
+### maths
 
 | Catégorie | Fonctions |
 |-----------|-----------|
@@ -34,7 +34,7 @@ afficher(x)
 | Aléatoire | `aleatoire`, `aleatoire_entier` |
 | Statistiques | `moyenne`, `médiane`, `écart_type`, `variance` |
 
-### 📝 texte
+### texte
 
 | Fonction | Description |
 |----------|-------------|
@@ -46,7 +46,7 @@ afficher(x)
 | `compte` | Compter les occurrences |
 | `remplace_tous` | Remplacer toutes les occurrences |
 
-### 📥 entrée_sortie
+### entrée_sortie
 
 | Fonction | Description |
 |----------|-------------|
@@ -56,7 +56,7 @@ afficher(x)
 | `lire_décimal` | Lire un décimal |
 | `formater` | Formater une chaîne |
 
-### 📋 collections
+### collections
 
 | Fonction | Description |
 |----------|-------------|
@@ -68,7 +68,7 @@ afficher(x)
 | `trier_par` | Trier avec clé |
 | `partition` | Partitionner selon prédicat |
 
-## 🎯 Classes utilitaires
+## Classes utilitaires
 
 ### maths.Complexe
 

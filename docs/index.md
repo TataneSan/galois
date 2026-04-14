@@ -1,38 +1,34 @@
 # Bienvenue dans Galois
 
-<div class="centered">
-  <img src="assets/logo.svg" alt="Galois Logo" width="200" style="display: none;">
-</div>
-
-**Galois** est un langage de programmation compilé, entièrement écrit en français, qui compile vers du code natif via LLVM.
+**Galois** est un langage de programmation compilé, entierement ecrit en francais, qui compile vers du code natif via LLVM.
 
 !!! tip "Version actuelle: 0.1.0"
 
-    Galois est en développement actif. Consultez le [Changelog](CHANGELOG.md) pour les dernières modifications.
+    Galois est en developpement actif. Consultez le [Changelog](CHANGELOG.md) pour les dernieres modifications.
 
 ---
 
-## ✨ Pourquoi Galois ?
+## Pourquoi Galois ?
 
-| 🇫🇷 **Langue française** | 🚀 **Performance native** |
-|:------------------------:|:-------------------------:|
-| Tous les mots-clés, types et messages d'erreur en français | Compilation via LLVM IR pour des performances optimales |
+| **Langue francaise** | **Performance native** |
+|:--------------------:|:----------------------:|
+| Tous les mots-cles, types et messages d'erreur en francais | Compilation via LLVM IR pour des performances optimales |
 
-| 🔒 **Typage statique** | 🧩 **POO optionnelle** |
-|:----------------------:|:----------------------:|
-| Avec inférence de types pour alléger l'écriture | Classes, héritage, interfaces, méthodes virtuelles |
+| **Typage statique** | **POO optionnelle** |
+|:-------------------:|:-------------------:|
+| Avec inference de types pour alleger l'ecriture | Classes, heritage, interfaces, methodes virtuelles |
 
-| 🔗 **Interopérabilité C** | 🗑️ **Ramasse-miettes** |
-|:-------------------------:|:----------------------:|
-| Appels de fonctions C natives via FFI | Collecte automatique de la mémoire |
+| **Interoperabilite C** | **Ramasse-miettes** |
+|:----------------------:|:------------------:|
+| Appels de fonctions C natives via FFI | Collecte automatique de la memoire |
 
-| 📊 **Collections riches** | 🎯 **Diagnostics avancés** |
-|:-------------------------:|:--------------------------:|
+| **Collections riches** | **Diagnostics avances** |
+|:----------------------:|:-----------------------:|
 | Liste, dictionnaire, ensemble, pile, file, tuple... | Messages contextuels avec snippets et suggestions |
 
 ---
 
-## 🚀 Exemple rapide
+## Exemple rapide
 
 ```galois
 -- Calcul de factorielle avec récursivité
@@ -73,7 +69,7 @@ afficher(rex.parler())  -- Wouf! Je suis Rex
 
 ---
 
-## 📦 Installation
+## Installation
 
 ```bash
 # Cloner et compiler
@@ -87,47 +83,47 @@ cargo build --release
 
 ---
 
-## 🗺️ Par où commencer ?
+## Par ou commencer ?
 
 <div class="grid cards" markdown>
 
-- :material-rocket-launch: **Démarrage rapide**
+- **Demarrage rapide**
 
     ---
 
-    Créez votre premier programme en 5 minutes
+    Creez votre premier programme en 5 minutes
     
-    [:octicons-arrow-right-24: Commencer](guides/demarrage.md)
+    [Commencer](guides/demarrage.md)
 
-- :material-book-open-page-variant: **Référence du langage**
+- **Reference du langage**
 
     ---
 
-    Documentation complète de la syntaxe et des types
+    Documentation complete de la syntaxe et des types
     
-    [:octicons-arrow-right-24: Consulter](reference/langage.md)
+    [Consulter](reference/langage.md)
 
-- :material-puzzle: **Bibliothèque standard**
+- **Bibliotheque standard**
 
     ---
 
-    Fonctions mathématiques, texte, collections...
+    Fonctions mathematiques, texte, collections...
     
-    [:octicons-arrow-right-24: Explorer](stdlib/maths.md)
+    [Explorer](stdlib/maths.md)
 
-- :material-tools: **Outils CLI**
+- **Outils CLI**
 
     ---
 
-    Compiler, exécuter, déboguer vos programmes
+    Compiler, executer, deboguer vos programmes
     
-    [:octicons-arrow-right-24: Découvrir](reference/cli.md)
+    [Decouvrir](reference/cli.md)
 
 </div>
 
 ---
 
-## 💡 Exemples de fonctionnalités
+## Exemples de fonctionnalites
 
 ### Pattern Matching
 
@@ -163,29 +159,29 @@ printf("Bonjour depuis C!\n")
 
 ---
 
-## 📈 Statistiques
+## Statistiques
 
-| Métrique | Valeur |
+| Metrique | Valeur |
 |----------|--------|
 | Types primitifs | 6 |
 | Types collections | 8 |
-| Mots-clés | ~90 |
-| Opérateurs | 25+ |
+| Mots-cles | ~90 |
+| Operateurs | 25+ |
 | Fonctions stdlib | 60+ |
 | Tests | 51 |
 
 ---
 
-## 🤝 Contribuer
+## Contribuer
 
 Les contributions sont les bienvenues ! 
 
 - Signalez des bugs sur [GitHub Issues](https://github.com/TataneSan/galois/issues)
-- Proposez des améliorations
+- Proposez des ameliorations
 - Soumettez des pull requests
 
 ---
 
-## 📄 Licence
+## Licence
 
 MIT License - voir [LICENSE](https://github.com/TataneSan/galois/blob/master/LICENSE)

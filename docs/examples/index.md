@@ -2,7 +2,7 @@
 
 Cette section présente des exemples complets pour illustrer les fonctionnalités de Galois.
 
-## 📋 Exemples disponibles
+## Exemples disponibles
 
 ### Programmes complets
 
@@ -10,9 +10,9 @@ Cette section présente des exemples complets pour illustrer les fonctionnalité
 |-----------|-------------|----------|
 | [Programmes complets](programmes.md) | Applications complètes | Tous |
 
-## 🎯 Exemples par catégorie
+## Exemples par categorie
 
-### 🔢 Algorithmes classiques
+### Algorithmes classiques
 
 #### Factorielle (récursif)
 
@@ -62,7 +62,7 @@ fin
 afficher("Temps de vol pour 27: " + texte(syracuse(27)))
 ```
 
-### 📊 Manipulation de données
+### Manipulation de donnees
 
 #### Traitement de liste
 
@@ -104,7 +104,7 @@ pour clé, valeur dans freq faire
 fin
 ```
 
-### 🎮 Jeux et simulations
+### Jeux et simulations
 
 #### Deviner un nombre
 
@@ -134,7 +134,7 @@ fin
 jeu_deviner()
 ```
 
-### 🧮 Mathématiques
+### Mathematiques
 
 #### Calcul de π (Monte Carlo)
 
@@ -187,7 +187,7 @@ fin
 afficher(premiers_jusque(100))
 ```
 
-### 🏗️ Programmation Orientée Objet
+### Programmation Orientee Objet
 
 #### Gestionnaire de tâches
 
@@ -212,7 +212,7 @@ classe Tâche
     fin
     
     publique fonction vers_texte(): texte
-        soit statut = si ceci.complétée alors "[✓]" sinon "[ ]" fin
+        soit statut = si ceci.complétée alors "[X]" sinon "[ ]" fin
         retourne statut + " " + ceci.titre
     fin
 fin
@@ -248,7 +248,7 @@ gestionnaire.compléter(0)
 gestionnaire.afficher_toutes()
 ```
 
-### 📁 Entrée/Sortie
+### Entree/Sortie
 
 #### Lecture et écriture de fichier
 
@@ -270,7 +270,7 @@ fonction écrire_fichier(chemin: texte, contenu: texte)
 fin
 ```
 
-## 💡 Bonnes pratiques
+## Bonnes pratiques
 
 ### Organisation du code
 
@@ -314,7 +314,7 @@ fonction diviser(a: décimal, b: décimal): décimal
 fin
 ```
 
-## 📚 Voir aussi
+## Voir aussi
 
 - [Référence du langage](../reference/langage.md)
 - [Bibliothèque standard](../stdlib/maths.md)
