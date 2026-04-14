@@ -3,6 +3,7 @@ mod compiler;
 mod error;
 mod ir;
 mod lexer;
+mod package;
 mod parser;
 mod runtime;
 mod semantic;
@@ -17,6 +18,7 @@ use compiler::{CompilateurNatif, OptionsCompilation};
 use error::Resultat;
 use ir::GénérateurIR;
 use lexer::Scanner;
+use package::GestionnairePaquets;
 use parser::Parser;
 use semantic::Vérificateur;
 
@@ -45,6 +47,13 @@ enum Commande {
     },
     IR {
         entrée: String,
+    },
+    Init {
+        nom: String,
+    },
+    Add {
+        nom: String,
+        version: String,
     },
     Aide,
 }
@@ -135,6 +144,24 @@ fn analyser_arguments() -> Commande {
             }
         }
         "aide" | "help" | "-h" | "--help" => Commande::Aide,
+        "init" | "nouveau" => {
+            if args.len() < 3 {
+                eprintln!("Erreur: nom du projet requis");
+                process::exit(1);
+            }
+            Commande::Init {
+                nom: args[2].clone(),
+            }
+        }
+        "add" | "ajouter" => {
+            if args.len() < 3 {
+                eprintln!("Erreur: nom du paquet requis");
+                process::exit(1);
+            }
+            let nom = args[2].clone();
+            let version = args.get(3).cloned().unwrap_or_else(|| "*".to_string());
+            Commande::Add { nom, version }
+        }
         _ => {
             eprintln!("Commande inconnue: {}", args[1]);
             process::exit(1);
@@ -161,6 +188,8 @@ fn afficher_aide() {
     println!("  build, b <fichier> [-o sortie] [--release]  Compiler vers exécutable natif");
     println!("  run, r <fichier> [--release]                 Compiler et exécuter");
     println!("  compiler, comp, c <fichier> [-o sortie]     Compiler vers LLVM IR");
+    println!("  init, nouveau <nom>                         Créer un nouveau projet");
+    println!("  add, ajouter <paquet> [version]             Ajouter une dépendance");
     println!("  lexer, lex <fichier>                        Afficher les tokens");
     println!("  parser, parse, p <fichier>                  Afficher l'AST");
     println!("  vérifier, v <fichier>                       Vérifier les types");
@@ -173,9 +202,11 @@ fn afficher_aide() {
     println!("  --keep                  Garder les fichiers intermédiaires");
     println!();
     println!("EXEMPLES:");
+    println!("  gallois init mon_projet");
     println!("  gallois build programme.gal");
     println!("  gallois build programme.gal --release -o app");
     println!("  gallois run programme.gal");
+    println!("  gallois add maths 1.0");
     println!("  gallois compiler programme.gal -o programme.ll");
     println!("  gallois lexer programme.gal");
     println!("  gallois parser programme.gal");
@@ -551,6 +582,14 @@ fn main() {
             release,
         } => exécuter_build(&entrée, sortie, release),
         Commande::Run { entrée, release } => exécuter_run(&entrée, release),
+        Commande::Init { nom } => {
+            let gestionnaire = GestionnairePaquets::nouveau(Path::new("."));
+            gestionnaire.initialiser_projet(&nom)
+        }
+        Commande::Add { nom, version } => {
+            let gestionnaire = GestionnairePaquets::nouveau(Path::new("."));
+            gestionnaire.ajouter_dépendance(&nom, &version)
+        }
         Commande::Compiler { entrée, sortie } => exécuter_compilation(&entrée, &sortie),
         Commande::Lexer { entrée } => exécuter_lexer(&entrée),
         Commande::Parser { entrée } => exécuter_parser(&entrée),
