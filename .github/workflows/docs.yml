@@ -30,10 +30,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: |
-          pip install mkdocs-material
-          pip install mkdocs
-          pip install pymdown-extensions
+        run: pip install -r requirements.txt
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
