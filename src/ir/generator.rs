@@ -2,6 +2,7 @@ use crate::ir::{IRBloc, IRFonction, IRInstruction, IRModule, IROp, IRStruct, IRT
 use crate::parser::ast::*;
 use crate::semantic::symbols::{GenreSymbole, TableSymboles};
 use crate::semantic::types::Type;
+use std::collections::HashMap;
 
 pub struct GénérateurIR {
     compteur_temp: usize,
@@ -9,6 +10,7 @@ pub struct GénérateurIR {
     table: TableSymboles,
     bloc_courant: Vec<IRInstruction>,
     classe_courante: Option<String>,
+    classes_dynamiques: HashMap<String, String>,
 }
 
 impl GénérateurIR {
@@ -19,6 +21,7 @@ impl GénérateurIR {
             table,
             bloc_courant: Vec::new(),
             classe_courante: None,
+            classes_dynamiques: HashMap::new(),
         }
     }
 
@@ -87,6 +90,10 @@ impl GénérateurIR {
     }
 
     fn classe_pour_identifiant(&self, nom: &str) -> Option<String> {
+        if let Some(classe) = self.classes_dynamiques.get(nom) {
+            return Some(classe.clone());
+        }
+
         self.table
             .chercher(nom)
             .and_then(|symbole| match &symbole.genre {
@@ -102,6 +109,15 @@ impl GénérateurIR {
         match expr {
             ExprAST::Identifiant(nom, _) => self.classe_pour_identifiant(nom),
             ExprAST::Nouveau { classe, .. } => Some(classe.clone()),
+            ExprAST::Ceci(_) => self.classe_courante.clone(),
+            _ => None,
+        }
+    }
+
+    fn classe_dynamique_depuis_expr(&self, expr: &ExprAST) -> Option<String> {
+        match expr {
+            ExprAST::Nouveau { classe, .. } => Some(classe.clone()),
+            ExprAST::Identifiant(nom, _) => self.classe_pour_identifiant(nom),
             ExprAST::Ceci(_) => self.classe_courante.clone(),
             _ => None,
         }
@@ -387,18 +403,31 @@ impl GénérateurIR {
                         type_var: type_ir.clone(),
                     });
                     if let Some(v) = valeur {
+                        if let Some(classe_dyn) = self.classe_dynamique_depuis_expr(v) {
+                            self.classes_dynamiques.insert(nom.clone(), classe_dyn);
+                        } else {
+                            self.classes_dynamiques.remove(nom);
+                        }
                         let val = self.générer_expression(v);
                         instructions.push(IRInstruction::Affecter {
                             destination: nom.clone(),
                             valeur: val,
                             type_var: type_ir,
                         });
+                    } else {
+                        self.classes_dynamiques.remove(nom);
                     }
                 }
                 InstrAST::Affectation { cible, valeur, .. } => {
+                    let classe_dyn_valeur = self.classe_dynamique_depuis_expr(valeur);
                     let val = self.générer_expression(valeur);
                     match cible {
                         ExprAST::Identifiant(nom, _) => {
+                            if let Some(classe_dyn) = classe_dyn_valeur {
+                                self.classes_dynamiques.insert(nom.clone(), classe_dyn);
+                            } else {
+                                self.classes_dynamiques.remove(nom);
+                            }
                             let type_ir = self.chercher_type_var(nom);
                             instructions.push(IRInstruction::Affecter {
                                 destination: nom.clone(),
@@ -572,17 +601,30 @@ impl GénérateurIR {
                     type_var: type_ir.clone(),
                 });
                 if let Some(v) = valeur {
+                    if let Some(classe_dyn) = self.classe_dynamique_depuis_expr(v) {
+                        self.classes_dynamiques.insert(nom.clone(), classe_dyn);
+                    } else {
+                        self.classes_dynamiques.remove(nom);
+                    }
                     let val = self.générer_expression(v);
                     result.push(IRInstruction::Affecter {
                         destination: nom.clone(),
                         valeur: val,
                         type_var: type_ir,
                     });
+                } else {
+                    self.classes_dynamiques.remove(nom);
                 }
             }
             InstrAST::Affectation { cible, valeur, .. } => {
+                let classe_dyn_valeur = self.classe_dynamique_depuis_expr(valeur);
                 let val = self.générer_expression(valeur);
                 if let ExprAST::Identifiant(nom, _) = cible {
+                    if let Some(classe_dyn) = classe_dyn_valeur {
+                        self.classes_dynamiques.insert(nom.clone(), classe_dyn);
+                    } else {
+                        self.classes_dynamiques.remove(nom);
+                    }
                     let type_ir = self.chercher_type_var(nom);
                     result.push(IRInstruction::Affecter {
                         destination: nom.clone(),

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::Write;
 
 use crate::ir::{IRBloc, IRFonction, IRInstruction, IRModule, IROp, IRStruct, IRType, IRValeur};
@@ -8,6 +9,7 @@ pub struct GénérateurLLVM {
     compteur_label: usize,
     chaînes: Vec<(String, String)>,
     compteur_chaînes: usize,
+    signatures_fonctions: HashMap<String, (Vec<IRType>, IRType)>,
 }
 
 impl GénérateurLLVM {
@@ -18,6 +20,7 @@ impl GénérateurLLVM {
             compteur_label: 0,
             chaînes: Vec::new(),
             compteur_chaînes: 0,
+            signatures_fonctions: HashMap::new(),
         }
     }
 
@@ -55,7 +58,7 @@ impl GénérateurLLVM {
             IRType::Ensemble(_) => "{ i64, i8* }".to_string(),
             IRType::Tuple(_) => "{ i64, i8* }".to_string(),
             IRType::Fonction(_, _) => "i8*".to_string(),
-            IRType::Struct(nom, _) => format!("%struct.{}", nom),
+            IRType::Struct(_, _) => "i8*".to_string(),
             IRType::Pointeur(inner) => format!("{}*", self.type_llvm(inner)),
             IRType::Référence(inner) => format!("{}*", self.type_llvm(inner)),
         }
@@ -83,6 +86,17 @@ impl GénérateurLLVM {
         self.sortie.clear();
         self.chaînes.clear();
         self.compteur_chaînes = 0;
+        self.signatures_fonctions.clear();
+
+        for f in &module.fonctions {
+            self.signatures_fonctions.insert(
+                f.nom.clone(),
+                (
+                    f.paramètres.iter().map(|(_, t)| t.clone()).collect(),
+                    f.type_retour.clone(),
+                ),
+            );
+        }
 
         self.écrire("; Module Gallois - Généré par le compilateur\n");
         self.écrire("target triple = \"x86_64-pc-linux-gnu\"\n\n");
@@ -241,7 +255,15 @@ impl GénérateurLLVM {
             for a in &param_allocas {
                 self.écrire(a);
             }
-            self.écrire("  ret void\n");
+            if matches!(f.type_retour, IRType::Vide) {
+                self.écrire("  ret void\n");
+            } else {
+                self.écrire(&format!(
+                    "  ret {} {}\n",
+                    self.type_llvm_stockage(&f.type_retour),
+                    self.valeur_retour_neutre(&f.type_retour)
+                ));
+            }
         } else {
             for (i, bloc) in f.blocs.iter().enumerate() {
                 self.écrire(&format!("{}:\n", bloc.nom));
@@ -262,10 +284,14 @@ impl GénérateurLLVM {
                     )
                 });
                 if !a_terminateur {
-                    if self.type_llvm(&f.type_retour) == "void" {
+                    if matches!(f.type_retour, IRType::Vide) {
                         self.écrire("  ret void\n");
                     } else {
-                        self.écrire(&format!("  ret {} 0\n", self.type_llvm(&f.type_retour)));
+                        self.écrire(&format!(
+                            "  ret {} {}\n",
+                            self.type_llvm_stockage(&f.type_retour),
+                            self.valeur_retour_neutre(&f.type_retour)
+                        ));
                     }
                 }
             }
@@ -298,7 +324,11 @@ impl GénérateurLLVM {
                 type_var,
             } => {
                 let type_stock = self.type_llvm_stockage(type_var);
-                let (reg, code) = self.générer_valeur(valeur);
+                let (reg, code) = if let IRValeur::Appel(nom, args) = valeur {
+                    self.générer_appel_typé(nom, args, type_var)
+                } else {
+                    self.générer_valeur(valeur)
+                };
                 if !code.is_empty() {
                     self.écrire(&code);
                 }
@@ -398,44 +428,154 @@ impl GénérateurLLVM {
                 arguments,
                 type_retour,
             } => {
-                let type_ret = self.type_llvm(type_retour);
-                let mut args_code = String::new();
-                let mut arg_regs = Vec::new();
-                for arg in arguments {
-                    let (reg, code) = self.générer_valeur(arg);
-                    if !code.is_empty() {
-                        self.écrire(&code);
-                    }
-                    arg_regs.push(reg);
-                }
                 if fonction == "afficher" {
-                    if let Some(arg_reg) = arg_regs.first() {
+                    if let Some(arg) = arguments.first() {
+                        let (arg_reg, arg_code) = self.générer_valeur(arg);
+                        if !arg_code.is_empty() {
+                            self.écrire(&arg_code);
+                        }
                         self.écrire(&format!(
                             "  call void @gal_afficher_entier(i64 {})\n",
                             arg_reg
                         ));
                     }
+                    return;
+                }
+
+                let signature = self
+                    .signatures_fonctions
+                    .get(fonction)
+                    .cloned()
+                    .unwrap_or((Vec::new(), type_retour.clone()));
+                let mut args_code = String::new();
+
+                for (i, arg) in arguments.iter().enumerate() {
+                    let type_arg = signature.0.get(i).cloned().unwrap_or(IRType::Entier);
+                    let (arg_reg, arg_instrs) = self.générer_valeur_pour_type(arg, &type_arg);
+                    if !arg_instrs.is_empty() {
+                        self.écrire(&arg_instrs);
+                    }
+                    if i > 0 {
+                        args_code.push_str(", ");
+                    }
+                    args_code.push_str(&format!(
+                        "{} {}",
+                        self.type_llvm_stockage(&type_arg),
+                        arg_reg
+                    ));
+                }
+
+                let type_ret = self.type_llvm_stockage(type_retour);
+                let nom_mangling = self.nom_llvm(fonction);
+
+                if matches!(type_retour, IRType::Vide) {
+                    self.écrire(&format!(
+                        "  call {} @{}({})\n",
+                        type_ret, nom_mangling, args_code
+                    ));
+                } else if let Some(dest) = destination {
+                    self.écrire(&format!(
+                        "  %{} = call {} @{}({})\n",
+                        dest, type_ret, nom_mangling, args_code
+                    ));
                 } else {
-                    let nom_mangling = self.nom_llvm(fonction);
-                    for (i, reg) in arg_regs.iter().enumerate() {
-                        if i > 0 {
-                            args_code.push_str(", ");
-                        }
-                        args_code.push_str(&format!("{} {}", type_ret, reg));
-                    }
-                    if let Some(dest) = destination {
-                        self.écrire(&format!(
-                            "  %{} = call {} @{}({})\n",
-                            dest, type_ret, nom_mangling, args_code
-                        ));
-                    } else {
-                        self.écrire(&format!(
-                            "  call {} @{}({})\n",
-                            type_ret, nom_mangling, args_code
-                        ));
-                    }
+                    let reg = self.reg_suivant();
+                    self.écrire(&format!(
+                        "  {} = call {} @{}({})\n",
+                        reg, type_ret, nom_mangling, args_code
+                    ));
                 }
             }
+        }
+    }
+
+    fn générer_valeur_pour_type(
+        &mut self,
+        val: &IRValeur,
+        type_attendu: &IRType,
+    ) -> (String, String) {
+        match val {
+            IRValeur::Appel(nom, args) => self.générer_appel_typé(nom, args, type_attendu),
+            IRValeur::Référence(nom) => {
+                let reg = self.reg_suivant();
+                let type_stock = self.type_llvm_stockage(type_attendu);
+                let code = format!(
+                    "  {} = load {}, {}* {}\n",
+                    reg,
+                    type_stock,
+                    type_stock,
+                    self.nom_var_llvm(nom)
+                );
+                (reg, code)
+            }
+            _ => self.générer_valeur(val),
+        }
+    }
+
+    fn générer_appel_typé(
+        &mut self,
+        nom: &str,
+        args: &[IRValeur],
+        type_retour_attendu: &IRType,
+    ) -> (String, String) {
+        let mut code = String::new();
+
+        if nom == "afficher" {
+            if let Some(premier) = args.first() {
+                let (arg_reg, arg_code) = self.générer_valeur(premier);
+                if !arg_code.is_empty() {
+                    code.push_str(&arg_code);
+                }
+                code.push_str(&format!(
+                    "  call void @gal_afficher_entier(i64 {})\n",
+                    arg_reg
+                ));
+            }
+            return ("0".to_string(), code);
+        }
+
+        let signature = self
+            .signatures_fonctions
+            .get(nom)
+            .cloned()
+            .unwrap_or((Vec::new(), type_retour_attendu.clone()));
+
+        let mut args_str = String::new();
+        for (i, arg) in args.iter().enumerate() {
+            let type_arg = signature.0.get(i).cloned().unwrap_or(IRType::Entier);
+            let (arg_reg, arg_code) = self.générer_valeur_pour_type(arg, &type_arg);
+            if !arg_code.is_empty() {
+                code.push_str(&arg_code);
+            }
+            if i > 0 {
+                args_str.push_str(", ");
+            }
+            args_str.push_str(&format!(
+                "{} {}",
+                self.type_llvm_stockage(&type_arg),
+                arg_reg
+            ));
+        }
+
+        let type_ret = signature.1;
+        if matches!(type_ret, IRType::Vide) {
+            code.push_str(&format!(
+                "  call {} @{}({})\n",
+                self.type_llvm_stockage(&type_ret),
+                self.nom_llvm(nom),
+                args_str
+            ));
+            ("0".to_string(), code)
+        } else {
+            let reg = self.reg_suivant();
+            code.push_str(&format!(
+                "  {} = call {} @{}({})\n",
+                reg,
+                self.type_llvm_stockage(&type_ret),
+                self.nom_llvm(nom),
+                args_str
+            ));
+            (reg, code)
         }
     }
 
@@ -483,43 +623,7 @@ impl GénérateurLLVM {
                     }
                 }
             }
-            IRValeur::Appel(nom, args) => {
-                let mut code = String::new();
-                let mut arg_regs = Vec::new();
-                let mut arg_types = Vec::new();
-
-                for arg in args {
-                    let (reg, arg_code) = self.générer_valeur(arg);
-                    if !arg_code.is_empty() {
-                        code.push_str(&arg_code);
-                    }
-                    arg_regs.push(reg);
-                    arg_types.push("i64".to_string());
-                }
-
-                let reg = self.reg_suivant();
-
-                if nom == "afficher" {
-                    if let Some(arg_reg) = arg_regs.first() {
-                        code.push_str(&format!(
-                            "  call void @gal_afficher_entier(i64 {})\n",
-                            arg_reg
-                        ));
-                    }
-                    ("0".to_string(), code)
-                } else {
-                    let nom_ll = self.nom_llvm(nom);
-                    let mut args_str = String::new();
-                    for (i, (ty, r)) in arg_types.iter().zip(arg_regs.iter()).enumerate() {
-                        if i > 0 {
-                            args_str.push_str(", ");
-                        }
-                        args_str.push_str(&format!("{} {}", ty, r));
-                    }
-                    code.push_str(&format!("  {} = call i64 @{}({})\n", reg, nom_ll, args_str));
-                    (reg, code)
-                }
-            }
+            IRValeur::Appel(nom, args) => self.générer_appel_typé(nom, args, &IRType::Entier),
             IRValeur::Membre(obj, _champ) => {
                 let (_obj_reg, obj_code) = self.générer_valeur(obj);
                 let reg = self.reg_suivant();
@@ -576,6 +680,26 @@ impl GénérateurLLVM {
             IRValeur::Décimal(v) => v.to_string(),
             IRValeur::Booléen(v) => (if *v { 1 } else { 0 }).to_string(),
             IRValeur::Nul => "null".to_string(),
+            _ => "0".to_string(),
+        }
+    }
+
+    fn valeur_retour_neutre(&self, t: &IRType) -> String {
+        match t {
+            IRType::Décimal => "0.0".to_string(),
+            IRType::Booléen => "0".to_string(),
+            IRType::Texte | IRType::Nul | IRType::Pointeur(_) | IRType::Référence(_) => {
+                "null".to_string()
+            }
+            IRType::Struct(_, _) => "null".to_string(),
+            IRType::Tableau(_, _)
+            | IRType::Liste(_)
+            | IRType::Pile(_)
+            | IRType::File(_)
+            | IRType::ListeChaînée(_)
+            | IRType::Dictionnaire(_, _)
+            | IRType::Ensemble(_)
+            | IRType::Tuple(_) => "zeroinitializer".to_string(),
             _ => "0".to_string(),
         }
     }

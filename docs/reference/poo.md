@@ -99,6 +99,12 @@ classe Chat hérite Animal
 fin
 ```
 
+Règles vérifiées par le compilateur :
+
+- `surcharge` exige une classe parente
+- La méthode parente doit être `virtuelle` ou `abstraite`
+- Signature (paramètres + retour) compatible avec la méthode parente
+
 ## Méthodes abstraites et virtuelles
 
 ### Méthode abstraite
@@ -110,6 +116,39 @@ classe abstraite Forme
     abstraite fonction aire(): décimal
     abstraite fonction périmètre(): décimal
 fin
+```
+
+Règles vérifiées :
+
+- Une méthode `abstraite` ne peut apparaître que dans une `classe abstraite`
+- Une classe concrète doit implémenter toutes les méthodes abstraites héritées
+- Une classe qui `implémente` une interface doit fournir toutes les méthodes requises
+
+L'instanciation d'une classe abstraite est refusée :
+
+```galois
+soit f = nouveau Forme()  // Erreur
+```
+
+## Dispatch polymorphe
+
+Les appels de méthodes sur une référence de type parent sont résolus vers l'implémentation surchargeée quand le type concret est connu du compilateur.
+
+```galois
+classe Animal
+    publique virtuelle fonction parler(): entier
+        retourne 1
+    fin
+fin
+
+classe Chien hérite Animal
+    publique surcharge fonction parler(): entier
+        retourne 2
+    fin
+fin
+
+soit a: Animal = nouveau Chien()
+afficher(a.parler())  // 2
 ```
 
 ### Méthode virtuelle
