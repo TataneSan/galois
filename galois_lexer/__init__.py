@@ -1,0 +1,112 @@
+from pygments.lexer import RegexLexer, words
+from pygments.token import (
+    Comment,
+    Keyword,
+    Name,
+    Number,
+    Operator,
+    String,
+    Text,
+    Punctuation,
+)
+
+
+class GaloisLexer(RegexLexer):
+    name = "Galois"
+    aliases = ["galois", "gal"]
+    filenames = ["*.gal"]
+    mimetypes = ["text/x-galois"]
+
+    keywords = (
+        "si",
+        "alors",
+        "sinon",
+        "sinonsi",
+        "fin",
+        "tantque",
+        "pour",
+        "dans",
+        "faire",
+        "interrompre",
+        "continuer",
+        "selectionner",
+        "cas",
+        "pardefaut",
+        "fonction",
+        "retourne",
+        "recursif",
+        "asynchrone",
+        "attends",
+        "classe",
+        "herite",
+        "interface",
+        "implemente",
+        "constructeur",
+        "ceci",
+        "base",
+        "abstraite",
+        "virtuelle",
+        "surcharge",
+        "nouveau",
+        "publique",
+        "prive",
+        "protege",
+        "module",
+        "importe",
+        "exporte",
+        "depuis",
+        "externe",
+        "soit",
+        "constante",
+        "mutable",
+        "vrai",
+        "faux",
+        "nul",
+        "et",
+        "ou",
+        "non",
+    )
+
+    types = (
+        "entier",
+        "decimal",
+        "texte",
+        "booleen",
+        "nul",
+        "rien",
+        "tableau",
+        "liste",
+        "pile",
+        "file",
+        "liste_chainee",
+        "dictionnaire",
+        "ensemble",
+        "tuple",
+        "pointeur",
+        "pointeur_vide",
+        "c_int",
+        "c_long",
+        "c_double",
+        "c_char",
+    )
+
+    tokens = {
+        "root": [
+            (r"--.*$", Comment.Single),
+            (r"//.*$", Comment.Single),
+            (words(keywords, suffix=r"\b"), Keyword),
+            (words(types, suffix=r"\b"), Keyword.Type),
+            (r'"([^"\\]|\\.)*"', String.Double),
+            (r"'([^'\\]|\\.)*'", String.Single),
+            (r"\b\d+\.\d+\b", Number.Float),
+            (r"\b\d+\b", Number.Integer),
+            (r"[+\-*/%=<>!&|^~]+", Operator),
+            (r"\|\>", Operator),
+            (r"\.\.", Operator),
+            (r"->", Operator),
+            (r":", Punctuation),
+            (r"[(){}\[\],;]", Punctuation),
+            (r"[a-zA-Z_\x80-\xff][a-zA-Z0-9_\x80-\xff]*", Name),
+            (r"\s+", Text),
+        ]
+    }

@@ -94,7 +94,7 @@ impl Parser {
         match self.token_actuel().clone() {
             Token::Soit | Token::Mutable => self.parser_déclaration(),
             Token::Constante => self.parser_constante(),
-            Token::Fonction => self.parser_fonction(),
+            Token::Fonction | Token::Récursif | Token::Asynchrone => self.parser_fonction(),
             Token::Classe => self.parser_classe(),
             Token::Interface => self.parser_interface(),
             Token::Externe => self.parser_externe(),
@@ -199,7 +199,6 @@ impl Parser {
 
     fn parser_déclaration_fonction(&mut self) -> Resultat<DéclarationFonctionAST> {
         let position = self.position_actuelle();
-        self.avancer();
 
         let est_récursive = if self.token_actuel() == &Token::Récursif {
             self.avancer();
@@ -214,6 +213,10 @@ impl Parser {
         } else {
             false
         };
+
+        if self.token_actuel() == &Token::Fonction {
+            self.avancer();
+        }
 
         let nom = match self.avancer() {
             Token::Identifiant(n) => n,

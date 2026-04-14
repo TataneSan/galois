@@ -1,0 +1,20 @@
+classe Animal
+    publique nom: texte
+    
+    constructeur(nom: texte)
+        ceci.nom = nom
+    fin
+    
+    virtuelle fonction parler(): texte
+        retourne "..."
+    fin
+fin
+
+classe Chien hérite Animal
+    surcharge fonction parler(): texte
+        retourne "Wouf! Je suis " + ceci.nom
+    fin
+fin
+
+soit rex = nouveau Chien("Rex")
+afficher(rex.parler())

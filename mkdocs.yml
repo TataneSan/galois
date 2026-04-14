@@ -1,10 +1,9 @@
 site_name: Galois - Langage de programmation
-site_description: Langage de programmation compilé, écrit en français, compilé vers du natif via LLVM
+site_description: Langage de programmation compile, ecrit en francais
 site_author: Projet Galois
 site_url: https://tatanesan.github.io/galois/
 repo_url: https://github.com/TataneSan/galois
 repo_name: TataneSan/galois
-edit_uri: edit/master/docs/
 
 theme:
   name: material
@@ -13,7 +12,7 @@ theme:
     - media: "(prefers-color-scheme)"
       toggle:
         icon: material/brightness-auto
-        name: Suivre le thème système
+        name: Suivre le theme systeme
     - media: "(prefers-color-scheme: light)"
       scheme: default
       primary: indigo
@@ -34,135 +33,74 @@ theme:
     - navigation.expand
     - navigation.top
     - navigation.footer
-    - navigation.indexes
-    - navigation.instant
-    - navigation.tracking
     - search.suggest
     - search.highlight
-    - search.share
     - content.code.copy
-    - content.code.annotate
-    - content.code.select
-    - content.tabs.link
-    - content.tooltips
-    - header.autohide
-    - announce.dismiss
   font:
     text: Roboto
     code: JetBrains Mono
   icon:
     logo: material/code-braces
-    repo: fontawesome/brands/github
-    edit: material/file-edit-outline
-    view: material/file-eye-outline
 
 extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/TataneSan/galois
-      name: GitHub
-  analytics:
-    feedback:
-      title: Cette page vous a-t-elle aidé ?
-      ratings:
-        - icon: material/thumb-up
-          name: Utile
-          data: 1
-          note: Merci !
-        - icon: material/thumb-down
-          name: À améliorer
-          data: 0
-          note: Merci pour votre retour
-  version:
-    provider: mike
-    default: latest
 
 extra_css:
   - stylesheets/extra.css
-
-extra_javascript:
-  - javascripts/extra.js
 
 markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
       line_spans: __span
       pygments_lang_class: true
-      use_pygments: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
-      slugify: !!python/object/apply:pymdownx.slugs.slugify
-        kwds:
-          case: lower
-  - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.details
-  - pymdownx.keys
-  - pymdownx.mark
-  - pymdownx.tilde
-  - pymdownx.caret
-  - pymdownx.tasklist:
-      custom_checkbox: true
   - admonition
   - attr_list
-  - def_list
-  - md_in_html
   - tables
-  - footnotes
   - toc:
       permalink: true
-      title: Sur cette page
-  - abbr
-  - meta
 
 plugins:
   - search:
       lang: fr
-  - tags:
-      tags_file: tags.md
 
 nav:
   - Accueil: index.md
   - Guides:
     - guides/index.md
     - Installation: guides/installation.md
-    - Démarrage rapide: guides/demarrage.md
-    - Premiers pas: guides/premiers-pas.md
-  - Référence:
+    - Demarrage rapide: guides/demarrage.md
+  - Reference:
     - reference/index.md
     - Langage complet: reference/langage.md
     - Types: reference/types.md
     - Variables: reference/variables.md
     - Fonctions: reference/fonctions.md
-    - Structures de contrôle: reference/controle.md
-    - Opérateurs: reference/operateurs.md
+    - Structures de controle: reference/controle.md
+    - Operateurs: reference/operateurs.md
     - Programmation objet: reference/poo.md
     - Collections: reference/collections.md
     - Interfaces: reference/interfaces.md
     - Modules: reference/modules.md
     - FFI: reference/ffi.md
     - Diagnostics: reference/diagnostics.md
-  - Bibliothèque standard:
+  - Bibliotheque standard:
     - stdlib/index.md
-    - Mathématiques: stdlib/maths.md
+    - Mathematiques: stdlib/maths.md
     - Texte: stdlib/texte.md
-    - Entrée/Sortie: stdlib/entree-sortie.md
+    - Entree/Sortie: stdlib/entree-sortie.md
     - Collections: stdlib/collections.md
   - Outils:
     - CLI: reference/cli.md
     - Paquets: reference/paquets.md
-    - Documentation: reference/documentation.md
-    - Débogueur: reference/debogueur.md
   - Exemples:
     - examples/index.md
-    - Programmes complets: examples/programmes.md
   - Architecture: architecture.md
   - Changelog: CHANGELOG.md

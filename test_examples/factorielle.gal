@@ -1,0 +1,12 @@
+// Test factorielle
+soit x = 1
+
+récursif fonction factorielle(n: entier): entier
+    si n < 2 alors
+        retourne 1
+    sinon
+        retourne n * factorielle(n - 1)
+    fin
+fin
+
+afficher(factorielle(10))

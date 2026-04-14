@@ -1,0 +1,9 @@
+récursif fonction fibonacci(n: entier): entier
+    si n <= 1 alors
+        retourne n
+    sinon
+        retourne fibonacci(n - 1) + fibonacci(n - 2)
+    fin
+fin
+
+afficher(fibonacci(10))
