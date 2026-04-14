@@ -7,5 +7,6 @@ pub mod ir;
 pub mod lexer;
 pub mod package;
 pub mod parser;
+pub mod pipeline;
 pub mod runtime;
 pub mod semantic;
