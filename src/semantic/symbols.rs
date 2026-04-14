@@ -3,6 +3,15 @@ use std::collections::HashMap;
 use crate::semantic::types::Type;
 
 #[derive(Debug, Clone)]
+pub struct MéthodeClasseSymbole {
+    pub paramètres: Vec<(String, Type)>,
+    pub type_retour: Type,
+    pub est_virtuelle: bool,
+    pub est_abstraite: bool,
+    pub est_surcharge: bool,
+}
+
+#[derive(Debug, Clone)]
 pub enum GenreSymbole {
     Variable {
         type_sym: Type,
@@ -17,11 +26,11 @@ pub enum GenreSymbole {
         parent: Option<String>,
         interfaces: Vec<String>,
         champs: HashMap<String, Type>,
-        méthodes: HashMap<String, (Vec<(String, Type)>, Type)>,
+        méthodes: HashMap<String, MéthodeClasseSymbole>,
         est_abstraite: bool,
     },
     Interface {
-        méthodes: HashMap<String, (Vec<(String, Type)>, Type)>,
+        méthodes: HashMap<String, MéthodeClasseSymbole>,
     },
     Module {
         symboles: HashMap<String, GenreSymbole>,

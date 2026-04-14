@@ -915,7 +915,11 @@ impl Parser {
             return self.parser_constructeur();
         }
 
-        if self.token_actuel() == &Token::Fonction {
+        if self.token_actuel() == &Token::Virtuelle
+            || self.token_actuel() == &Token::Abstraite
+            || self.token_actuel() == &Token::Surcharge
+            || self.token_actuel() == &Token::Fonction
+        {
             let position = self.position_actuelle();
 
             let est_virtuelle = if self.token_actuel() == &Token::Virtuelle {
@@ -1057,7 +1061,9 @@ impl Parser {
                 self.attendre(&Token::ParenthèseOuvrante, "Attendu '('")?;
                 let params = self.parser_paramètres()?;
                 self.attendre(&Token::ParenthèseFermante, "Attendu ')'")?;
-                let type_retour = if self.token_actuel() == &Token::Flèche {
+                let type_retour = if self.token_actuel() == &Token::Flèche
+                    || self.token_actuel() == &Token::DeuxPoints
+                {
                     self.avancer();
                     Some(self.parser_type()?)
                 } else {

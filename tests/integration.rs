@@ -313,3 +313,97 @@ fn test_pipeline_ffi() {
         .vérifier(&programme)
         .expect("Vérification FFI échouée");
 }
+
+// ===== Tests Polymorphisme =====
+
+#[test]
+fn test_parser_mots_clés_polymorphisme() {
+    let source = "classe Base
+    publique virtuelle fonction parler(): texte
+        retourne \"base\"
+    fin
+fin
+
+classe Enfant hérite Base
+    publique surcharge fonction parler(): texte
+        retourne \"enfant\"
+    fin
+fin";
+
+    let programme = parser_source(source);
+    assert_eq!(programme.instructions.len(), 2);
+}
+
+#[test]
+fn test_vérification_interface_non_implémentée() {
+    let source = "interface Affichable
+    fonction afficher(): texte
+fin
+
+classe Document implémente Affichable
+    publique fonction titre(): texte
+        retourne \"doc\"
+    fin
+fin";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_err());
+}
+
+#[test]
+fn test_vérification_surcharge_sans_parent() {
+    let source = "classe C
+    publique surcharge fonction f(): entier
+        retourne 1
+    fin
+fin";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_err());
+}
+
+#[test]
+fn test_vérification_méthode_abstraite_en_classe_concrète() {
+    let source = "classe C
+    publique abstraite fonction f(): entier
+        retourne 1
+    fin
+fin";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_err());
+}
+
+#[test]
+fn test_vérification_instanciation_classe_abstraite() {
+    let source = "classe abstraite A
+    publique abstraite fonction f(): entier
+        retourne 0
+    fin
+fin
+
+soit x = nouveau A()";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_err());
+}
+
+#[test]
+fn test_vérification_affectation_héritage() {
+    let source = "classe A
+fin
+
+classe B hérite A
+fin
+
+soit b = nouveau B()
+soit a: A = b";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_ok());
+}

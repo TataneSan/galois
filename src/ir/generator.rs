@@ -8,6 +8,7 @@ pub struct GénérateurIR {
     compteur_blocs: usize,
     table: TableSymboles,
     bloc_courant: Vec<IRInstruction>,
+    classe_courante: Option<String>,
 }
 
 impl GénérateurIR {
@@ -17,6 +18,7 @@ impl GénérateurIR {
             compteur_blocs: 0,
             table,
             bloc_courant: Vec::new(),
+            classe_courante: None,
         }
     }
 
@@ -84,6 +86,53 @@ impl GénérateurIR {
         }
     }
 
+    fn classe_pour_identifiant(&self, nom: &str) -> Option<String> {
+        self.table
+            .chercher(nom)
+            .and_then(|symbole| match &symbole.genre {
+                GenreSymbole::Variable { type_sym, .. } => match type_sym {
+                    Type::Classe(nom, _) | Type::Paramétré(nom, _) => Some(nom.clone()),
+                    _ => None,
+                },
+                _ => None,
+            })
+    }
+
+    fn classe_pour_expression(&self, expr: &ExprAST) -> Option<String> {
+        match expr {
+            ExprAST::Identifiant(nom, _) => self.classe_pour_identifiant(nom),
+            ExprAST::Nouveau { classe, .. } => Some(classe.clone()),
+            ExprAST::Ceci(_) => self.classe_courante.clone(),
+            _ => None,
+        }
+    }
+
+    fn classe_impl_méthode(&self, classe: &str, méthode: &str) -> Option<String> {
+        let mut courante = Some(classe.to_string());
+        while let Some(nom) = courante {
+            let (a_méthode, parent) = self
+                .table
+                .chercher(&nom)
+                .and_then(|sym| {
+                    if let GenreSymbole::Classe {
+                        méthodes, parent, ..
+                    } = &sym.genre
+                    {
+                        Some((méthodes.contains_key(méthode), parent.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or((false, None));
+
+            if a_méthode {
+                return Some(nom);
+            }
+            courante = parent;
+        }
+        None
+    }
+
     pub fn générer(&mut self, programme: &ProgrammeAST) -> IRModule {
         let mut module = IRModule {
             fonctions: Vec::new(),
@@ -115,8 +164,11 @@ impl GénérateurIR {
                         match membre {
                             MembreClasseAST::Méthode { déclaration, .. } => {
                                 let nom_méth = format!("{}_{}", décl.nom, déclaration.nom);
+                                let ancienne_classe = self.classe_courante.clone();
+                                self.classe_courante = Some(décl.nom.clone());
                                 let mut fn_ir =
                                     self.générer_fonction_avec_nom(déclaration, &nom_méth);
+                                self.classe_courante = ancienne_classe;
                                 fn_ir.paramètres.insert(
                                     0,
                                     (
@@ -132,10 +184,7 @@ impl GénérateurIR {
                                 position: _,
                             } => {
                                 let nom_ctor = format!("{}_constructeur", décl.nom);
-                                let mut param_ir: Vec<(String, IRType)> = vec![(
-                                    "ceci".to_string(),
-                                    IRType::Struct(décl.nom.clone(), Vec::new()),
-                                )];
+                                let mut param_ir: Vec<(String, IRType)> = Vec::new();
                                 for p in paramètres {
                                     let type_ir = if let Some(t) = &p.type_ann {
                                         self.convertir_type_ir(&self.convertir_type_ast(t))
@@ -145,7 +194,10 @@ impl GénérateurIR {
                                     param_ir.push((p.nom.clone(), type_ir));
                                 }
                                 let type_retour = IRType::Struct(décl.nom.clone(), Vec::new());
+                                let ancienne_classe = self.classe_courante.clone();
+                                self.classe_courante = Some(décl.nom.clone());
                                 let blocs = self.générer_bloc(corps);
+                                self.classe_courante = ancienne_classe;
                                 module.fonctions.push(IRFonction {
                                     nom: nom_ctor,
                                     paramètres: param_ir,
@@ -637,21 +689,36 @@ impl GénérateurIR {
 
             ExprAST::AppelFonction {
                 appelé, arguments, ..
-            } => {
-                let nom_fn = match appelé.as_ref() {
-                    ExprAST::Identifiant(n, _) => n.clone(),
-                    ExprAST::AccèsMembre { objet, membre, .. } => match objet.as_ref() {
-                        ExprAST::Identifiant(classe, _) => format!("{}_{}", classe, membre),
-                        _ => membre.clone(),
-                    },
-                    _ => "_inconnu".to_string(),
-                };
-                let args: Vec<IRValeur> = arguments
-                    .iter()
-                    .map(|a| self.générer_expression(a))
-                    .collect();
-                IRValeur::Appel(nom_fn, args)
-            }
+            } => match appelé.as_ref() {
+                ExprAST::Identifiant(n, _) => {
+                    let args: Vec<IRValeur> = arguments
+                        .iter()
+                        .map(|a| self.générer_expression(a))
+                        .collect();
+                    IRValeur::Appel(n.clone(), args)
+                }
+                ExprAST::AccèsMembre { objet, membre, .. } => {
+                    let classe_obj = self.classe_pour_expression(objet);
+                    let nom_fn = if let Some(classe) = classe_obj {
+                        let classe_impl =
+                            self.classe_impl_méthode(&classe, membre).unwrap_or(classe);
+                        format!("{}_{}", classe_impl, membre)
+                    } else {
+                        membre.clone()
+                    };
+
+                    let mut args: Vec<IRValeur> = vec![self.générer_expression(objet)];
+                    args.extend(arguments.iter().map(|a| self.générer_expression(a)));
+                    IRValeur::Appel(nom_fn, args)
+                }
+                _ => IRValeur::Appel(
+                    "_inconnu".to_string(),
+                    arguments
+                        .iter()
+                        .map(|a| self.générer_expression(a))
+                        .collect(),
+                ),
+            },
 
             ExprAST::AccèsMembre { objet, membre, .. } => {
                 let obj = self.générer_expression(objet);

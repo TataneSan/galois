@@ -1,7 +1,8 @@
 use crate::error::{Erreur, Position, Resultat};
 use crate::parser::ast::*;
-use crate::semantic::symbols::{GenreSymbole, TableSymboles};
+use crate::semantic::symbols::{GenreSymbole, MéthodeClasseSymbole, TableSymboles};
 use crate::semantic::types::{Type, Unificateur};
+use std::collections::{HashMap, HashSet};
 
 pub struct Vérificateur {
     pub table: TableSymboles,
@@ -62,6 +63,109 @@ impl Vérificateur {
         self.erreurs.push(Erreur::typage(position, message));
     }
 
+    fn classe_hérite_de(&self, classe: &str, ancêtre: &str) -> bool {
+        if classe == ancêtre {
+            return true;
+        }
+
+        let mut courante = Some(classe.to_string());
+        while let Some(nom) = courante {
+            let parent = self.table.chercher(&nom).and_then(|sym| {
+                if let GenreSymbole::Classe { parent, .. } = &sym.genre {
+                    parent.clone()
+                } else {
+                    None
+                }
+            });
+
+            if let Some(p) = parent {
+                if p == ancêtre {
+                    return true;
+                }
+                courante = Some(p);
+            } else {
+                break;
+            }
+        }
+
+        false
+    }
+
+    fn classe_implémente_interface(&self, classe: &str, interface: &str) -> bool {
+        let mut courante = Some(classe.to_string());
+        while let Some(nom) = courante {
+            let (interfaces, parent) = self
+                .table
+                .chercher(&nom)
+                .and_then(|sym| {
+                    if let GenreSymbole::Classe {
+                        interfaces, parent, ..
+                    } = &sym.genre
+                    {
+                        Some((interfaces.clone(), parent.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+
+            if interfaces.iter().any(|i| i == interface) {
+                return true;
+            }
+
+            courante = parent;
+        }
+
+        false
+    }
+
+    fn méthode_classe_ou_parent(
+        &self,
+        classe: &str,
+        méthode: &str,
+    ) -> Option<(String, MéthodeClasseSymbole)> {
+        let mut courante = Some(classe.to_string());
+        while let Some(nom) = courante {
+            let (trouvée, parent) = self
+                .table
+                .chercher(&nom)
+                .and_then(|sym| {
+                    if let GenreSymbole::Classe {
+                        méthodes, parent, ..
+                    } = &sym.genre
+                    {
+                        Some((méthodes.get(méthode).cloned(), parent.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or((None, None));
+
+            if let Some(m) = trouvée {
+                return Some((nom, m));
+            }
+
+            courante = parent;
+        }
+        None
+    }
+
+    fn type_compatible(&mut self, source: &Type, cible: &Type) -> bool {
+        if source == cible {
+            return true;
+        }
+
+        match (source, cible) {
+            (Type::Nul, Type::Classe(_, _)) | (Type::Nul, Type::Interface(_)) => true,
+            (Type::Entier, Type::Décimal) => true,
+            (Type::Classe(src, _), Type::Classe(dst, _)) => self.classe_hérite_de(src, dst),
+            (Type::Classe(src, _), Type::Interface(dst)) => {
+                self.classe_implémente_interface(src, dst)
+            }
+            _ => self.unificateur.unifier(source, cible),
+        }
+    }
+
     fn vérifier_instruction(&mut self, instr: &InstrAST) -> Resultat<()> {
         match instr {
             InstrAST::Déclaration {
@@ -79,7 +183,7 @@ impl Vérificateur {
 
                 let type_final = if let Some(type_ann) = type_ann {
                     let type_annoté = self.convertir_type(type_ann);
-                    if !self.unificateur.unifier(&type_valeur, &type_annoté) {
+                    if !self.type_compatible(&type_valeur, &type_annoté) {
                         self.erreur(
                             position.clone(),
                             &format!("Impossible d'affecter {} à {}", type_valeur, type_annoté),
@@ -107,7 +211,7 @@ impl Vérificateur {
                 let type_valeur = self.vérifier_expression(valeur)?;
                 let type_final = if let Some(type_ann) = type_ann {
                     let type_annoté = self.convertir_type(type_ann);
-                    if !self.unificateur.unifier(&type_valeur, &type_annoté) {
+                    if !self.type_compatible(&type_valeur, &type_annoté) {
                         self.erreur(
                             position.clone(),
                             &format!("Impossible d'affecter {} à {}", type_valeur, type_annoté),
@@ -132,7 +236,7 @@ impl Vérificateur {
             } => {
                 let type_cible = self.vérifier_expression(cible)?;
                 let type_valeur = self.vérifier_expression(valeur)?;
-                if !self.unificateur.unifier(&type_cible, &type_valeur) {
+                if !self.type_compatible(&type_valeur, &type_cible) {
                     self.erreur(
                         position.clone(),
                         &format!("Impossible d'affecter {} à {}", type_valeur, type_cible),
@@ -163,7 +267,7 @@ impl Vérificateur {
                 position: _,
             } => {
                 let type_cond = self.vérifier_expression(condition)?;
-                if !self.unificateur.unifier(&type_cond, &Type::Booléen) {
+                if !self.type_compatible(&type_cond, &Type::Booléen) {
                     self.erreur(
                         condition.position().clone(),
                         &format!("Condition doit être booléenne, obtenu: {}", type_cond),
@@ -172,7 +276,7 @@ impl Vérificateur {
                 self.vérifier_bloc(bloc_alors)?;
                 for (cond, bloc) in branches_sinonsi {
                     let t = self.vérifier_expression(cond)?;
-                    if !self.unificateur.unifier(&t, &Type::Booléen) {
+                    if !self.type_compatible(&t, &Type::Booléen) {
                         self.erreur(cond.position().clone(), "Condition doit être booléenne");
                     }
                     self.vérifier_bloc(bloc)?;
@@ -185,7 +289,7 @@ impl Vérificateur {
                 condition, bloc, ..
             } => {
                 let type_cond = self.vérifier_expression(condition)?;
-                if !self.unificateur.unifier(&type_cond, &Type::Booléen) {
+                if !self.type_compatible(&type_cond, &Type::Booléen) {
                     self.erreur(
                         condition.position().clone(),
                         "Condition doit être booléenne",
@@ -383,6 +487,44 @@ impl Vérificateur {
         let mut champs = HashMap::new();
         let mut méthodes = HashMap::new();
 
+        if let Some(parent) = &décl.parent {
+            match self.table.chercher(parent) {
+                Some(sym) => {
+                    if !matches!(sym.genre, GenreSymbole::Classe { .. }) {
+                        self.erreur(
+                            décl.position.clone(),
+                            &format!("'{}' n'est pas une classe parente valide", parent),
+                        );
+                    }
+                }
+                None => {
+                    self.erreur(
+                        décl.position.clone(),
+                        &format!("Classe parente '{}' introuvable", parent),
+                    );
+                }
+            }
+        }
+
+        for interface in &décl.interfaces {
+            match self.table.chercher(interface) {
+                Some(sym) => {
+                    if !matches!(sym.genre, GenreSymbole::Interface { .. }) {
+                        self.erreur(
+                            décl.position.clone(),
+                            &format!("'{}' n'est pas une interface", interface),
+                        );
+                    }
+                }
+                None => {
+                    self.erreur(
+                        décl.position.clone(),
+                        &format!("Interface '{}' introuvable", interface),
+                    );
+                }
+            }
+        }
+
         for membre in &décl.membres {
             match membre {
                 MembreClasseAST::Champ { nom, type_ann, .. } => {
@@ -408,7 +550,110 @@ impl Vérificateur {
                     } else {
                         Type::Rien
                     };
-                    méthodes.insert(déclaration.nom.clone(), (param_types, type_retour));
+                    let (est_virtuelle, est_abstraite, est_surcharge) = match membre {
+                        MembreClasseAST::Méthode {
+                            est_virtuelle,
+                            est_abstraite,
+                            est_surcharge,
+                            ..
+                        } => (*est_virtuelle, *est_abstraite, *est_surcharge),
+                        _ => (false, false, false),
+                    };
+
+                    if est_abstraite && !décl.est_abstraite {
+                        self.erreur(
+                            déclaration.position.clone(),
+                            &format!(
+                                "La méthode abstraite '{}' exige une classe abstraite",
+                                déclaration.nom
+                            ),
+                        );
+                    }
+
+                    if est_surcharge {
+                        if let Some(parent) = &décl.parent {
+                            let parent_m = self.méthode_classe_ou_parent(parent, &déclaration.nom);
+                            if let Some((_nom_parent, méthode_parent)) = parent_m {
+                                if !méthode_parent.est_virtuelle && !méthode_parent.est_abstraite
+                                {
+                                    self.erreur(
+                                        déclaration.position.clone(),
+                                        &format!(
+                                            "La méthode '{}' surcharge une méthode non virtuelle",
+                                            déclaration.nom
+                                        ),
+                                    );
+                                }
+
+                                if méthode_parent.paramètres.len() != param_types.len() {
+                                    self.erreur(
+                                        déclaration.position.clone(),
+                                        &format!(
+                                            "Surcharge invalide de '{}': nombre de paramètres différent",
+                                            déclaration.nom
+                                        ),
+                                    );
+                                } else {
+                                    for (i, ((_, p), (_, pp))) in param_types
+                                        .iter()
+                                        .zip(méthode_parent.paramètres.iter())
+                                        .enumerate()
+                                    {
+                                        if !self.type_compatible(p, pp)
+                                            || !self.type_compatible(pp, p)
+                                        {
+                                            self.erreur(
+                                                déclaration.position.clone(),
+                                                &format!(
+                                                    "Surcharge invalide de '{}': paramètre {} incompatible",
+                                                    déclaration.nom,
+                                                    i + 1
+                                                ),
+                                            );
+                                        }
+                                    }
+                                }
+
+                                if !self.type_compatible(&type_retour, &méthode_parent.type_retour)
+                                {
+                                    self.erreur(
+                                        déclaration.position.clone(),
+                                        &format!(
+                                            "Surcharge invalide de '{}': type de retour incompatible",
+                                            déclaration.nom
+                                        ),
+                                    );
+                                }
+                            } else {
+                                self.erreur(
+                                    déclaration.position.clone(),
+                                    &format!(
+                                        "La méthode '{}' est marquée surcharge mais aucune méthode parente correspondante n'a été trouvée",
+                                        déclaration.nom
+                                    ),
+                                );
+                            }
+                        } else {
+                            self.erreur(
+                                déclaration.position.clone(),
+                                &format!(
+                                    "La méthode '{}' est marquée surcharge sans classe parente",
+                                    déclaration.nom
+                                ),
+                            );
+                        }
+                    }
+
+                    méthodes.insert(
+                        déclaration.nom.clone(),
+                        MéthodeClasseSymbole {
+                            paramètres: param_types,
+                            type_retour,
+                            est_virtuelle,
+                            est_abstraite,
+                            est_surcharge,
+                        },
+                    );
                 }
                 MembreClasseAST::Constructeur { .. } => {}
             }
@@ -424,6 +669,127 @@ impl Vérificateur {
                 est_abstraite: décl.est_abstraite,
             },
         );
+
+        for interface in &décl.interfaces {
+            let méthodes_interface = self.table.chercher(interface).and_then(|sym| {
+                if let GenreSymbole::Interface { méthodes } = &sym.genre {
+                    Some(méthodes.clone())
+                } else {
+                    None
+                }
+            });
+
+            if let Some(méthodes_interface) = méthodes_interface {
+                for (nom_méthode, sig_interface) in méthodes_interface {
+                    let trouvée = self.méthode_classe_ou_parent(&décl.nom, &nom_méthode);
+                    if let Some((_impl_classe, sig_classe)) = trouvée {
+                        if sig_classe.paramètres.len() != sig_interface.paramètres.len() {
+                            self.erreur(
+                                décl.position.clone(),
+                                &format!(
+                                    "La classe '{}' implémente '{}' mais la méthode '{}' a une signature incompatible",
+                                    décl.nom, interface, nom_méthode
+                                ),
+                            );
+                            continue;
+                        }
+
+                        for ((_, p1), (_, p2)) in sig_classe
+                            .paramètres
+                            .iter()
+                            .zip(sig_interface.paramètres.iter())
+                        {
+                            if !self.type_compatible(p1, p2) || !self.type_compatible(p2, p1) {
+                                self.erreur(
+                                    décl.position.clone(),
+                                    &format!(
+                                        "La classe '{}' implémente '{}' mais la méthode '{}' a des paramètres incompatibles",
+                                        décl.nom, interface, nom_méthode
+                                    ),
+                                );
+                                break;
+                            }
+                        }
+
+                        if !self
+                            .type_compatible(&sig_classe.type_retour, &sig_interface.type_retour)
+                        {
+                            self.erreur(
+                                décl.position.clone(),
+                                &format!(
+                                    "La classe '{}' implémente '{}' mais la méthode '{}' a un type de retour incompatible",
+                                    décl.nom, interface, nom_méthode
+                                ),
+                            );
+                        }
+
+                        if !décl.est_abstraite && sig_classe.est_abstraite {
+                            self.erreur(
+                                décl.position.clone(),
+                                &format!(
+                                    "La classe '{}' doit implémenter concrètement la méthode '{}' de l'interface '{}'",
+                                    décl.nom, nom_méthode, interface
+                                ),
+                            );
+                        }
+                    } else if !décl.est_abstraite {
+                        self.erreur(
+                            décl.position.clone(),
+                            &format!(
+                                "La classe '{}' doit implémenter la méthode '{}' de l'interface '{}'",
+                                décl.nom, nom_méthode, interface
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+
+        if !décl.est_abstraite {
+            let mut concrètes = HashSet::new();
+            let mut abstraites_restantes = HashSet::new();
+            let mut courante = Some(décl.nom.clone());
+
+            while let Some(nom) = courante {
+                let (méthodes_classe, parent) = self
+                    .table
+                    .chercher(&nom)
+                    .and_then(|sym| {
+                        if let GenreSymbole::Classe {
+                            méthodes, parent, ..
+                        } = &sym.genre
+                        {
+                            Some((méthodes.clone(), parent.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
+
+                for (nom_m, m) in méthodes_classe {
+                    if m.est_abstraite {
+                        if !concrètes.contains(&nom_m) {
+                            abstraites_restantes.insert(nom_m);
+                        }
+                    } else {
+                        concrètes.insert(nom_m.clone());
+                        abstraites_restantes.remove(&nom_m);
+                    }
+                }
+
+                courante = parent;
+            }
+
+            if let Some(nom_méthode) = abstraites_restantes.into_iter().next() {
+                self.erreur(
+                    décl.position.clone(),
+                    &format!(
+                        "La classe concrète '{}' doit implémenter la méthode abstraite '{}'",
+                        décl.nom, nom_méthode
+                    ),
+                );
+            }
+        }
 
         let ancienne_classe = self.classe_courante.clone();
         self.classe_courante = Some(décl.nom.clone());
@@ -488,7 +854,16 @@ impl Vérificateur {
             } else {
                 Type::Rien
             };
-            méthodes.insert(m.nom.clone(), (param_types, type_retour));
+            méthodes.insert(
+                m.nom.clone(),
+                MéthodeClasseSymbole {
+                    paramètres: param_types,
+                    type_retour,
+                    est_virtuelle: true,
+                    est_abstraite: true,
+                    est_surcharge: false,
+                },
+            );
         }
         self.table
             .définir(&décl.nom, GenreSymbole::Interface { méthodes });
@@ -709,8 +1084,7 @@ impl Vérificateur {
                         }
                         for (i, arg) in arguments.iter().enumerate() {
                             let type_arg = self.vérifier_expression(arg)?;
-                            if i < params.len() && !self.unificateur.unifier(&type_arg, &params[i])
-                            {
+                            if i < params.len() && !self.type_compatible(&type_arg, &params[i]) {
                                 self.erreur(
                                     arg.position().clone(),
                                     &format!(
@@ -742,7 +1116,7 @@ impl Vérificateur {
                                 for (i, arg) in arguments.iter().enumerate() {
                                     let type_arg = self.vérifier_expression(arg)?;
                                     if i < paramètres.len() {
-                                        self.unificateur.unifier(&type_arg, &paramètres[i].1);
+                                        self.type_compatible(&type_arg, &paramètres[i].1);
                                     }
                                 }
                                 return Ok(type_retour);
@@ -762,30 +1136,71 @@ impl Vérificateur {
                 let type_obj = self.vérifier_expression(objet)?;
                 match &type_obj {
                     Type::Classe(nom, _) | Type::Paramétré(nom, _) => {
-                        if let Some(sym) = self.table.chercher(nom) {
-                            if let GenreSymbole::Classe {
-                                méthodes, champs, ..
-                            } = &sym.genre
-                            {
-                                if let Some(t) = champs.get(membre) {
-                                    t.clone()
-                                } else if méthodes.contains_key(membre) {
-                                    let (params, ret) = méthodes.get(membre).unwrap();
-                                    Type::Fonction(
-                                        params.iter().map(|(_, t)| t.clone()).collect(),
-                                        Box::new(ret.clone()),
-                                    )
-                                } else {
-                                    self.erreur(
-                                        position.clone(),
-                                        &format!("Membre '{}' non trouvé dans '{}'", membre, nom),
-                                    );
-                                    Type::Inconnu
-                                }
-                            } else {
-                                Type::Inconnu
+                        let mut courante = Some(nom.clone());
+                        let mut champ_trouvé: Option<Type> = None;
+                        while let Some(cn) = courante {
+                            let (champs, parent) = self
+                                .table
+                                .chercher(&cn)
+                                .and_then(|sym| {
+                                    if let GenreSymbole::Classe { champs, parent, .. } = &sym.genre
+                                    {
+                                        Some((champs.clone(), parent.clone()))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or_default();
+                            if let Some(t) = champs.get(membre) {
+                                champ_trouvé = Some(t.clone());
+                                break;
                             }
+                            courante = parent;
+                        }
+
+                        if let Some(t) = champ_trouvé {
+                            t
+                        } else if let Some((_classe_m, méthode)) =
+                            self.méthode_classe_ou_parent(nom, membre)
+                        {
+                            Type::Fonction(
+                                méthode.paramètres.iter().map(|(_, t)| t.clone()).collect(),
+                                Box::new(méthode.type_retour.clone()),
+                            )
                         } else {
+                            self.erreur(
+                                position.clone(),
+                                &format!("Membre '{}' non trouvé dans '{}'", membre, nom),
+                            );
+                            Type::Inconnu
+                        }
+                    }
+                    Type::Interface(nom) => {
+                        let méthode_i = self.table.chercher(nom).and_then(|sym| {
+                            if let GenreSymbole::Interface { méthodes } = &sym.genre {
+                                méthodes.get(membre).cloned()
+                            } else {
+                                None
+                            }
+                        });
+
+                        if let Some(méthode_i) = méthode_i {
+                            Type::Fonction(
+                                méthode_i
+                                    .paramètres
+                                    .iter()
+                                    .map(|(_, t)| t.clone())
+                                    .collect(),
+                                Box::new(méthode_i.type_retour.clone()),
+                            )
+                        } else {
+                            self.erreur(
+                                position.clone(),
+                                &format!(
+                                    "Méthode '{}' non trouvée dans l'interface '{}'",
+                                    membre, nom
+                                ),
+                            );
                             Type::Inconnu
                         }
                     }
@@ -820,19 +1235,19 @@ impl Vérificateur {
                 let type_idx = self.vérifier_expression(indice)?;
                 match &type_obj {
                     Type::Tableau(t, _) | Type::Liste(t) => {
-                        if !self.unificateur.unifier(&type_idx, &Type::Entier) {
+                        if !self.type_compatible(&type_idx, &Type::Entier) {
                             self.erreur(position.clone(), "Indice doit être entier");
                         }
                         *t.clone()
                     }
                     Type::Texte => {
-                        if !self.unificateur.unifier(&type_idx, &Type::Entier) {
+                        if !self.type_compatible(&type_idx, &Type::Entier) {
                             self.erreur(position.clone(), "Indice doit être entier");
                         }
                         Type::Texte
                     }
                     Type::Dictionnaire(k, v) => {
-                        if !self.unificateur.unifier(&type_idx, k) {
+                        if !self.type_compatible(&type_idx, k) {
                             self.erreur(position.clone(), "Type de clé incorrect");
                         }
                         *v.clone()
@@ -902,7 +1317,7 @@ impl Vérificateur {
                 ..
             } => {
                 let type_cond = self.vérifier_expression(condition)?;
-                if !self.unificateur.unifier(&type_cond, &Type::Booléen) {
+                if !self.type_compatible(&type_cond, &Type::Booléen) {
                     self.erreur(
                         condition.position().clone(),
                         "Condition doit être booléenne",
@@ -911,7 +1326,7 @@ impl Vérificateur {
                 let type_alors = self.vérifier_expression(alors)?;
                 if let Some(sinon) = sinon {
                     let type_sinon = self.vérifier_expression(sinon)?;
-                    if !self.unificateur.unifier(&type_alors, &type_sinon) {
+                    if !self.type_compatible(&type_alors, &type_sinon) {
                         self.erreur(
                             sinon.position().clone(),
                             "Branches conditionnelles de types différents",
@@ -969,7 +1384,35 @@ impl Vérificateur {
                 self.convertir_type(type_cible)
             }
 
-            ExprAST::Nouveau { classe, .. } => Type::Classe(classe.clone(), None),
+            ExprAST::Nouveau {
+                classe, position, ..
+            } => {
+                let est_abstraite = self.table.chercher(classe).and_then(|sym| {
+                    if let GenreSymbole::Classe { est_abstraite, .. } = &sym.genre {
+                        Some(*est_abstraite)
+                    } else {
+                        None
+                    }
+                });
+
+                match est_abstraite {
+                    Some(true) => {
+                        self.erreur(
+                            position.clone(),
+                            &format!("Impossible d'instancier la classe abstraite '{}'", classe),
+                        );
+                        Type::Inconnu
+                    }
+                    Some(false) => Type::Classe(classe.clone(), None),
+                    None => {
+                        self.erreur(
+                            position.clone(),
+                            &format!("Classe '{}' introuvable", classe),
+                        );
+                        Type::Inconnu
+                    }
+                }
+            }
 
             ExprAST::Ceci(_) => {
                 if let Some(classe) = &self.classe_courante {
@@ -1330,5 +1773,3 @@ impl Vérificateur {
         }
     }
 }
-
-use std::collections::HashMap;
