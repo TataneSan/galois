@@ -19,7 +19,7 @@ use codegen::GénérateurLLVM;
 use compiler::{CompilateurNatif, OptionsCompilation};
 use debugger::{Débogueur, TableDebug};
 use doc::GénérateurDoc;
-use error::Resultat;
+use error::{Diagnostics, Resultat, Snippet};
 use ir::GénérateurIR;
 use lexer::Scanner;
 use package::GestionnairePaquets;
@@ -211,6 +211,44 @@ fn lire_source(chemin: &str) -> Resultat<String> {
     })
 }
 
+fn extraire_snippet(
+    source: &str,
+    ligne: usize,
+    colonne_début: usize,
+    colonne_fin: usize,
+) -> Snippet {
+    let ligne_source = source.lines().nth(ligne.saturating_sub(1)).unwrap_or("");
+    Snippet::nouveau(ligne_source, ligne, colonne_début, colonne_fin)
+}
+
+fn enrichir_erreur_avec_snippet(mut erreur: error::Erreur, source: &str) -> error::Erreur {
+    if erreur.snippet.is_none() {
+        let snippet = extraire_snippet(
+            source,
+            erreur.position.ligne,
+            erreur.position.colonne,
+            erreur.position.colonne,
+        );
+        erreur.snippet = Some(snippet);
+    }
+    erreur
+}
+
+fn afficher_diagnostics(diagnostics: &Diagnostics, source: &str) {
+    for warning in &diagnostics.warnings {
+        let mut w = warning.clone();
+        if w.snippet.is_none() {
+            w.snippet = Some(extraire_snippet(
+                source,
+                w.position.ligne,
+                w.position.colonne,
+                w.position.colonne,
+            ));
+        }
+        eprintln!("{}", w);
+    }
+}
+
 fn afficher_aide() {
     println!("Galois - Compilateur de langage de programmation en français");
     println!();
@@ -247,43 +285,69 @@ fn afficher_aide() {
     println!("  galois parser programme.gal");
 }
 
-fn compiler_pipeline(chemin: &str) -> Resultat<()> {
-    let source = lire_source(chemin)?;
-
-    let mut scanner = Scanner::nouveau(&source, chemin);
-    let tokens = scanner.scanner()?;
-
-    let mut parser = Parser::nouveau(tokens);
-    let programme = parser.parser_programme()?;
-
-    let mut vérificateur = Vérificateur::nouveau();
-    vérificateur.vérifier(&programme)?;
-
-    Ok(())
+struct RésultatPipeline<T> {
+    résultat: T,
+    diagnostics: Diagnostics,
 }
 
-fn pipeline_llvm(chemin: &str) -> Resultat<Vec<u8>> {
+fn compiler_pipeline(chemin: &str) -> Resultat<RésultatPipeline<()>> {
     let source = lire_source(chemin)?;
 
     let mut scanner = Scanner::nouveau(&source, chemin);
-    let tokens = scanner.scanner()?;
+    let tokens = scanner
+        .scanner()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     let mut parser = Parser::nouveau(tokens);
-    let programme = parser.parser_programme()?;
+    let programme = parser
+        .parser_programme()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     let mut vérificateur = Vérificateur::nouveau();
-    vérificateur.vérifier(&programme)?;
+    let diagnostics = vérificateur
+        .vérifier(&programme)
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
+
+    Ok(RésultatPipeline {
+        résultat: (),
+        diagnostics,
+    })
+}
+
+fn pipeline_llvm(chemin: &str) -> Resultat<RésultatPipeline<Vec<u8>>> {
+    let source = lire_source(chemin)?;
+
+    let mut scanner = Scanner::nouveau(&source, chemin);
+    let tokens = scanner
+        .scanner()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
+
+    let mut parser = Parser::nouveau(tokens);
+    let programme = parser
+        .parser_programme()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
+
+    let mut vérificateur = Vérificateur::nouveau();
+    let diagnostics = vérificateur
+        .vérifier(&programme)
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     let table = vérificateur.table.clone();
     let mut générateur_ir = GénérateurIR::nouveau(table);
     let module_ir = générateur_ir.générer(&programme);
 
     let mut générateur_llvm = GénérateurLLVM::nouveau();
-    Ok(générateur_llvm.générer(&module_ir))
+    Ok(RésultatPipeline {
+        résultat: générateur_llvm.générer(&module_ir),
+        diagnostics,
+    })
 }
 
 fn exécuter_build(chemin: &str, sortie: Option<String>, release: bool) -> Resultat<()> {
-    let llvm_ir = pipeline_llvm(chemin)?;
+    let source = lire_source(chemin)?;
+    let résultat = pipeline_llvm(chemin)?;
+
+    afficher_diagnostics(&résultat.diagnostics, &source);
 
     let options = OptionsCompilation {
         fichier_entrée: chemin.into(),
@@ -294,14 +358,17 @@ fn exécuter_build(chemin: &str, sortie: Option<String>, release: bool) -> Resul
     };
 
     let compilateur = CompilateurNatif::nouveau(options);
-    let exécutable = compilateur.compiler(&llvm_ir)?;
+    let exécutable = compilateur.compiler(&résultat.résultat)?;
 
     println!("Compilation réussie: {}", exécutable.display());
     Ok(())
 }
 
 fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
-    let llvm_ir = pipeline_llvm(chemin)?;
+    let source = lire_source(chemin)?;
+    let résultat = pipeline_llvm(chemin)?;
+
+    afficher_diagnostics(&résultat.diagnostics, &source);
 
     let options = OptionsCompilation {
         fichier_entrée: chemin.into(),
@@ -312,7 +379,7 @@ fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
     };
 
     let compilateur = CompilateurNatif::nouveau(options);
-    let exécutable = compilateur.compiler(&llvm_ir)?;
+    let exécutable = compilateur.compiler(&résultat.résultat)?;
 
     let chemin_exécutable = if exécutable.is_relative() {
         format!("./{}", exécutable.display())
@@ -341,7 +408,9 @@ fn exécuter_lexer(chemin: &str) -> Resultat<()> {
     let source = lire_source(chemin)?;
 
     let mut scanner = Scanner::nouveau(&source, chemin);
-    let tokens = scanner.scanner()?;
+    let tokens = scanner
+        .scanner()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     for token in &tokens {
         println!("{}: {}", token.position, token.token);
@@ -354,10 +423,14 @@ fn exécuter_parser(chemin: &str) -> Resultat<()> {
     let source = lire_source(chemin)?;
 
     let mut scanner = Scanner::nouveau(&source, chemin);
-    let tokens = scanner.scanner()?;
+    let tokens = scanner
+        .scanner()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     let mut parser = Parser::nouveau(tokens);
-    let programme = parser.parser_programme()?;
+    let programme = parser
+        .parser_programme()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     afficher_programme(&programme, 0);
 
@@ -368,15 +441,30 @@ fn exécuter_vérification(chemin: &str) -> Resultat<()> {
     let source = lire_source(chemin)?;
 
     let mut scanner = Scanner::nouveau(&source, chemin);
-    let tokens = scanner.scanner()?;
+    let tokens = scanner
+        .scanner()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     let mut parser = Parser::nouveau(tokens);
-    let programme = parser.parser_programme()?;
+    let programme = parser
+        .parser_programme()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     let mut vérificateur = Vérificateur::nouveau();
-    vérificateur.vérifier(&programme)?;
+    let diagnostics = vérificateur
+        .vérifier(&programme)
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
-    println!("Vérification réussie: aucune erreur de type détectée");
+    afficher_diagnostics(&diagnostics, &source);
+
+    if diagnostics.nombre_warnings() > 0 {
+        println!(
+            "Vérification réussie avec {} avertissement(s)",
+            diagnostics.nombre_warnings()
+        );
+    } else {
+        println!("Vérification réussie: aucune erreur de type détectée");
+    }
 
     Ok(())
 }
@@ -385,13 +473,21 @@ fn exécuter_ir(chemin: &str) -> Resultat<()> {
     let source = lire_source(chemin)?;
 
     let mut scanner = Scanner::nouveau(&source, chemin);
-    let tokens = scanner.scanner()?;
+    let tokens = scanner
+        .scanner()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     let mut parser = Parser::nouveau(tokens);
-    let programme = parser.parser_programme()?;
+    let programme = parser
+        .parser_programme()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     let mut vérificateur = Vérificateur::nouveau();
-    vérificateur.vérifier(&programme)?;
+    let diagnostics = vérificateur
+        .vérifier(&programme)
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
+
+    afficher_diagnostics(&diagnostics, &source);
 
     let table = vérificateur.table.clone();
     let mut générateur = GénérateurIR::nouveau(table);
@@ -406,10 +502,14 @@ fn exécuter_doc(chemin: &str, sortie: Option<String>) -> Resultat<()> {
     let source = lire_source(chemin)?;
 
     let mut scanner = Scanner::nouveau(&source, chemin);
-    let tokens = scanner.scanner()?;
+    let tokens = scanner
+        .scanner()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     let mut parser = Parser::nouveau(tokens);
-    let programme = parser.parser_programme()?;
+    let programme = parser
+        .parser_programme()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     let mut générateur = GénérateurDoc::nouveau();
     générateur.définir_source(&source);
@@ -426,15 +526,20 @@ fn exécuter_debug(chemin: &str) -> Resultat<()> {
     let source = lire_source(chemin)?;
 
     let mut scanner = Scanner::nouveau(&source, chemin);
-    let tokens = scanner.scanner()?;
+    let tokens = scanner
+        .scanner()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     let mut parser = Parser::nouveau(tokens);
-    let programme = parser.parser_programme()?;
+    let programme = parser
+        .parser_programme()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     let mut table = TableDebug::nouvelle();
     table.générer_depuis_programme(&programme);
 
-    let llvm_ir = pipeline_llvm(chemin)?;
+    let résultat = pipeline_llvm(chemin)?;
+    afficher_diagnostics(&résultat.diagnostics, &source);
 
     let options = OptionsCompilation {
         fichier_entrée: chemin.into(),
@@ -445,7 +550,7 @@ fn exécuter_debug(chemin: &str) -> Resultat<()> {
     };
 
     let compilateur = CompilateurNatif::nouveau(options);
-    let exécutable = compilateur.compiler(&llvm_ir)?;
+    let exécutable = compilateur.compiler(&résultat.résultat)?;
 
     let débogueur = Débogueur::nouveau(&exécutable.to_string_lossy());
     println!("Exécutable compilé: {}", exécutable.display());
@@ -465,13 +570,21 @@ fn exécuter_compilation(chemin: &str, sortie: &str) -> Resultat<()> {
     let source = lire_source(chemin)?;
 
     let mut scanner = Scanner::nouveau(&source, chemin);
-    let tokens = scanner.scanner()?;
+    let tokens = scanner
+        .scanner()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     let mut parser = Parser::nouveau(tokens);
-    let programme = parser.parser_programme()?;
+    let programme = parser
+        .parser_programme()
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
     let mut vérificateur = Vérificateur::nouveau();
-    vérificateur.vérifier(&programme)?;
+    let diagnostics = vérificateur
+        .vérifier(&programme)
+        .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
+
+    afficher_diagnostics(&diagnostics, &source);
 
     let table = vérificateur.table.clone();
     let mut générateur_ir = GénérateurIR::nouveau(table);
