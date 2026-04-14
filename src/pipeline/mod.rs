@@ -80,7 +80,7 @@ impl Pipeline {
     }
 
     pub fn parser(&self) -> Resultat<RésultatPipeline<ProgrammeAST>> {
-        let mut résultat = self.lexer()?;
+        let résultat = self.lexer()?;
         let mut parser = Parser::nouveau(résultat.résultat.clone());
         let programme = parser
             .parser_programme()
@@ -96,7 +96,7 @@ impl Pipeline {
     }
 
     pub fn vérifier(&self) -> Resultat<RésultatPipeline<()>> {
-        let mut résultat = self.parser()?;
+        let résultat = self.parser()?;
         let programme = résultat.programme.as_ref().unwrap().clone();
 
         let mut vérificateur = Vérificateur::nouveau();
@@ -114,7 +114,7 @@ impl Pipeline {
     }
 
     pub fn ir(&self) -> Resultat<RésultatPipeline<IRModule>> {
-        let mut résultat = self.parser()?;
+        let résultat = self.parser()?;
         let programme = résultat.programme.as_ref().unwrap().clone();
 
         let mut vérificateur = Vérificateur::nouveau();
@@ -136,7 +136,7 @@ impl Pipeline {
     }
 
     pub fn llvm(&self) -> Resultat<RésultatPipeline<Vec<u8>>> {
-        let mut résultat = self.ir()?;
+        let résultat = self.ir()?;
 
         let mut générateur_llvm = GénérateurLLVM::nouveau();
         let llvm_ir = générateur_llvm.générer(&résultat.résultat);

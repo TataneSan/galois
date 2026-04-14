@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, LinkedList as StdLinkedList, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Debug, Clone)]
 pub struct Tableau<T> {

@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 mod codegen;
 mod compiler;
 mod debugger;
@@ -626,7 +629,7 @@ fn afficher_instruction(instr: &parser::InstrAST, indent: &str, niveau: usize) {
             if let Some(t) = type_ann {
                 print!(": {}", t);
             }
-            if let Some(v) = valeur {
+            if let Some(_v) = valeur {
                 print!(" = <expr>");
             }
             println!();
@@ -740,15 +743,16 @@ fn afficher_instruction(instr: &parser::InstrAST, indent: &str, niveau: usize) {
             }
             println!("{}fin", indent);
         }
-        parser::InstrAST::Si { condition, .. } => {
+        parser::InstrAST::Si { condition: _, .. } => {
             println!("{}si <condition> alors", indent);
         }
-        parser::InstrAST::TantQue { condition, .. } => {
+        parser::InstrAST::TantQue { condition: _, .. } => {
             println!("{}tantque <condition>", indent);
         }
         parser::InstrAST::Pour {
-            variable, itérable,
-        ..
+            variable,
+            itérable: _,
+            ..
         } => {
             println!("{}pour {} dans <itérable>", indent, variable);
         }

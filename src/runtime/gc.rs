@@ -56,7 +56,7 @@ struct EnTêteObjet {
 
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq)]
-enum TypeObjet {
+pub enum TypeObjet {
     Entier,
     Décimal,
     Texte,

@@ -985,7 +985,7 @@ impl GénérateurIR {
                     instructions.push(IRInstruction::Saut(cond_bloc.clone()));
 
                     let cond = self.générer_expression(condition);
-                    let mut cond_instrs = vec![IRInstruction::BranchementConditionnel {
+                    let cond_instrs = vec![IRInstruction::BranchementConditionnel {
                         condition: cond,
                         bloc_alors: corps_bloc.clone(),
                         bloc_sinon: suite_bloc.clone(),
@@ -1328,8 +1328,8 @@ impl GénérateurIR {
 
             ExprAST::Conditionnelle {
                 condition,
-                alors,
-                sinon,
+                alors: _,
+                sinon: _,
                 ..
             } => IRValeur::Opération(
                 IROp::Égal,

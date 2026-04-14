@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::error::Position;
 use crate::parser::ast::*;
 
 #[derive(Debug, Clone)]

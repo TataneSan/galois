@@ -1759,7 +1759,7 @@ impl Vérificateur {
                 let type_obj = self.vérifier_expression(objet)?;
                 match &type_obj {
                     Type::Texte => Type::Texte,
-                    Type::Liste(t) | Type::Tableau(t, _) => type_obj,
+                    Type::Liste(_t) | Type::Tableau(_t, _) => type_obj,
                     _ => Type::Inconnu,
                 }
             }

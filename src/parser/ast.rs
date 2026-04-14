@@ -1,7 +1,6 @@
 use std::fmt;
 
 use crate::error::Position;
-use crate::lexer::token::Token;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeAST {
