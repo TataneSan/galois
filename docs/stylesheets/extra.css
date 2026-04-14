@@ -1,0 +1,148 @@
+/* Galois Documentation - Styles personnalisés */
+
+/* Titre de la page */
+.md-typeset h1 {
+  color: var(--md-primary-fg-color);
+  font-weight: 700;
+}
+
+/* Cartes de la grille */
+.grid.cards > ul > li {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.grid.cards > ul > li:hover {
+  border-color: var(--md-primary-fg-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Centrage */
+.centered {
+  text-align: center;
+  margin: 2rem 0;
+}
+
+/* Tableaux */
+.md-typeset table:not([class]) {
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.md-typeset table:not([class]) th {
+  background-color: var(--md-primary-fg-color);
+  color: white;
+  font-weight: 600;
+}
+
+/* Code en ligne */
+.md-typeset code {
+  background-color: var(--md-code-bg-color);
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.3rem;
+}
+
+/* Blocs de code */
+.md-typeset pre > code {
+  border-radius: 0.5rem;
+}
+
+/* Admonitions */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 0.5rem;
+  border-left-width: 0.3rem;
+}
+
+/* Boutons */
+.md-button {
+  border-radius: 0.5rem;
+  font-weight: 500;
+}
+
+/* Navigation latérale */
+.md-nav__link--active {
+  font-weight: 600;
+}
+
+/* Icônes de la navigation */
+.md-nav__link .md-ellipsis::before {
+  margin-right: 0.5rem;
+}
+
+/* Section "Sur cette page" */
+.md-nav__title {
+  font-weight: 600;
+  color: var(--md-primary-fg-color);
+}
+
+/* Tags */
+.md-tag {
+  border-radius: 1rem;
+  font-size: 0.7rem;
+  padding: 0.2rem 0.6rem;
+}
+
+/* Footer */
+.md-footer {
+  background-color: var(--md-primary-fg-color);
+}
+
+/* Thème sombre */
+[data-md-color-scheme="slate"] {
+  --md-hue: 230;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) th {
+  background-color: var(--md-primary-fg-color--dark);
+}
+
+/* Animation de chargement */
+.md-content__inner {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive */
+@media screen and (max-width: 768px) {
+  .grid.cards > ul {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Highlight pour recherche */
+mark {
+  background-color: #fff59d;
+  padding: 0.1rem 0.2rem;
+  border-radius: 0.2rem;
+}
+
+/* Scrollbar personnalisée */
+::-webkit-scrollbar {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--md-default-bg-color);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--md-primary-fg-color--light);
+  border-radius: 0.25rem;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-primary-fg-color);
+}
