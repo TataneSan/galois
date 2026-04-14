@@ -1649,7 +1649,23 @@ impl Parser {
             }
             Token::Identifiant(nom) => {
                 self.avancer();
-                Ok(ExprAST::Identifiant(nom, position))
+                if self.token_actuel() == &Token::DoubleFlèche {
+                    self.avancer();
+                    let corps = self.parser_expression()?;
+                    let param = ParamètreAST {
+                        nom,
+                        type_ann: None,
+                        valeur_défaut: None,
+                        position: position.clone(),
+                    };
+                    Ok(ExprAST::Lambda {
+                        paramètres: vec![param],
+                        corps: Box::new(corps),
+                        position,
+                    })
+                } else {
+                    Ok(ExprAST::Identifiant(nom, position))
+                }
             }
             Token::ParenthèseOuvrante => {
                 self.avancer();
