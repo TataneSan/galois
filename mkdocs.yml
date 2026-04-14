@@ -1,6 +1,9 @@
 site_name: Galois - Langage de programmation
 site_description: Langage de programmation compilé, écrit en français, compilé vers du natif via LLVM
 site_author: Projet Galois
+site_url: https://tatanesan.github.io/galois/
+repo_url: https://github.com/TataneSan/galois
+repo_name: TataneSan/galois
 theme:
   name: material
   language: fr
@@ -46,7 +49,8 @@ nav:
     - Installation: guides/installation.md
     - Démarrage rapide: guides/demarrage.md
     - Premiers pas: guides/premiers-pas.md
-  - Référence du langage:
+  - Référence:
+    - Langage complet: reference/langage.md
     - Types: reference/types.md
     - Variables: reference/variables.md
     - Fonctions: reference/fonctions.md
@@ -57,6 +61,7 @@ nav:
     - Interfaces: reference/interfaces.md
     - Modules: reference/modules.md
     - FFI (Interopérabilité C): reference/ffi.md
+    - Diagnostics: reference/diagnostics.md
   - Bibliothèque standard:
     - Mathématiques: stdlib/maths.md
     - Texte: stdlib/texte.md
@@ -69,3 +74,5 @@ nav:
     - Débogueur: reference/debogueur.md
   - Exemples:
     - Programmes complets: examples/programmes.md
+  - Architecture: architecture.md
+  - Changelog: CHANGELOG.md
