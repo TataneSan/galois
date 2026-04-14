@@ -27,14 +27,115 @@ pub enum GenreDoc {
     Méthode,
 }
 
+struct DocCommentaire {
+    description: String,
+    exemples: Vec<String>,
+    erreurs: Vec<String>,
+    vue_avant: Option<String>,
+}
+
 pub struct GénérateurDoc {
     entrées: Vec<EntréeDoc>,
+    commentaires: HashMap<usize, DocCommentaire>,
 }
 
 impl GénérateurDoc {
     pub fn nouveau() -> Self {
         Self {
             entrées: Vec::new(),
+            commentaires: HashMap::new(),
+        }
+    }
+
+    pub fn définir_source(&mut self, source: &str) {
+        self.commentaires.clear();
+        let mut bloc_ligne_début: Option<usize> = None;
+        let mut bloc_description = String::new();
+        let mut bloc_exemples: Vec<String> = Vec::new();
+        let mut bloc_erreurs: Vec<String> = Vec::new();
+        let mut bloc_vue_avant: Option<String> = None;
+        let mut dans_exemple = false;
+        let mut exemple_courant = String::new();
+        let mut dans_erreur = false;
+
+        for (numéro, ligne) in source.lines().enumerate() {
+            let ligne_trim = ligne.trim();
+            if ligne_trim.starts_with("///") {
+                let contenu = ligne_trim[3..].trim_start();
+                let première_ligne = bloc_ligne_début.is_none();
+                if première_ligne {
+                    bloc_ligne_début = Some(numéro + 1);
+                }
+
+                if contenu.starts_with("@exemple") {
+                    dans_exemple = true;
+                    dans_erreur = false;
+                    exemple_courant.clear();
+                    continue;
+                }
+                if contenu.starts_with("@erreur") {
+                    dans_erreur = true;
+                    dans_exemple = false;
+                    let msg = contenu[7..].trim();
+                    if !msg.is_empty() {
+                        bloc_erreurs.push(msg.to_string());
+                    }
+                    continue;
+                }
+                if contenu.starts_with("@vue") {
+                    dans_exemple = false;
+                    dans_erreur = false;
+                    bloc_vue_avant = Some(contenu[4..].trim().to_string());
+                    continue;
+                }
+
+                if dans_exemple {
+                    if !exemple_courant.is_empty() {
+                        exemple_courant.push('\n');
+                    }
+                    exemple_courant.push_str(contenu);
+                } else if dans_erreur {
+                    bloc_erreurs.push(contenu.to_string());
+                } else {
+                    if !bloc_description.is_empty() {
+                        bloc_description.push(' ');
+                    }
+                    bloc_description.push_str(contenu);
+                }
+            } else {
+                if let Some(début) = bloc_ligne_début.take() {
+                    if dans_exemple && !exemple_courant.is_empty() {
+                        bloc_exemples.push(exemple_courant.clone());
+                    }
+                    self.commentaires.insert(
+                        début,
+                        DocCommentaire {
+                            description: std::mem::take(&mut bloc_description),
+                            exemples: std::mem::take(&mut bloc_exemples),
+                            erreurs: std::mem::take(&mut bloc_erreurs),
+                            vue_avant: bloc_vue_avant.take(),
+                        },
+                    );
+                    dans_exemple = false;
+                    dans_erreur = false;
+                    exemple_courant.clear();
+                }
+            }
+        }
+
+        if let Some(début) = bloc_ligne_début.take() {
+            if dans_exemple && !exemple_courant.is_empty() {
+                bloc_exemples.push(exemple_courant);
+            }
+            self.commentaires.insert(
+                début,
+                DocCommentaire {
+                    description: std::mem::take(&mut bloc_description),
+                    exemples: std::mem::take(&mut bloc_exemples),
+                    erreurs: std::mem::take(&mut bloc_erreurs),
+                    vue_avant: bloc_vue_avant,
+                },
+            );
         }
     }
 
@@ -45,10 +146,30 @@ impl GénérateurDoc {
         Ok(())
     }
 
+    fn chercher_doc(&self, position: &Position) -> DocCommentaire {
+        let ligne = position.ligne;
+        for décalage in 0..ligne {
+            if let Some(doc) = self.commentaires.get(&(ligne - décalage)) {
+                return DocCommentaire {
+                    description: doc.description.clone(),
+                    exemples: doc.exemples.clone(),
+                    erreurs: doc.erreurs.clone(),
+                    vue_avant: doc.vue_avant.clone(),
+                };
+            }
+        }
+        DocCommentaire {
+            description: String::new(),
+            exemples: Vec::new(),
+            erreurs: Vec::new(),
+            vue_avant: None,
+        }
+    }
+
     fn extraire_entrée(&mut self, instr: &InstrAST) -> Resultat<()> {
         match instr {
             InstrAST::Fonction(décl) => {
-                let doc = self.parser_commentaire_doc(&décl.nom);
+                let doc = self.chercher_doc(&décl.position);
                 let mut entrée = EntréeDoc {
                     nom: décl.nom.clone(),
                     genre: GenreDoc::Fonction,
@@ -76,7 +197,7 @@ impl GénérateurDoc {
                 self.entrées.push(entrée);
             }
             InstrAST::Classe(décl) => {
-                let doc = self.parser_commentaire_doc(&décl.nom);
+                let doc = self.chercher_doc(&décl.position);
                 let mut entrée = EntréeDoc {
                     nom: décl.nom.clone(),
                     genre: GenreDoc::Classe,
@@ -90,7 +211,7 @@ impl GénérateurDoc {
 
                 for membre in &décl.membres {
                     if let MembreClasseAST::Méthode { déclaration, .. } = membre {
-                        let doc_m = self.parser_commentaire_doc(&déclaration.nom);
+                        let doc_m = self.chercher_doc(&déclaration.position);
                         let mut entrée_m = EntréeDoc {
                             nom: format!("{}.{}", décl.nom, déclaration.nom),
                             genre: GenreDoc::Méthode,
@@ -125,7 +246,12 @@ impl GénérateurDoc {
                 self.entrées.push(entrée);
             }
             InstrAST::Constante { nom, type_ann, .. } => {
-                let doc = self.parser_commentaire_doc(nom);
+                let doc = DocCommentaire {
+                    description: String::new(),
+                    exemples: Vec::new(),
+                    erreurs: Vec::new(),
+                    vue_avant: None,
+                };
                 let entrée = EntréeDoc {
                     nom: nom.clone(),
                     genre: GenreDoc::Constante,
@@ -141,15 +267,6 @@ impl GénérateurDoc {
             _ => {}
         }
         Ok(())
-    }
-
-    fn parser_commentaire_doc(&self, _nom: &str) -> DocCommentaire {
-        DocCommentaire {
-            description: String::new(),
-            exemples: Vec::new(),
-            erreurs: Vec::new(),
-            vue_avant: None,
-        }
     }
 
     pub fn générer_html(&self, répertoire_sortie: &Path) -> Resultat<()> {
@@ -184,7 +301,7 @@ impl GénérateurDoc {
             index.push_str("<div class=\"entries\">\n");
 
             for entrée in entrées {
-                index.push_str(&format!("<div class=\"entry\">\n"));
+                index.push_str("<div class=\"entry\">\n");
                 index.push_str(&format!("<h3>{}</h3>\n", entrée.nom));
 
                 if !entrée.description.is_empty() {
@@ -245,11 +362,4 @@ impl GénérateurDoc {
 
         Ok(())
     }
-}
-
-struct DocCommentaire {
-    description: String,
-    exemples: Vec<String>,
-    erreurs: Vec<String>,
-    vue_avant: Option<String>,
 }

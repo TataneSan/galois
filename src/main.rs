@@ -404,6 +404,7 @@ fn exécuter_doc(chemin: &str, sortie: Option<String>) -> Resultat<()> {
     let programme = parser.parser_programme()?;
 
     let mut générateur = GénérateurDoc::nouveau();
+    générateur.définir_source(&source);
     générateur.générer_depuis_programme(&programme)?;
 
     let répertoire = sortie.unwrap_or_else(|| "doc".to_string());
