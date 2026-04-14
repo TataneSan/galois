@@ -1,0 +1,71 @@
+site_name: Galois - Langage de programmation
+site_description: Langage de programmation compilé, écrit en français, compilé vers du natif via LLVM
+site_author: Projet Galois
+theme:
+  name: material
+  language: fr
+  palette:
+    primary: indigo
+    accent: indigo
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+  font:
+    text: Roboto
+    code: JetBrains Mono
+  icon:
+    logo: material/code-braces
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - pymdownx.emoji
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+  - Accueil: index.md
+  - Guides:
+    - Installation: guides/installation.md
+    - Démarrage rapide: guides/demarrage.md
+    - Premiers pas: guides/premiers-pas.md
+  - Référence du langage:
+    - Types: reference/types.md
+    - Variables: reference/variables.md
+    - Fonctions: reference/fonctions.md
+    - Structures de contrôle: reference/controle.md
+    - Opérateurs: reference/operateurs.md
+    - Programmation objet: reference/poo.md
+    - Collections: reference/collections.md
+    - Interfaces: reference/interfaces.md
+    - Modules: reference/modules.md
+    - FFI (Interopérabilité C): reference/ffi.md
+  - Bibliothèque standard:
+    - Mathématiques: stdlib/maths.md
+    - Texte: stdlib/texte.md
+    - Entrée/Sortie: stdlib/entree-sortie.md
+    - Collections: stdlib/collections.md
+  - Outils:
+    - CLI: reference/cli.md
+    - Paquets: reference/paquets.md
+    - Documentation: reference/documentation.md
+    - Débogueur: reference/debogueur.md
+  - Exemples:
+    - Programmes complets: examples/programmes.md
