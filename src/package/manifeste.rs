@@ -55,7 +55,7 @@ impl Manifeste {
         let contenu = fs::read_to_string(chemin).map_err(|e| {
             Erreur::runtime(
                 Position::nouvelle(1, 1, chemin.to_str().unwrap_or("")),
-                &format!("Impossible de lire gallois.toml: {}", e),
+                &format!("Impossible de lire galois.toml: {}", e),
             )
         })?;
         Self::parser_toml(&contenu)
@@ -66,7 +66,7 @@ impl Manifeste {
         fs::write(chemin, contenu).map_err(|e| {
             Erreur::runtime(
                 Position::nouvelle(1, 1, chemin.to_str().unwrap_or("")),
-                &format!("Impossible d'écrire gallois.toml: {}", e),
+                &format!("Impossible d'écrire galois.toml: {}", e),
             )
         })
     }

@@ -283,12 +283,12 @@ impl GénérateurDoc {
         index.push_str(
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n",
         );
-        index.push_str("<title>Documentation Gallois</title>\n");
+        index.push_str("<title>Documentation Galois</title>\n");
         index.push_str("<style>\n");
         index.push_str(include_str!("style_doc.css"));
         index.push_str("</style>\n");
         index.push_str("</head>\n<body>\n");
-        index.push_str("<h1>Documentation Gallois</h1>\n");
+        index.push_str("<h1>Documentation Galois</h1>\n");
 
         let mut par_genre: HashMap<String, Vec<&EntréeDoc>> = HashMap::new();
         for entrée in &self.entrées {

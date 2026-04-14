@@ -26,10 +26,10 @@ impl GestionnairePaquets {
         })?;
 
         let manifeste = Manifeste::nouveau(nom);
-        manifeste.sauvegarder(&racine.join("gallois.toml"))?;
+        manifeste.sauvegarder(&racine.join("galois.toml"))?;
 
         let main_gal = format!(
-            "// {} - Programme Gallois\n\nfonction principal()\n    afficher(\"Bonjour depuis {} !\")\nfin\n",
+            "// {} - Programme Galois\n\nfonction principal()\n    afficher(\"Bonjour depuis {} !\")\nfin\n",
             nom, nom
         );
         fs::write(racine.join("src/main.gal"), main_gal).map_err(|e| {
@@ -48,18 +48,18 @@ impl GestionnairePaquets {
 
         println!("Projet '{}' créé avec succès !", nom);
         println!("  cd {}", nom);
-        println!("  gallois build src/main.gal");
+        println!("  galois build src/main.gal");
 
         Ok(())
     }
 
     pub fn ajouter_dépendance(&self, nom: &str, version: &str) -> Resultat<()> {
-        let manifeste_path = self.répertoire_racine.join("gallois.toml");
+        let manifeste_path = self.répertoire_racine.join("galois.toml");
 
         if !manifeste_path.exists() {
             return Err(Erreur::runtime(
                 Position::nouvelle(1, 1, ""),
-                "Pas de fichier gallois.toml dans le répertoire courant",
+                "Pas de fichier galois.toml dans le répertoire courant",
             ));
         }
 
@@ -82,7 +82,7 @@ impl GestionnairePaquets {
     }
 
     pub fn charger_manifeste(&self) -> Resultat<Manifeste> {
-        let manifeste_path = self.répertoire_racine.join("gallois.toml");
+        let manifeste_path = self.répertoire_racine.join("galois.toml");
         Manifeste::charger(&manifeste_path)
     }
 }

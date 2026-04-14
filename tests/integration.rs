@@ -1,21 +1,23 @@
-use gallois::lexer::token::Token;
-use gallois::lexer::Scanner;
-use gallois::parser::Parser;
-use gallois::semantic::Vérificateur;
+use galois::ir::GénérateurIR;
+use galois::ir::{IRInstruction, IRValeur};
+use galois::lexer::token::Token;
+use galois::lexer::Scanner;
+use galois::parser::Parser;
+use galois::semantic::Vérificateur;
 
-fn scanner_source(source: &str) -> Vec<gallois::lexer::TokenAvecPosition> {
+fn scanner_source(source: &str) -> Vec<galois::lexer::TokenAvecPosition> {
     let mut scanner = Scanner::nouveau(source, "test.gal");
     scanner.scanner().expect("Erreur de lexage")
 }
 
-fn tokens_significatifs(source: &str) -> Vec<gallois::lexer::TokenAvecPosition> {
+fn tokens_significatifs(source: &str) -> Vec<galois::lexer::TokenAvecPosition> {
     scanner_source(source)
         .into_iter()
         .filter(|t| !matches!(t.token, Token::NouvelleLigne))
         .collect()
 }
 
-fn parser_source(source: &str) -> gallois::parser::ProgrammeAST {
+fn parser_source(source: &str) -> galois::parser::ProgrammeAST {
     let tokens = scanner_source(source);
     let mut parser = Parser::nouveau(tokens);
     parser.parser_programme().expect("Erreur de parsing")
@@ -250,14 +252,14 @@ fn test_lexer_types_ffi() {
 
 #[test]
 fn test_manifeste_nouveau() {
-    let manifeste = gallois::package::Manifeste::nouveau("mon_projet");
+    let manifeste = galois::package::Manifeste::nouveau("mon_projet");
     assert_eq!(manifeste.package.nom, "mon_projet");
     assert_eq!(manifeste.package.version, "0.1.0");
 }
 
 #[test]
 fn test_manifeste_sérialiser() {
-    let manifeste = gallois::package::Manifeste::nouveau("test");
+    let manifeste = galois::package::Manifeste::nouveau("test");
     let toml = manifeste.sérialiser_toml();
     assert!(toml.contains("nom = \"test\""));
     assert!(toml.contains("version = \"0.1.0\""));
@@ -266,7 +268,7 @@ fn test_manifeste_sérialiser() {
 #[test]
 fn test_manifeste_parser() {
     let toml = "[package]\nnom = \"hello\"\nversion = \"1.0.0\"\n";
-    let manifeste = gallois::package::Manifeste::parser_toml(toml).expect("Parsing échoué");
+    let manifeste = galois::package::Manifeste::parser_toml(toml).expect("Parsing échoué");
     assert_eq!(manifeste.package.nom, "hello");
     assert_eq!(manifeste.package.version, "1.0.0");
 }
@@ -274,7 +276,7 @@ fn test_manifeste_parser() {
 #[test]
 fn test_manifeste_dépendances() {
     let toml = "[package]\nnom = \"test\"\nversion = \"0.1.0\"\n\n[dépendances]\nmaths = \"1.0\"\nhttp = \"0.3\"\n";
-    let manifeste = gallois::package::Manifeste::parser_toml(toml).expect("Parsing échoué");
+    let manifeste = galois::package::Manifeste::parser_toml(toml).expect("Parsing échoué");
     assert_eq!(manifeste.dépendances.len(), 2);
     assert!(manifeste.dépendances.contains_key("maths"));
     assert!(manifeste.dépendances.contains_key("http"));
@@ -285,7 +287,7 @@ fn test_manifeste_dépendances() {
 #[test]
 fn test_générateur_doc() {
     let programme = parser_source("fonction test(x) retourne x");
-    let mut générateur = gallois::doc::GénérateurDoc::nouveau();
+    let mut générateur = galois::doc::GénérateurDoc::nouveau();
     générateur
         .générer_depuis_programme(&programme)
         .expect("Génération doc échouée");
@@ -296,7 +298,7 @@ fn test_générateur_doc() {
 #[test]
 fn test_table_debug() {
     let programme = parser_source("fonction test(x) retourne x");
-    let mut table = gallois::debugger::TableDebug::nouvelle();
+    let mut table = galois::debugger::TableDebug::nouvelle();
     table.générer_depuis_programme(&programme);
 }
 
@@ -406,4 +408,321 @@ soit a: A = b";
     let programme = parser_source(source);
     let mut vérif = Vérificateur::nouveau();
     assert!(vérif.vérifier(&programme).is_ok());
+}
+
+#[test]
+fn test_vérification_nouveau_constructeur_nombre_arguments() {
+    let source = "classe Point
+    constructeur(x: entier, y: entier)
+    fin
+fin
+
+soit p = nouveau Point(1)";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_err());
+}
+
+#[test]
+fn test_vérification_nouveau_sans_constructeur_avec_arguments() {
+    let source = "classe Point
+fin
+
+soit p = nouveau Point(1)";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_err());
+}
+
+#[test]
+fn test_vérification_nouveau_constructeur_typé_ok() {
+    let source = "classe Point
+    constructeur(x: entier, y: entier)
+    fin
+fin
+
+soit p = nouveau Point(1, 2)";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_ok());
+}
+
+#[test]
+fn test_ir_ajoute_constructeur_par_défaut() {
+    let source = "classe Point
+fin
+
+soit p = nouveau Point()";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    vérif.vérifier(&programme).expect("Vérification échouée");
+
+    let table = vérif.table.clone();
+    let mut gen_ir = GénérateurIR::nouveau(table);
+    let module = gen_ir.générer(&programme);
+
+    assert!(module
+        .fonctions
+        .iter()
+        .any(|f| f.nom == "Point_constructeur"));
+}
+
+#[test]
+fn test_vérification_base_hors_constructeur() {
+    let source = "classe A
+fin
+
+classe B hérite A
+    publique fonction f(): rien
+        base()
+    fin
+fin";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_err());
+}
+
+#[test]
+fn test_vérification_base_dans_constructeur() {
+    let source = "classe A
+    constructeur(x: entier)
+    fin
+fin
+
+classe B hérite A
+    constructeur(y: entier)
+        base(y)
+    fin
+fin";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_ok());
+}
+
+#[test]
+fn test_ir_dispatch_dynamique_méthode_virtuelle() {
+    let source = "classe Base
+    publique virtuelle fonction parler(): texte
+        retourne \"base\"
+    fin
+fin
+
+classe Enfant hérite Base
+    publique surcharge fonction parler(): texte
+        retourne \"enfant\"
+    fin
+fin
+
+fonction dire(a: Base): texte
+    retourne a.parler()
+fin";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    vérif.vérifier(&programme).expect("Vérification échouée");
+
+    let mut gen_ir = GénérateurIR::nouveau(vérif.table.clone());
+    let module = gen_ir.générer(&programme);
+    let dire = module
+        .fonctions
+        .iter()
+        .find(|f| f.nom == "dire")
+        .expect("fonction dire introuvable");
+
+    let mut trouvé = false;
+    for bloc in &dire.blocs {
+        for instr in &bloc.instructions {
+            if let IRInstruction::Retourner(Some(IRValeur::AppelMéthode { méthode, .. })) = instr
+            {
+                if méthode == "parler" {
+                    trouvé = true;
+                }
+            }
+        }
+    }
+
+    assert!(trouvé, "Appel dynamique de méthode virtuelle non généré");
+}
+
+#[test]
+fn test_ir_accès_champ_typé() {
+    let source = "classe Point
+    publique x: entier
+fin
+
+fonction lire(p: Point): entier
+    retourne p.x
+fin";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    vérif.vérifier(&programme).expect("Vérification échouée");
+
+    let mut gen_ir = GénérateurIR::nouveau(vérif.table.clone());
+    let module = gen_ir.générer(&programme);
+    let lire = module
+        .fonctions
+        .iter()
+        .find(|f| f.nom == "lire")
+        .expect("fonction lire introuvable");
+
+    let mut trouvé = false;
+    for bloc in &lire.blocs {
+        for instr in &bloc.instructions {
+            if let IRInstruction::Retourner(Some(IRValeur::Membre { membre, classe, .. })) = instr {
+                if membre == "x" && classe == "Point" {
+                    trouvé = true;
+                }
+            }
+        }
+    }
+
+    assert!(trouvé, "Accès champ typé non généré");
+}
+
+#[test]
+fn test_vérification_base_doit_être_première_instruction() {
+    let source = "classe A
+    constructeur()
+    fin
+fin
+
+classe B hérite A
+    constructeur()
+        soit x = 1
+        base()
+    fin
+fin";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_err());
+}
+
+#[test]
+fn test_vérification_constructeur_parent_args_exige_base() {
+    let source = "classe A
+    constructeur(x: entier)
+    fin
+fin
+
+classe B hérite A
+    constructeur()
+    fin
+fin";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_err());
+}
+
+#[test]
+fn test_ir_constructeur_appelle_parent_implicite() {
+    let source = "classe A
+    constructeur()
+    fin
+fin
+
+classe B hérite A
+    constructeur()
+    fin
+fin";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    vérif.vérifier(&programme).expect("Vérification échouée");
+
+    let mut gen_ir = GénérateurIR::nouveau(vérif.table.clone());
+    let module = gen_ir.générer(&programme);
+    let init_b = module
+        .fonctions
+        .iter()
+        .find(|f| f.nom == "B__init")
+        .expect("fonction B__init introuvable");
+
+    let premier_instr = init_b
+        .blocs
+        .first()
+        .and_then(|b| b.instructions.first())
+        .expect("B__init vide");
+
+    match premier_instr {
+        IRInstruction::AppelFonction { fonction, .. } => assert_eq!(fonction, "A__init"),
+        _ => panic!("Le premier appel de B__init doit être A__init"),
+    }
+}
+
+#[test]
+fn test_vérification_dictionnaire_clés_primitives_ok() {
+    let source = "soit a = [1: \"x\", 2: \"y\"]
+soit b = [vrai: 1, faux: 2]
+soit c = [1.5: 10, 2.5: 20]
+soit d = [nul: 42]";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_ok());
+}
+
+#[test]
+fn test_vérification_dictionnaire_clé_non_hachable_erreur() {
+    let source = "soit d = [[1, 2]: 3]";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_err());
+}
+
+#[test]
+fn test_vérification_type_ann_dictionnaire_clé_non_hachable_erreur() {
+    let source = "soit d: dictionnaire<liste<entier>, entier>";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_err());
+}
+
+#[test]
+fn test_ir_dictionnaire_initialisation_typée() {
+    let source = "soit d = [1: 10, 2: 20]";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    vérif.vérifier(&programme).expect("Vérification échouée");
+
+    let mut gen_ir = GénérateurIR::nouveau(vérif.table.clone());
+    let module = gen_ir.générer(&programme);
+    let principal = module
+        .fonctions
+        .iter()
+        .find(|f| f.nom == "galois_principal")
+        .expect("galois_principal introuvable");
+
+    let mut trouvé = false;
+    for bloc in &principal.blocs {
+        for instr in &bloc.instructions {
+            if let IRInstruction::Affecter { valeur, .. } = instr {
+                if let IRValeur::InitialisationDictionnaire {
+                    type_clé,
+                    type_valeur,
+                    ..
+                } = valeur
+                {
+                    if matches!(type_clé, galois::ir::IRType::Entier)
+                        && matches!(type_valeur, galois::ir::IRType::Entier)
+                    {
+                        trouvé = true;
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(trouvé, "Initialisation dictionnaire typée non générée");
 }

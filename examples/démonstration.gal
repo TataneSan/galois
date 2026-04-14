@@ -1,8 +1,8 @@
-// Exemple Gallois - Programme de démonstration
+// Exemple Galois - Programme de démonstration
 
 // Déclaration de variables
 soit x: entier = 42
-soit nom: texte = "Gallois"
+soit nom: texte = "Galois"
 mutable compteur: entier = 0
 
 // Fonction récursive avec optimisation tail-call
@@ -97,7 +97,7 @@ fin
 
 // Programme principal
 fonction principal()
-    afficher("Bienvenue en Gallois !")
+    afficher("Bienvenue en Galois !")
     afficher(factorielle(10))
 
     soit résultat = traiter_données([1, -2, 3, -4, 5])

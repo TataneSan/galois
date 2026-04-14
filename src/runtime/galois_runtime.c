@@ -6,7 +6,7 @@
 #include <math.h>
 #include <time.h>
 
-// ===== Types Gallois =====
+// ===== Types Galois =====
 
 typedef int64_t gal_entier;
 typedef double gal_décimal;
@@ -35,9 +35,27 @@ struct gal_liste {
 
 typedef struct gal_dict_entry gal_dict_entry;
 
+typedef enum {
+    GAL_CLE_ENTIER = 1,
+    GAL_CLE_DECIMAL = 2,
+    GAL_CLE_TEXTE = 3,
+    GAL_CLE_BOOLEEN = 4,
+    GAL_CLE_NUL = 5,
+} gal_type_cle_dict;
+
+typedef struct {
+    gal_type_cle_dict type;
+    union {
+        int64_t entier;
+        double decimal;
+        const char* texte;
+        int8_t booleen;
+    } valeur;
+} gal_cle_dict;
+
 struct gal_dict_entry {
-    char* clé;
-    void* valeur;
+    gal_cle_dict clé;
+    uint64_t valeur_bits;
     gal_dict_entry* suivant;
 };
 
@@ -300,13 +318,73 @@ int64_t gal_liste_taille(gal_liste* l) {
 
 // ===== Opérations sur les dictionnaires =====
 
-static int64_t gal_hash_clé(const char* clé) {
-    int64_t hash = 5381;
+static uint64_t gal_hash_mixer(uint64_t x) {
+    x ^= x >> 33;
+    x *= 0xff51afd7ed558ccdULL;
+    x ^= x >> 33;
+    x *= 0xc4ceb9fe1a85ec53ULL;
+    x ^= x >> 33;
+    return x;
+}
+
+static uint64_t gal_hash_texte(const char* clé) {
+    if (!clé) return 0;
+    uint64_t hash = 5381;
     int c;
     while ((c = *clé++)) {
-        hash = ((hash << 5) + hash) + c;
+        hash = ((hash << 5) + hash) + (uint64_t)c;
     }
-    return hash;
+    return gal_hash_mixer(hash);
+}
+
+static uint64_t gal_canonicaliser_decimal(double d) {
+    if (isnan(d)) {
+        return 0x7ff8000000000000ULL;
+    }
+    if (d == 0.0) {
+        return 0ULL;
+    }
+    uint64_t bits = 0;
+    memcpy(&bits, &d, sizeof(uint64_t));
+    return bits;
+}
+
+static uint64_t gal_hash_cle(gal_cle_dict clé) {
+    switch (clé.type) {
+        case GAL_CLE_ENTIER:
+            return gal_hash_mixer((uint64_t)clé.valeur.entier);
+        case GAL_CLE_DECIMAL:
+            return gal_hash_mixer(gal_canonicaliser_decimal(clé.valeur.decimal));
+        case GAL_CLE_TEXTE:
+            return gal_hash_texte(clé.valeur.texte);
+        case GAL_CLE_BOOLEEN:
+            return gal_hash_mixer((uint64_t)(clé.valeur.booleen ? 1 : 0));
+        case GAL_CLE_NUL:
+            return gal_hash_mixer(0x9E3779B97F4A7C15ULL);
+        default:
+            return gal_hash_mixer(0);
+    }
+}
+
+static int gal_cles_egales(gal_cle_dict a, gal_cle_dict b) {
+    if (a.type != b.type) return 0;
+    switch (a.type) {
+        case GAL_CLE_ENTIER:
+            return a.valeur.entier == b.valeur.entier;
+        case GAL_CLE_DECIMAL:
+            return gal_canonicaliser_decimal(a.valeur.decimal)
+                == gal_canonicaliser_decimal(b.valeur.decimal);
+        case GAL_CLE_TEXTE:
+            if (!a.valeur.texte && !b.valeur.texte) return 1;
+            if (!a.valeur.texte || !b.valeur.texte) return 0;
+            return strcmp(a.valeur.texte, b.valeur.texte) == 0;
+        case GAL_CLE_BOOLEEN:
+            return (a.valeur.booleen ? 1 : 0) == (b.valeur.booleen ? 1 : 0);
+        case GAL_CLE_NUL:
+            return 1;
+        default:
+            return 0;
+    }
 }
 
 gal_dictionnaire* gal_dictionnaire_nouveau() {
@@ -319,13 +397,14 @@ gal_dictionnaire* gal_dictionnaire_nouveau() {
     return d;
 }
 
-void gal_dictionnaire_définir(gal_dictionnaire* d, const char* clé, void* valeur) {
-    int64_t indice = gal_hash_clé(clé) % d->nombre_seaux;
+static void gal_dict_set_key(gal_dictionnaire* d, gal_cle_dict clé, uint64_t valeur_bits) {
+    if (!d) return;
+    uint64_t indice = gal_hash_cle(clé) % (uint64_t)d->nombre_seaux;
     gal_dict_entry* entry = d->seaux[indice];
 
     while (entry) {
-        if (strcmp(entry->clé, clé) == 0) {
-            entry->valeur = valeur;
+        if (gal_cles_egales(entry->clé, clé)) {
+            entry->valeur_bits = valeur_bits;
             return;
         }
         entry = entry->suivant;
@@ -333,29 +412,128 @@ void gal_dictionnaire_définir(gal_dictionnaire* d, const char* clé, void* vale
 
     gal_dict_entry* nouvelle = (gal_dict_entry*)malloc(sizeof(gal_dict_entry));
     if (!nouvelle) return;
-    nouvelle->clé = strdup(clé);
-    nouvelle->valeur = valeur;
+    nouvelle->clé = clé;
+    nouvelle->valeur_bits = valeur_bits;
     nouvelle->suivant = d->seaux[indice];
     d->seaux[indice] = nouvelle;
     d->taille++;
 }
 
-void* gal_dictionnaire_obtenir(gal_dictionnaire* d, const char* clé) {
-    if (!d) return NULL;
-    int64_t indice = gal_hash_clé(clé) % d->nombre_seaux;
+static int gal_dict_get_key(gal_dictionnaire* d, gal_cle_dict clé, uint64_t* out_bits) {
+    if (!d) return 0;
+    uint64_t indice = gal_hash_cle(clé) % (uint64_t)d->nombre_seaux;
     gal_dict_entry* entry = d->seaux[indice];
 
     while (entry) {
-        if (strcmp(entry->clé, clé) == 0) {
-            return entry->valeur;
+        if (gal_cles_egales(entry->clé, clé)) {
+            if (out_bits) *out_bits = entry->valeur_bits;
+            return 1;
         }
         entry = entry->suivant;
     }
-    return NULL;
+    return 0;
+}
+
+void gal_dict_set_i64(gal_dictionnaire* d, int64_t clé, uint64_t valeur_bits) {
+    gal_cle_dict k;
+    k.type = GAL_CLE_ENTIER;
+    k.valeur.entier = clé;
+    gal_dict_set_key(d, k, valeur_bits);
+}
+
+void gal_dict_set_f64(gal_dictionnaire* d, double clé, uint64_t valeur_bits) {
+    gal_cle_dict k;
+    k.type = GAL_CLE_DECIMAL;
+    k.valeur.decimal = clé;
+    gal_dict_set_key(d, k, valeur_bits);
+}
+
+void gal_dict_set_texte(gal_dictionnaire* d, const char* clé, uint64_t valeur_bits) {
+    gal_cle_dict k;
+    k.type = GAL_CLE_TEXTE;
+    k.valeur.texte = clé;
+    gal_dict_set_key(d, k, valeur_bits);
+}
+
+void gal_dict_set_bool(gal_dictionnaire* d, int8_t clé, uint64_t valeur_bits) {
+    gal_cle_dict k;
+    k.type = GAL_CLE_BOOLEEN;
+    k.valeur.booleen = clé;
+    gal_dict_set_key(d, k, valeur_bits);
+}
+
+void gal_dict_set_nul(gal_dictionnaire* d, uint64_t valeur_bits) {
+    gal_cle_dict k;
+    k.type = GAL_CLE_NUL;
+    k.valeur.entier = 0;
+    gal_dict_set_key(d, k, valeur_bits);
+}
+
+uint64_t gal_dict_get_i64(gal_dictionnaire* d, int64_t clé, int* trouvé) {
+    gal_cle_dict k;
+    uint64_t out = 0;
+    k.type = GAL_CLE_ENTIER;
+    k.valeur.entier = clé;
+    int ok = gal_dict_get_key(d, k, &out);
+    if (trouvé) *trouvé = ok;
+    return out;
+}
+
+uint64_t gal_dict_get_f64(gal_dictionnaire* d, double clé, int* trouvé) {
+    gal_cle_dict k;
+    uint64_t out = 0;
+    k.type = GAL_CLE_DECIMAL;
+    k.valeur.decimal = clé;
+    int ok = gal_dict_get_key(d, k, &out);
+    if (trouvé) *trouvé = ok;
+    return out;
+}
+
+uint64_t gal_dict_get_texte(gal_dictionnaire* d, const char* clé, int* trouvé) {
+    gal_cle_dict k;
+    uint64_t out = 0;
+    k.type = GAL_CLE_TEXTE;
+    k.valeur.texte = clé;
+    int ok = gal_dict_get_key(d, k, &out);
+    if (trouvé) *trouvé = ok;
+    return out;
+}
+
+uint64_t gal_dict_get_bool(gal_dictionnaire* d, int8_t clé, int* trouvé) {
+    gal_cle_dict k;
+    uint64_t out = 0;
+    k.type = GAL_CLE_BOOLEEN;
+    k.valeur.booleen = clé;
+    int ok = gal_dict_get_key(d, k, &out);
+    if (trouvé) *trouvé = ok;
+    return out;
+}
+
+uint64_t gal_dict_get_nul(gal_dictionnaire* d, int* trouvé) {
+    gal_cle_dict k;
+    uint64_t out = 0;
+    k.type = GAL_CLE_NUL;
+    k.valeur.entier = 0;
+    int ok = gal_dict_get_key(d, k, &out);
+    if (trouvé) *trouvé = ok;
+    return out;
+}
+
+void gal_dictionnaire_définir(gal_dictionnaire* d, const char* clé, void* valeur) {
+    gal_dict_set_texte(d, clé, (uint64_t)(uintptr_t)valeur);
+}
+
+void* gal_dictionnaire_obtenir(gal_dictionnaire* d, const char* clé) {
+    int trouvé = 0;
+    uint64_t bits = gal_dict_get_texte(d, clé, &trouvé);
+    if (!trouvé) return NULL;
+    return (void*)(uintptr_t)bits;
 }
 
 int gal_dictionnaire_contient(gal_dictionnaire* d, const char* clé) {
-    return gal_dictionnaire_obtenir(d, clé) != NULL;
+    int trouvé = 0;
+    (void)gal_dict_get_texte(d, clé, &trouvé);
+    return trouvé;
 }
 
 // ===== Opérations sur les piles =====

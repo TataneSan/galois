@@ -20,7 +20,7 @@ pub struct CompilateurNatif {
 impl CompilateurNatif {
     pub fn nouveau(options: OptionsCompilation) -> Self {
         let répertoire_travail =
-            std::env::temp_dir().join(format!("gallois_{}", std::process::id()));
+            std::env::temp_dir().join(format!("galois_{}", std::process::id()));
         Self {
             options,
             répertoire_travail,
@@ -92,8 +92,8 @@ impl CompilateurNatif {
     }
 
     fn compiler_runtime(&self) -> Resultat<PathBuf> {
-        let fichier_runtime_c = Path::new("src/runtime/gallois_runtime.c");
-        let fichier_objet = self.répertoire_travail.join("gallois_runtime.o");
+        let fichier_runtime_c = Path::new("src/runtime/galois_runtime.c");
+        let fichier_objet = self.répertoire_travail.join("galois_runtime.o");
 
         if !fichier_runtime_c.exists() {
             return Err(Erreur::runtime(

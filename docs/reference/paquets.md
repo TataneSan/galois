@@ -2,9 +2,9 @@
 
 Galois intègre un gestionnaire de paquets pour gérer les dépendances.
 
-## Fichier manifeste : `gallois.toml`
+## Fichier manifeste : `galois.toml`
 
-Chaque projet Galois contient un fichier `gallois.toml` à sa racine :
+Chaque projet Galois contient un fichier `galois.toml` à sa racine :
 
 ```toml
 [projet]
@@ -29,12 +29,12 @@ Génère la structure :
 
 ```
 mon_projet/
-├── gallois.toml
+├── galois.toml
 ├── principal.gal
 └── src/
 ```
 
-### `gallois.toml` généré
+### `galois.toml` généré
 
 ```toml
 [projet]
@@ -55,7 +55,7 @@ galois add maths
 galois add maths 1.2.0
 ```
 
-Met à jour `gallois.toml` :
+Met à jour `galois.toml` :
 
 ```toml
 [dépendances]

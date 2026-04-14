@@ -139,7 +139,7 @@ Crée un nouveau projet avec la structure suivante :
 
 ```
 mon_projet/
-├── gallois.toml
+├── galois.toml
 ├── principal.gal
 └── src/
 ```
@@ -150,7 +150,7 @@ mon_projet/
 galois add <nom_du_paquet> [version]
 ```
 
-Ajoute une dépendance au fichier `gallois.toml`.
+Ajoute une dépendance au fichier `galois.toml`.
 
 ```bash
 galois add maths

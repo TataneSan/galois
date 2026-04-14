@@ -1,4 +1,4 @@
-// Bibliothèque de collections avancées de Gallois
+// Bibliothèque de collections avancées de Galois
 
 fonction intervalle(début: entier, fin: entier): liste<entier>
     résultat = []

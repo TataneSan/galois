@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::io::Write;
+use std::collections::{HashMap, HashSet};
 
 use crate::ir::{IRBloc, IRFonction, IRInstruction, IRModule, IROp, IRStruct, IRType, IRValeur};
 
@@ -10,6 +9,12 @@ pub struct GénérateurLLVM {
     chaînes: Vec<(String, String)>,
     compteur_chaînes: usize,
     signatures_fonctions: HashMap<String, (Vec<IRType>, IRType)>,
+    champs_structs: HashMap<String, HashMap<String, (usize, IRType)>>,
+    parents_structs: HashMap<String, Option<String>>,
+    interfaces_structs: HashMap<String, Vec<String>>,
+    ids_classes: HashMap<String, i64>,
+    dispatch_requis: Vec<(String, bool, String, Vec<IRType>, IRType)>,
+    dispatch_index: HashSet<String>,
 }
 
 impl GénérateurLLVM {
@@ -21,6 +26,12 @@ impl GénérateurLLVM {
             chaînes: Vec::new(),
             compteur_chaînes: 0,
             signatures_fonctions: HashMap::new(),
+            champs_structs: HashMap::new(),
+            parents_structs: HashMap::new(),
+            interfaces_structs: HashMap::new(),
+            ids_classes: HashMap::new(),
+            dispatch_requis: Vec::new(),
+            dispatch_index: HashSet::new(),
         }
     }
 
@@ -54,7 +65,7 @@ impl GénérateurLLVM {
             IRType::Pile(_) => "{ i64, i64, i8* }".to_string(),
             IRType::File(_) => "{ i64, i64, i8* }".to_string(),
             IRType::ListeChaînée(_) => "{ i8* }".to_string(),
-            IRType::Dictionnaire(_, _) => "{ i64, i8* }".to_string(),
+            IRType::Dictionnaire(_, _) => "i8*".to_string(),
             IRType::Ensemble(_) => "{ i64, i8* }".to_string(),
             IRType::Tuple(_) => "{ i64, i8* }".to_string(),
             IRType::Fonction(_, _) => "i8*".to_string(),
@@ -87,6 +98,12 @@ impl GénérateurLLVM {
         self.chaînes.clear();
         self.compteur_chaînes = 0;
         self.signatures_fonctions.clear();
+        self.champs_structs.clear();
+        self.parents_structs.clear();
+        self.interfaces_structs.clear();
+        self.ids_classes.clear();
+        self.dispatch_requis.clear();
+        self.dispatch_index.clear();
 
         for f in &module.fonctions {
             self.signatures_fonctions.insert(
@@ -98,8 +115,21 @@ impl GénérateurLLVM {
             );
         }
 
-        self.écrire("; Module Gallois - Généré par le compilateur\n");
+        self.écrire("; Module Galois - Généré par le compilateur\n");
         self.écrire("target triple = \"x86_64-pc-linux-gnu\"\n\n");
+
+        for (i, st) in module.structures.iter().enumerate() {
+            self.ids_classes.insert(st.nom.clone(), (i as i64) + 1);
+            let mut champs = HashMap::new();
+            for (idx, (nom, type_champ)) in st.champs.iter().enumerate() {
+                champs.insert(nom.clone(), (idx, type_champ.clone()));
+            }
+            self.champs_structs.insert(st.nom.clone(), champs);
+            self.parents_structs
+                .insert(st.nom.clone(), st.parent.clone());
+            self.interfaces_structs
+                .insert(st.nom.clone(), st.interfaces.clone());
+        }
 
         for st in &module.structures {
             self.générer_struct(st);
@@ -127,6 +157,17 @@ impl GénérateurLLVM {
         self.écrire("declare i64 @time(i64*)\n");
         self.écrire("declare void @srand(i64)\n");
         self.écrire("declare i32 @rand()\n\n");
+        self.écrire("declare i8* @gal_dictionnaire_nouveau()\n");
+        self.écrire("declare void @gal_dict_set_i64(i8*, i64, i64)\n");
+        self.écrire("declare void @gal_dict_set_f64(i8*, double, i64)\n");
+        self.écrire("declare void @gal_dict_set_texte(i8*, i8*, i64)\n");
+        self.écrire("declare void @gal_dict_set_bool(i8*, i8, i64)\n");
+        self.écrire("declare void @gal_dict_set_nul(i8*, i64)\n");
+        self.écrire("declare i64 @gal_dict_get_i64(i8*, i64, i32*)\n");
+        self.écrire("declare i64 @gal_dict_get_f64(i8*, double, i32*)\n");
+        self.écrire("declare i64 @gal_dict_get_texte(i8*, i8*, i32*)\n");
+        self.écrire("declare i64 @gal_dict_get_bool(i8*, i8, i32*)\n");
+        self.écrire("declare i64 @gal_dict_get_nul(i8*, i32*)\n\n");
 
         self.générer_fonctions_runtime();
 
@@ -149,18 +190,16 @@ impl GénérateurLLVM {
             self.générer_fonction(f);
         }
 
-        let a_principal = module
-            .fonctions
-            .iter()
-            .any(|f| f.nom == "gallois_principal");
+        self.générer_dispatch_dynamiques();
+
+        let a_principal = module.fonctions.iter().any(|f| f.nom == "galois_principal");
         if a_principal {
             self.écrire("define i32 @main() {\n");
-            self.écrire("  call i64 @gallois_principal()\n");
+            self.écrire("  call i64 @galois_principal()\n");
             self.écrire("  ret i32 0\n");
             self.écrire("}\n\n");
         }
 
-        let mut pos = self.sortie.len();
         for (nom, contenu) in &self.chaînes {
             let len = contenu.len() + 1;
             let déclaration = format!(
@@ -324,11 +363,7 @@ impl GénérateurLLVM {
                 type_var,
             } => {
                 let type_stock = self.type_llvm_stockage(type_var);
-                let (reg, code) = if let IRValeur::Appel(nom, args) = valeur {
-                    self.générer_appel_typé(nom, args, type_var)
-                } else {
-                    self.générer_valeur(valeur)
-                };
+                let (reg, code) = self.générer_valeur_pour_type(valeur, type_var);
                 if !code.is_empty() {
                     self.écrire(&code);
                 }
@@ -343,32 +378,95 @@ impl GénérateurLLVM {
             IRInstruction::Stockage {
                 destination,
                 valeur,
-            } => {
-                let (reg, code) = self.générer_valeur(valeur);
-                if !code.is_empty() {
-                    self.écrire(&code);
-                }
-                match destination {
-                    IRValeur::Référence(nom) => {
-                        self.écrire(&format!(
-                            "  store i64 {}, i64* {}\n",
-                            reg,
-                            self.nom_var_llvm(nom)
-                        ));
+            } => match destination {
+                IRValeur::Référence(nom) => {
+                    let (reg, code) = self.générer_valeur(valeur);
+                    if !code.is_empty() {
+                        self.écrire(&code);
                     }
-                    IRValeur::Membre(obj, champ) => {
-                        let (obj_reg, obj_code) = self.générer_valeur(obj);
-                        if !obj_code.is_empty() {
-                            self.écrire(&obj_code);
+                    self.écrire(&format!(
+                        "  store i64 {}, i64* {}\n",
+                        reg,
+                        self.nom_var_llvm(nom)
+                    ));
+                }
+                IRValeur::Membre {
+                    objet,
+                    membre,
+                    classe,
+                    type_membre,
+                } => {
+                    let (val_reg, val_code) = self.générer_valeur_pour_type(valeur, type_membre);
+                    if !val_code.is_empty() {
+                        self.écrire(&val_code);
+                    }
+
+                    if let Some((ptr_reg, ptr_code)) =
+                        self.générer_adresse_membre(objet, classe, membre)
+                    {
+                        if !ptr_code.is_empty() {
+                            self.écrire(&ptr_code);
                         }
-                        let _ = (champ, obj_reg);
-                        self.écrire(&format!("  store i64 {}, i64* null\n", reg));
-                    }
-                    _ => {
-                        self.écrire(&format!("  store i64 {}, i64* null\n", reg));
+                        let type_stock = self.type_llvm_stockage(type_membre);
+                        self.écrire(&format!(
+                            "  store {} {}, {}* {}\n",
+                            type_stock, val_reg, type_stock, ptr_reg
+                        ));
+                    } else {
+                        self.écrire(&format!("  store i64 {}, i64* null\n", val_reg));
                     }
                 }
-            }
+                IRValeur::AccèsDictionnaire {
+                    dictionnaire,
+                    clé,
+                    type_clé,
+                    type_valeur,
+                } => {
+                    let (dict_reg, dict_code) = self.générer_valeur_pour_type(
+                        dictionnaire,
+                        &IRType::Dictionnaire(
+                            Box::new(type_clé.clone()),
+                            Box::new(type_valeur.clone()),
+                        ),
+                    );
+                    if !dict_code.is_empty() {
+                        self.écrire(&dict_code);
+                    }
+
+                    let (clé_reg, clé_code) = self.générer_clé_dictionnaire(clé, type_clé);
+                    if !clé_code.is_empty() {
+                        self.écrire(&clé_code);
+                    }
+
+                    let (val_bits, val_code) = self.générer_valeur_en_bits(valeur, type_valeur);
+                    if !val_code.is_empty() {
+                        self.écrire(&val_code);
+                    }
+
+                    let setter = self.nom_set_dictionnaire(type_clé);
+                    match type_clé {
+                        IRType::Nul => self.écrire(&format!(
+                            "  call void @{}(i8* {}, i64 {})\n",
+                            setter, dict_reg, val_bits
+                        )),
+                        _ => self.écrire(&format!(
+                            "  call void @{}(i8* {}, {} {}, i64 {})\n",
+                            setter,
+                            dict_reg,
+                            self.type_llvm_cle_dictionnaire(type_clé),
+                            clé_reg,
+                            val_bits
+                        )),
+                    }
+                }
+                _ => {
+                    let (reg, code) = self.générer_valeur(valeur);
+                    if !code.is_empty() {
+                        self.écrire(&code);
+                    }
+                    self.écrire(&format!("  store i64 {}, i64* null\n", reg));
+                }
+            },
             IRInstruction::Chargement {
                 destination,
                 source,
@@ -393,7 +491,7 @@ impl GénérateurLLVM {
             IRInstruction::Retourner(valeur) => {
                 if let Some(v) = valeur {
                     let type_ret = self.type_llvm(type_retour);
-                    let (reg, code) = self.générer_valeur(v);
+                    let (reg, code) = self.générer_valeur_pour_type(v, type_retour);
                     if !code.is_empty() {
                         self.écrire(&code);
                     }
@@ -496,6 +594,69 @@ impl GénérateurLLVM {
     ) -> (String, String) {
         match val {
             IRValeur::Appel(nom, args) => self.générer_appel_typé(nom, args, type_attendu),
+            IRValeur::InitialisationDictionnaire {
+                paires,
+                type_clé,
+                type_valeur,
+            } => {
+                let reg_dict = self.reg_suivant();
+                let mut code = format!("  {} = call i8* @gal_dictionnaire_nouveau()\n", reg_dict);
+
+                for (clé, valeur) in paires {
+                    let (kreg, kcode) = self.générer_clé_dictionnaire(clé, type_clé);
+                    code.push_str(&kcode);
+                    let (vbits, vcode) = self.générer_valeur_en_bits(valeur, type_valeur);
+                    code.push_str(&vcode);
+
+                    let setter = self.nom_set_dictionnaire(type_clé);
+                    match type_clé {
+                        IRType::Nul => code.push_str(&format!(
+                            "  call void @{}(i8* {}, i64 {})\n",
+                            setter, reg_dict, vbits
+                        )),
+                        _ => code.push_str(&format!(
+                            "  call void @{}(i8* {}, {} {}, i64 {})\n",
+                            setter,
+                            reg_dict,
+                            self.type_llvm_cle_dictionnaire(type_clé),
+                            kreg,
+                            vbits
+                        )),
+                    }
+                }
+
+                (reg_dict, code)
+            }
+            IRValeur::AccèsDictionnaire {
+                dictionnaire,
+                clé,
+                type_clé,
+                type_valeur,
+            } => self.générer_accès_dictionnaire_typé(
+                dictionnaire,
+                clé,
+                type_clé,
+                type_valeur,
+                type_attendu,
+            ),
+            IRValeur::AppelMéthode {
+                objet,
+                base,
+                est_interface,
+                méthode,
+                arguments,
+                types_arguments,
+                type_retour,
+            } => self.générer_appel_méthode_typé(
+                objet,
+                base,
+                *est_interface,
+                méthode,
+                arguments,
+                types_arguments,
+                type_retour,
+                type_attendu,
+            ),
             IRValeur::Référence(nom) => {
                 let reg = self.reg_suivant();
                 let type_stock = self.type_llvm_stockage(type_attendu);
@@ -508,6 +669,7 @@ impl GénérateurLLVM {
                 );
                 (reg, code)
             }
+            IRValeur::Membre { .. } => self.générer_valeur_membre_typé(val, type_attendu),
             _ => self.générer_valeur(val),
         }
     }
@@ -579,6 +741,481 @@ impl GénérateurLLVM {
         }
     }
 
+    fn nom_set_dictionnaire(&self, type_clé: &IRType) -> &'static str {
+        match type_clé {
+            IRType::Entier => "gal_dict_set_i64",
+            IRType::Décimal => "gal_dict_set_f64",
+            IRType::Texte => "gal_dict_set_texte",
+            IRType::Booléen => "gal_dict_set_bool",
+            IRType::Nul => "gal_dict_set_nul",
+            _ => "gal_dict_set_i64",
+        }
+    }
+
+    fn nom_get_dictionnaire(&self, type_clé: &IRType) -> &'static str {
+        match type_clé {
+            IRType::Entier => "gal_dict_get_i64",
+            IRType::Décimal => "gal_dict_get_f64",
+            IRType::Texte => "gal_dict_get_texte",
+            IRType::Booléen => "gal_dict_get_bool",
+            IRType::Nul => "gal_dict_get_nul",
+            _ => "gal_dict_get_i64",
+        }
+    }
+
+    fn générer_clé_dictionnaire(
+        &mut self,
+        clé: &IRValeur,
+        type_clé: &IRType,
+    ) -> (String, String) {
+        let (reg, code) = self.générer_valeur_pour_type(clé, type_clé);
+        if matches!(type_clé, IRType::Booléen) {
+            let out = self.reg_suivant();
+            let mut c = code;
+            c.push_str(&format!("  {} = zext i1 {} to i8\n", out, reg));
+            (out, c)
+        } else {
+            (reg, code)
+        }
+    }
+
+    fn type_llvm_cle_dictionnaire(&self, type_clé: &IRType) -> String {
+        match type_clé {
+            IRType::Booléen => "i8".to_string(),
+            _ => self.type_llvm_stockage(type_clé),
+        }
+    }
+
+    fn générer_valeur_en_bits(
+        &mut self,
+        valeur: &IRValeur,
+        type_valeur: &IRType,
+    ) -> (String, String) {
+        let (reg, code) = self.générer_valeur_pour_type(valeur, type_valeur);
+        match type_valeur {
+            IRType::Entier => (reg, code),
+            IRType::Booléen => {
+                let out = self.reg_suivant();
+                let mut c = code;
+                c.push_str(&format!("  {} = zext i1 {} to i64\n", out, reg));
+                (out, c)
+            }
+            IRType::Décimal => {
+                let out = self.reg_suivant();
+                let mut c = code;
+                c.push_str(&format!("  {} = bitcast double {} to i64\n", out, reg));
+                (out, c)
+            }
+            IRType::Texte
+            | IRType::Nul
+            | IRType::Struct(_, _)
+            | IRType::Pointeur(_)
+            | IRType::Référence(_)
+            | IRType::Dictionnaire(_, _) => {
+                let out = self.reg_suivant();
+                let mut c = code;
+                let type_src = self.type_llvm_stockage(type_valeur);
+                c.push_str(&format!(
+                    "  {} = ptrtoint {} {} to i64\n",
+                    out, type_src, reg
+                ));
+                (out, c)
+            }
+            _ => {
+                let out = self.reg_suivant();
+                let mut c = code;
+                c.push_str(&format!("  {} = add i64 0, 0\n", out));
+                (out, c)
+            }
+        }
+    }
+
+    fn générer_bits_vers_valeur(
+        &mut self,
+        bits_reg: &str,
+        type_valeur: &IRType,
+    ) -> (String, String) {
+        match type_valeur {
+            IRType::Entier => (bits_reg.to_string(), String::new()),
+            IRType::Booléen => {
+                let out = self.reg_suivant();
+                (
+                    out.clone(),
+                    format!("  {} = trunc i64 {} to i1\n", out, bits_reg),
+                )
+            }
+            IRType::Décimal => {
+                let out = self.reg_suivant();
+                (
+                    out.clone(),
+                    format!("  {} = bitcast i64 {} to double\n", out, bits_reg),
+                )
+            }
+            IRType::Texte
+            | IRType::Nul
+            | IRType::Struct(_, _)
+            | IRType::Pointeur(_)
+            | IRType::Référence(_)
+            | IRType::Dictionnaire(_, _) => {
+                let out = self.reg_suivant();
+                let type_dst = self.type_llvm_stockage(type_valeur);
+                (
+                    out.clone(),
+                    format!("  {} = inttoptr i64 {} to {}\n", out, bits_reg, type_dst),
+                )
+            }
+            _ => {
+                let out = self.reg_suivant();
+                (
+                    out.clone(),
+                    format!("  {} = add i64 {}, 0\n", out, bits_reg),
+                )
+            }
+        }
+    }
+
+    fn générer_accès_dictionnaire_typé(
+        &mut self,
+        dictionnaire: &IRValeur,
+        clé: &IRValeur,
+        type_clé: &IRType,
+        type_valeur: &IRType,
+        type_attendu: &IRType,
+    ) -> (String, String) {
+        let (dict_reg, dict_code) = self.générer_valeur_pour_type(
+            dictionnaire,
+            &IRType::Dictionnaire(Box::new(type_clé.clone()), Box::new(type_valeur.clone())),
+        );
+        let (clé_reg, clé_code) = self.générer_clé_dictionnaire(clé, type_clé);
+
+        let mut code = String::new();
+        code.push_str(&dict_code);
+        code.push_str(&clé_code);
+
+        let reg_trouvé = self.reg_suivant();
+        code.push_str(&format!("  {} = alloca i32\n", reg_trouvé));
+        code.push_str(&format!("  store i32 0, i32* {}\n", reg_trouvé));
+
+        let reg_bits = self.reg_suivant();
+        let getter = self.nom_get_dictionnaire(type_clé);
+        match type_clé {
+            IRType::Nul => code.push_str(&format!(
+                "  {} = call i64 @{}(i8* {}, i32* {})\n",
+                reg_bits, getter, dict_reg, reg_trouvé
+            )),
+            _ => code.push_str(&format!(
+                "  {} = call i64 @{}(i8* {}, {} {}, i32* {})\n",
+                reg_bits,
+                getter,
+                dict_reg,
+                self.type_llvm_cle_dictionnaire(type_clé),
+                clé_reg,
+                reg_trouvé
+            )),
+        }
+
+        let _ = type_valeur;
+        let (reg_valeur, code_decode) = self.générer_bits_vers_valeur(&reg_bits, type_attendu);
+        code.push_str(&code_decode);
+        (reg_valeur, code)
+    }
+
+    fn nom_dispatch_dynamique(&self, base: &str, est_interface: bool, méthode: &str) -> String {
+        let préfixe = if est_interface { "itf" } else { "cls" };
+        format!("__dispatch_{}_{}_{}", préfixe, base, méthode)
+    }
+
+    fn enregistrer_dispatch(
+        &mut self,
+        base: &str,
+        est_interface: bool,
+        méthode: &str,
+        types_arguments: &[IRType],
+        type_retour: &IRType,
+    ) {
+        let clé = format!(
+            "{}:{}:{}",
+            if est_interface { "itf" } else { "cls" },
+            base,
+            méthode
+        );
+        if self.dispatch_index.contains(&clé) {
+            return;
+        }
+        self.dispatch_index.insert(clé);
+        self.dispatch_requis.push((
+            base.to_string(),
+            est_interface,
+            méthode.to_string(),
+            types_arguments.to_vec(),
+            type_retour.clone(),
+        ));
+    }
+
+    fn générer_appel_méthode_typé(
+        &mut self,
+        objet: &IRValeur,
+        base: &str,
+        est_interface: bool,
+        méthode: &str,
+        arguments: &[IRValeur],
+        types_arguments: &[IRType],
+        type_retour: &IRType,
+        _type_attendu: &IRType,
+    ) -> (String, String) {
+        self.enregistrer_dispatch(base, est_interface, méthode, types_arguments, type_retour);
+
+        let mut code = String::new();
+        let (obj_reg, obj_code) =
+            self.générer_valeur_pour_type(objet, &IRType::Struct(base.to_string(), Vec::new()));
+        if !obj_code.is_empty() {
+            code.push_str(&obj_code);
+        }
+
+        let mut args_str = format!("i8* {}", obj_reg);
+        for (i, arg) in arguments.iter().enumerate() {
+            let type_arg = types_arguments.get(i).cloned().unwrap_or(IRType::Entier);
+            let (arg_reg, arg_code) = self.générer_valeur_pour_type(arg, &type_arg);
+            if !arg_code.is_empty() {
+                code.push_str(&arg_code);
+            }
+            args_str.push_str(", ");
+            args_str.push_str(&format!(
+                "{} {}",
+                self.type_llvm_stockage(&type_arg),
+                arg_reg
+            ));
+        }
+
+        let nom_dispatch = self.nom_dispatch_dynamique(base, est_interface, méthode);
+        let type_ret = self.type_llvm_stockage(type_retour);
+        if matches!(type_retour, IRType::Vide) {
+            code.push_str(&format!(
+                "  call {} @{}({})\n",
+                type_ret,
+                self.nom_llvm(&nom_dispatch),
+                args_str
+            ));
+            ("0".to_string(), code)
+        } else {
+            let reg = self.reg_suivant();
+            code.push_str(&format!(
+                "  {} = call {} @{}({})\n",
+                reg,
+                type_ret,
+                self.nom_llvm(&nom_dispatch),
+                args_str
+            ));
+            (reg, code)
+        }
+    }
+
+    fn générer_adresse_membre(
+        &mut self,
+        objet: &IRValeur,
+        classe: &str,
+        membre: &str,
+    ) -> Option<(String, String)> {
+        let (index, _) = self
+            .champs_structs
+            .get(classe)
+            .and_then(|m| m.get(membre))
+            .cloned()?;
+
+        let (obj_reg, obj_code) =
+            self.générer_valeur_pour_type(objet, &IRType::Struct(classe.to_string(), Vec::new()));
+        let reg_cast = self.reg_suivant();
+        let reg_ptr = self.reg_suivant();
+        let mut code = obj_code;
+        code.push_str(&format!(
+            "  {} = bitcast i8* {} to %struct.{}*\n",
+            reg_cast, obj_reg, classe
+        ));
+        code.push_str(&format!(
+            "  {} = getelementptr %struct.{}, %struct.{}* {}, i32 0, i32 {}\n",
+            reg_ptr, classe, classe, reg_cast, index
+        ));
+        Some((reg_ptr, code))
+    }
+
+    fn générer_valeur_membre_typé(
+        &mut self,
+        val: &IRValeur,
+        type_attendu: &IRType,
+    ) -> (String, String) {
+        if let IRValeur::Membre {
+            objet,
+            membre,
+            classe,
+            ..
+        } = val
+        {
+            if let Some((ptr_reg, code_addr)) = self.générer_adresse_membre(objet, classe, membre)
+            {
+                let reg = self.reg_suivant();
+                let type_stock = self.type_llvm_stockage(type_attendu);
+                let mut code = code_addr;
+                code.push_str(&format!(
+                    "  {} = load {}, {}* {}\n",
+                    reg, type_stock, type_stock, ptr_reg
+                ));
+                return (reg, code);
+            }
+        }
+
+        let reg = self.reg_suivant();
+        (reg.clone(), format!("  {} = add i64 0, 0\n", reg))
+    }
+
+    fn classe_hérite_de(&self, classe: &str, ancêtre: &str) -> bool {
+        if classe == ancêtre {
+            return true;
+        }
+        let mut courante = Some(classe.to_string());
+        while let Some(cn) = courante {
+            let parent = self.parents_structs.get(&cn).cloned().flatten();
+            if let Some(p) = parent {
+                if p == ancêtre {
+                    return true;
+                }
+                courante = Some(p);
+            } else {
+                break;
+            }
+        }
+        false
+    }
+
+    fn classe_impl_interface(&self, classe: &str, interface: &str) -> bool {
+        let mut courante = Some(classe.to_string());
+        while let Some(cn) = courante {
+            let interfaces = self
+                .interfaces_structs
+                .get(&cn)
+                .cloned()
+                .unwrap_or_default();
+            if interfaces.iter().any(|i| i == interface) {
+                return true;
+            }
+            courante = self.parents_structs.get(&cn).cloned().flatten();
+        }
+        false
+    }
+
+    fn résoudre_impl_méthode(&self, classe: &str, méthode: &str) -> Option<String> {
+        let mut courante = Some(classe.to_string());
+        while let Some(cn) = courante {
+            let nom_fn = format!("{}_{}", cn, méthode);
+            if self.signatures_fonctions.contains_key(&nom_fn) {
+                return Some(nom_fn);
+            }
+            courante = self.parents_structs.get(&cn).cloned().flatten();
+        }
+        None
+    }
+
+    fn générer_dispatch_dynamiques(&mut self) {
+        let dispatches = self.dispatch_requis.clone();
+        for (base, est_interface, méthode, types_args, type_retour) in dispatches {
+            let nom_dispatch = self.nom_dispatch_dynamique(&base, est_interface, &méthode);
+            let type_ret = self.type_llvm_stockage(&type_retour);
+
+            self.écrire(&format!(
+                "define {} @{}(i8* %obj",
+                type_ret,
+                self.nom_llvm(&nom_dispatch)
+            ));
+            for (i, type_arg) in types_args.iter().enumerate() {
+                self.écrire(&format!(", {} %p{}", self.type_llvm_stockage(type_arg), i));
+            }
+            self.écrire(") {\n");
+            self.écrire("entree:\n");
+            self.écrire("  %id_ptr = bitcast i8* %obj to i64*\n");
+            self.écrire("  %id = load i64, i64* %id_ptr\n");
+
+            let mut candidates: Vec<(i64, String, String)> = self
+                .ids_classes
+                .iter()
+                .filter_map(|(classe, id)| {
+                    let compatible = if est_interface {
+                        self.classe_impl_interface(classe, &base)
+                    } else {
+                        self.classe_hérite_de(classe, &base)
+                    };
+                    if !compatible {
+                        return None;
+                    }
+                    let impl_fn = self.résoudre_impl_méthode(classe, &méthode)?;
+                    Some((*id, classe.clone(), impl_fn))
+                })
+                .collect();
+            candidates.sort_by_key(|(id, _, _)| *id);
+
+            if candidates.is_empty() {
+                if matches!(type_retour, IRType::Vide) {
+                    self.écrire("  ret void\n}\n\n");
+                } else {
+                    self.écrire(&format!(
+                        "  ret {} {}\n}}\n\n",
+                        type_ret,
+                        self.valeur_retour_neutre(&type_retour)
+                    ));
+                }
+                continue;
+            }
+
+            self.écrire("  br label %cmp0\n");
+
+            for (i, (id, _classe, impl_fn)) in candidates.iter().enumerate() {
+                self.écrire(&format!("cmp{}:\n", i));
+                self.écrire(&format!("  %is_{} = icmp eq i64 %id, {}\n", i, id));
+                self.écrire(&format!(
+                    "  br i1 %is_{}, label %case_{}, label %cmp{}\n",
+                    i,
+                    i,
+                    i + 1
+                ));
+
+                self.écrire(&format!("case_{}:\n", i));
+                let mut args_str = "i8* %obj".to_string();
+                for (j, type_arg) in types_args.iter().enumerate() {
+                    args_str.push_str(&format!(", {} %p{}", self.type_llvm_stockage(type_arg), j));
+                }
+                if matches!(type_retour, IRType::Vide) {
+                    self.écrire(&format!(
+                        "  call {} @{}({})\n",
+                        type_ret,
+                        self.nom_llvm(impl_fn),
+                        args_str
+                    ));
+                    self.écrire("  ret void\n");
+                } else {
+                    self.écrire(&format!(
+                        "  %ret_{} = call {} @{}({})\n",
+                        i,
+                        type_ret,
+                        self.nom_llvm(impl_fn),
+                        args_str
+                    ));
+                    self.écrire(&format!("  ret {} %ret_{}\n", type_ret, i));
+                }
+            }
+
+            let fin = candidates.len();
+            self.écrire(&format!("cmp{}:\n", fin));
+            if matches!(type_retour, IRType::Vide) {
+                self.écrire("  ret void\n");
+            } else {
+                self.écrire(&format!(
+                    "  ret {} {}\n",
+                    type_ret,
+                    self.valeur_retour_neutre(&type_retour)
+                ));
+            }
+            self.écrire("}\n\n");
+        }
+    }
+
     fn générer_valeur(&mut self, val: &IRValeur) -> (String, String) {
         match val {
             IRValeur::Entier(v) => (v.to_string(), String::new()),
@@ -624,12 +1261,50 @@ impl GénérateurLLVM {
                 }
             }
             IRValeur::Appel(nom, args) => self.générer_appel_typé(nom, args, &IRType::Entier),
-            IRValeur::Membre(obj, _champ) => {
-                let (_obj_reg, obj_code) = self.générer_valeur(obj);
-                let reg = self.reg_suivant();
-                let mut code = obj_code;
-                code.push_str(&format!("  {} = add i64 0, 0\n", reg));
-                (reg, code)
+            IRValeur::InitialisationDictionnaire {
+                paires,
+                type_clé,
+                type_valeur,
+            } => self.générer_valeur_pour_type(
+                &IRValeur::InitialisationDictionnaire {
+                    paires: paires.clone(),
+                    type_clé: type_clé.clone(),
+                    type_valeur: type_valeur.clone(),
+                },
+                &IRType::Dictionnaire(Box::new(type_clé.clone()), Box::new(type_valeur.clone())),
+            ),
+            IRValeur::AccèsDictionnaire {
+                dictionnaire,
+                clé,
+                type_clé,
+                type_valeur,
+            } => self.générer_accès_dictionnaire_typé(
+                dictionnaire,
+                clé,
+                type_clé,
+                type_valeur,
+                type_valeur,
+            ),
+            IRValeur::AppelMéthode {
+                objet,
+                base,
+                est_interface,
+                méthode,
+                arguments,
+                types_arguments,
+                type_retour,
+            } => self.générer_appel_méthode_typé(
+                objet,
+                base,
+                *est_interface,
+                méthode,
+                arguments,
+                types_arguments,
+                type_retour,
+                type_retour,
+            ),
+            IRValeur::Membre { type_membre, .. } => {
+                self.générer_valeur_membre_typé(val, type_membre)
             }
             IRValeur::Index(obj, _idx) => {
                 let (_obj_reg, obj_code) = self.générer_valeur(obj);
@@ -637,6 +1312,38 @@ impl GénérateurLLVM {
                 let mut code = obj_code;
                 code.push_str(&format!("  {} = add i64 0, 0\n", reg));
                 (reg, code)
+            }
+            IRValeur::Allocation(IRType::Struct(nom, _)) => {
+                let reg_taille_ptr = self.reg_suivant();
+                let reg_taille = self.reg_suivant();
+                let reg_obj = self.reg_suivant();
+                let reg_cast = self.reg_suivant();
+                let reg_id_ptr = self.reg_suivant();
+
+                let mut code = String::new();
+                code.push_str(&format!(
+                    "  {} = getelementptr %struct.{}, %struct.{}* null, i32 1\n",
+                    reg_taille_ptr, nom, nom
+                ));
+                code.push_str(&format!(
+                    "  {} = ptrtoint %struct.{}* {} to i64\n",
+                    reg_taille, nom, reg_taille_ptr
+                ));
+                code.push_str(&format!(
+                    "  {} = call i8* @malloc(i64 {})\n",
+                    reg_obj, reg_taille
+                ));
+                code.push_str(&format!(
+                    "  {} = bitcast i8* {} to %struct.{}*\n",
+                    reg_cast, reg_obj, nom
+                ));
+                code.push_str(&format!(
+                    "  {} = getelementptr %struct.{}, %struct.{}* {}, i32 0, i32 0\n",
+                    reg_id_ptr, nom, nom, reg_cast
+                ));
+                let id = self.ids_classes.get(nom).copied().unwrap_or(0);
+                code.push_str(&format!("  store i64 {}, i64* {}\n", id, reg_id_ptr));
+                (reg_obj, code)
             }
             _ => {
                 let reg = self.reg_suivant();
@@ -692,12 +1399,12 @@ impl GénérateurLLVM {
                 "null".to_string()
             }
             IRType::Struct(_, _) => "null".to_string(),
+            IRType::Dictionnaire(_, _) => "null".to_string(),
             IRType::Tableau(_, _)
             | IRType::Liste(_)
             | IRType::Pile(_)
             | IRType::File(_)
             | IRType::ListeChaînée(_)
-            | IRType::Dictionnaire(_, _)
             | IRType::Ensemble(_)
             | IRType::Tuple(_) => "zeroinitializer".to_string(),
             _ => "0".to_string(),

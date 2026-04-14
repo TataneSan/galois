@@ -1,4 +1,4 @@
-// Bibliothèque de manipulation de texte de Gallois
+// Bibliothèque de manipulation de texte de Galois
 
 classe TexteÉtendu
     privé valeur: texte

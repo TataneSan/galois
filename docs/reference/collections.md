@@ -116,6 +116,16 @@ afficher("Alice" dans âges)  // vrai
 âges.supprimer("Bob")
 ```
 
+Types de clés pris en charge :
+
+- `entier`
+- `décimal` (avec comparaison canonique: `-0.0 == 0.0`, tous les `NaN` sont considérés égaux)
+- `texte`
+- `booléen`
+- `nul`
+
+Les autres types (liste, classe, tuple complexe, etc.) ne sont pas autorisés comme clés de dictionnaire.
+
 | Méthode | Description |
 |---|---|
 | `clés` | Itérateur sur les clés |

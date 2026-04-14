@@ -1,6 +1,6 @@
 use crate::ir::{IRBloc, IRFonction, IRInstruction, IRModule, IROp, IRStruct, IRType, IRValeur};
 use crate::parser::ast::*;
-use crate::semantic::symbols::{GenreSymbole, TableSymboles};
+use crate::semantic::symbols::{GenreSymbole, MéthodeClasseSymbole, TableSymboles};
 use crate::semantic::types::Type;
 use std::collections::HashMap;
 
@@ -11,6 +11,7 @@ pub struct GénérateurIR {
     bloc_courant: Vec<IRInstruction>,
     classe_courante: Option<String>,
     classes_dynamiques: HashMap<String, String>,
+    types_locaux: HashMap<String, Type>,
 }
 
 impl GénérateurIR {
@@ -22,6 +23,7 @@ impl GénérateurIR {
             bloc_courant: Vec::new(),
             classe_courante: None,
             classes_dynamiques: HashMap::new(),
+            types_locaux: HashMap::new(),
         }
     }
 
@@ -83,15 +85,232 @@ impl GénérateurIR {
                         IRType::Entier
                     }
                 }
+                ExprAST::AccèsMembre { objet, membre, .. } => {
+                    if let Some(type_obj) = self.type_statique_expression(objet) {
+                        if let Some((_, type_retour, _, _, _)) =
+                            self.signature_méthode_depuis_type(&type_obj, membre)
+                        {
+                            type_retour
+                        } else {
+                            IRType::Entier
+                        }
+                    } else {
+                        IRType::Entier
+                    }
+                }
                 _ => IRType::Entier,
             },
+            ExprAST::AccèsIndice { objet, .. } => {
+                if let Some((_, type_valeur)) = self.type_dictionnaire_depuis_expression(objet) {
+                    IRType::from(&type_valeur)
+                } else {
+                    IRType::Entier
+                }
+            }
+            ExprAST::AccèsMembre { objet, membre, .. } => {
+                if let Some(type_obj) = self.type_statique_expression(objet) {
+                    match type_obj {
+                        Type::Classe(classe, _) | Type::Paramétré(classe, _) => {
+                            if let Some((_classe_champ, type_champ)) =
+                                self.type_champ_depuis_classe(&classe, membre)
+                            {
+                                IRType::from(&type_champ)
+                            } else {
+                                IRType::Entier
+                            }
+                        }
+                        _ => IRType::Entier,
+                    }
+                } else {
+                    IRType::Entier
+                }
+            }
+            ExprAST::InitialisationDictionnaire { paires, .. } => {
+                if let Some((clé, valeur)) = paires.first() {
+                    IRType::Dictionnaire(
+                        Box::new(self.type_pour_expression(clé)),
+                        Box::new(self.type_pour_expression(valeur)),
+                    )
+                } else {
+                    IRType::Dictionnaire(Box::new(IRType::Entier), Box::new(IRType::Entier))
+                }
+            }
             _ => IRType::Entier,
+        }
+    }
+
+    fn type_statique_identifiant(&self, nom: &str) -> Option<Type> {
+        if let Some(t) = self.types_locaux.get(nom) {
+            return Some(t.clone());
+        }
+        self.table.chercher(nom).and_then(|symbole| {
+            if let GenreSymbole::Variable { type_sym, .. } = &symbole.genre {
+                Some(type_sym.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    fn type_statique_expression(&self, expr: &ExprAST) -> Option<Type> {
+        match expr {
+            ExprAST::LittéralEntier(_, _) => Some(Type::Entier),
+            ExprAST::LittéralDécimal(_, _) => Some(Type::Décimal),
+            ExprAST::LittéralTexte(_, _) => Some(Type::Texte),
+            ExprAST::LittéralBooléen(_, _) => Some(Type::Booléen),
+            ExprAST::LittéralNul(_) => Some(Type::Nul),
+            ExprAST::Identifiant(nom, _) => self.type_statique_identifiant(nom),
+            ExprAST::Nouveau { classe, .. } => Some(Type::Classe(classe.clone(), None)),
+            ExprAST::InitialisationDictionnaire { paires, .. } => {
+                if let Some((k, v)) = paires.first() {
+                    let tk = self.type_statique_expression(k).unwrap_or(Type::Inconnu);
+                    let tv = self.type_statique_expression(v).unwrap_or(Type::Inconnu);
+                    Some(Type::Dictionnaire(Box::new(tk), Box::new(tv)))
+                } else {
+                    Some(Type::Dictionnaire(
+                        Box::new(Type::Inconnu),
+                        Box::new(Type::Inconnu),
+                    ))
+                }
+            }
+            ExprAST::InitialisationTableau { éléments, .. } => {
+                if let Some(premier) = éléments.first() {
+                    let t = self
+                        .type_statique_expression(premier)
+                        .unwrap_or(Type::Inconnu);
+                    Some(Type::Liste(Box::new(t)))
+                } else {
+                    Some(Type::Liste(Box::new(Type::Inconnu)))
+                }
+            }
+            ExprAST::Ceci(_) => self
+                .classe_courante
+                .as_ref()
+                .map(|c| Type::Classe(c.clone(), None)),
+            ExprAST::Base(_) => {
+                let parent = self.classe_courante.as_ref().and_then(|classe| {
+                    self.table.chercher(classe).and_then(|sym| {
+                        if let GenreSymbole::Classe { parent, .. } = &sym.genre {
+                            parent.clone()
+                        } else {
+                            None
+                        }
+                    })
+                });
+                parent.map(|p| Type::Classe(p, None))
+            }
+            _ => None,
+        }
+    }
+
+    fn type_dictionnaire_depuis_expression(&self, expr: &ExprAST) -> Option<(Type, Type)> {
+        match self.type_statique_expression(expr)? {
+            Type::Dictionnaire(k, v) => Some((*k, *v)),
+            _ => None,
+        }
+    }
+
+    fn type_champ_depuis_classe(&self, classe: &str, champ: &str) -> Option<(String, Type)> {
+        let mut courante = Some(classe.to_string());
+        while let Some(cn) = courante {
+            let (trouvé, parent) = self
+                .table
+                .chercher(&cn)
+                .and_then(|sym| {
+                    if let GenreSymbole::Classe { champs, parent, .. } = &sym.genre {
+                        Some((champs.get(champ).cloned(), parent.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or((None, None));
+
+            if let Some(t) = trouvé {
+                return Some((cn, t));
+            }
+            courante = parent;
+        }
+        None
+    }
+
+    fn méthode_classe_ou_parent(
+        &self,
+        classe: &str,
+        méthode: &str,
+    ) -> Option<(String, MéthodeClasseSymbole)> {
+        let mut courante = Some(classe.to_string());
+        while let Some(cn) = courante {
+            let (trouvée, parent) = self
+                .table
+                .chercher(&cn)
+                .and_then(|sym| {
+                    if let GenreSymbole::Classe {
+                        méthodes, parent, ..
+                    } = &sym.genre
+                    {
+                        Some((méthodes.get(méthode).cloned(), parent.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or((None, None));
+
+            if let Some(m) = trouvée {
+                return Some((cn, m));
+            }
+            courante = parent;
+        }
+        None
+    }
+
+    fn signature_méthode_depuis_type(
+        &self,
+        type_obj: &Type,
+        méthode: &str,
+    ) -> Option<(Vec<IRType>, IRType, bool, String, bool)> {
+        match type_obj {
+            Type::Classe(classe, _) | Type::Paramétré(classe, _) => {
+                let (_classe_impl, méthode_sym) =
+                    self.méthode_classe_ou_parent(classe, méthode)?;
+                let types_args = méthode_sym
+                    .paramètres
+                    .iter()
+                    .map(|(_, t)| IRType::from(t))
+                    .collect();
+                let type_retour = IRType::from(&méthode_sym.type_retour);
+                let dynamique = méthode_sym.est_virtuelle || méthode_sym.est_abstraite;
+                Some((types_args, type_retour, dynamique, classe.clone(), false))
+            }
+            Type::Interface(interface) => {
+                let méthode_sym = self.table.chercher(interface).and_then(|sym| {
+                    if let GenreSymbole::Interface { méthodes } = &sym.genre {
+                        méthodes.get(méthode).cloned()
+                    } else {
+                        None
+                    }
+                })?;
+                let types_args = méthode_sym
+                    .paramètres
+                    .iter()
+                    .map(|(_, t)| IRType::from(t))
+                    .collect();
+                let type_retour = IRType::from(&méthode_sym.type_retour);
+                Some((types_args, type_retour, true, interface.clone(), true))
+            }
+            _ => None,
         }
     }
 
     fn classe_pour_identifiant(&self, nom: &str) -> Option<String> {
         if let Some(classe) = self.classes_dynamiques.get(nom) {
             return Some(classe.clone());
+        }
+
+        if let Some(type_local) = self.types_locaux.get(nom) {
+            return match type_local {
+                Type::Classe(n, _) | Type::Paramétré(n, _) => Some(n.clone()),
+                _ => None,
+            };
         }
 
         self.table
@@ -149,6 +368,95 @@ impl GénérateurIR {
         None
     }
 
+    fn champs_aplatis_classe(&self, classe: &str) -> Vec<(String, IRType)> {
+        fn accumuler(
+            table: &TableSymboles,
+            classe: &str,
+            vus: &mut HashMap<String, IRType>,
+            ordre: &mut Vec<String>,
+        ) {
+            let parent = table.chercher(classe).and_then(|sym| {
+                if let GenreSymbole::Classe { parent, .. } = &sym.genre {
+                    parent.clone()
+                } else {
+                    None
+                }
+            });
+
+            if let Some(p) = parent {
+                accumuler(table, &p, vus, ordre);
+            }
+
+            let champs = table.chercher(classe).and_then(|sym| {
+                if let GenreSymbole::Classe { champs, .. } = &sym.genre {
+                    Some(champs.clone())
+                } else {
+                    None
+                }
+            });
+
+            if let Some(champs) = champs {
+                for (nom, t) in champs {
+                    if !vus.contains_key(&nom) {
+                        ordre.push(nom.clone());
+                    }
+                    vus.insert(nom, IRType::from(&t));
+                }
+            }
+        }
+
+        let mut vus = HashMap::new();
+        let mut ordre = Vec::new();
+        accumuler(&self.table, classe, &mut vus, &mut ordre);
+
+        let mut résultat = vec![("__typeid".to_string(), IRType::Entier)];
+        for nom in ordre {
+            if let Some(t) = vus.remove(&nom) {
+                résultat.push((nom, t));
+            }
+        }
+        résultat
+    }
+
+    fn valeur_accès_membre(&mut self, objet: &ExprAST, membre: &str) -> Option<IRValeur> {
+        let classe_obj = match self.type_statique_expression(objet) {
+            Some(Type::Classe(c, _)) | Some(Type::Paramétré(c, _)) => Some(c),
+            _ => self.classe_pour_expression(objet),
+        }?;
+
+        let (_, type_champ) = self.type_champ_depuis_classe(&classe_obj, membre)?;
+        let obj = self.générer_expression(objet);
+        Some(IRValeur::Membre {
+            objet: Box::new(obj),
+            membre: membre.to_string(),
+            classe: classe_obj,
+            type_membre: IRType::from(&type_champ),
+        })
+    }
+
+    fn valeur_accès_indice(&mut self, objet: &ExprAST, indice: &ExprAST) -> IRValeur {
+        if let Some((type_clé, type_valeur)) = self.type_dictionnaire_depuis_expression(objet) {
+            return IRValeur::AccèsDictionnaire {
+                dictionnaire: Box::new(self.générer_expression(objet)),
+                clé: Box::new(self.générer_expression(indice)),
+                type_clé: IRType::from(&type_clé),
+                type_valeur: IRType::from(&type_valeur),
+            };
+        }
+
+        let obj = self.générer_expression(objet);
+        let idx = self.générer_expression(indice);
+        IRValeur::Index(Box::new(obj), Box::new(idx))
+    }
+
+    fn instruction_est_appel_base(instr: &InstrAST) -> bool {
+        matches!(
+            instr,
+            InstrAST::Expression(ExprAST::AppelFonction { appelé, .. })
+                if matches!(appelé.as_ref(), ExprAST::Base(_))
+        )
+    }
+
     pub fn générer(&mut self, programme: &ProgrammeAST) -> IRModule {
         let mut module = IRModule {
             fonctions: Vec::new(),
@@ -164,17 +472,14 @@ impl GénérateurIR {
                     }
                 }
                 InstrAST::Classe(décl) => {
-                    let mut champs = Vec::new();
-                    for membre in &décl.membres {
-                        if let MembreClasseAST::Champ { nom, type_ann, .. } = membre {
-                            let type_ir = self.type_pour_déclaration(nom, type_ann);
-                            champs.push((nom.clone(), type_ir));
-                        }
-                    }
                     module.structures.push(IRStruct {
                         nom: décl.nom.clone(),
-                        champs,
+                        parent: décl.parent.clone(),
+                        interfaces: décl.interfaces.clone(),
+                        champs: self.champs_aplatis_classe(&décl.nom),
                     });
+
+                    let mut constructeur_explicit: Option<(Vec<(String, IRType)>, BlocAST)> = None;
 
                     for membre in &décl.membres {
                         match membre {
@@ -199,7 +504,6 @@ impl GénérateurIR {
                                 corps,
                                 position: _,
                             } => {
-                                let nom_ctor = format!("{}_constructeur", décl.nom);
                                 let mut param_ir: Vec<(String, IRType)> = Vec::new();
                                 for p in paramètres {
                                     let type_ir = if let Some(t) = &p.type_ann {
@@ -209,22 +513,136 @@ impl GénérateurIR {
                                     };
                                     param_ir.push((p.nom.clone(), type_ir));
                                 }
-                                let type_retour = IRType::Struct(décl.nom.clone(), Vec::new());
-                                let ancienne_classe = self.classe_courante.clone();
-                                self.classe_courante = Some(décl.nom.clone());
-                                let blocs = self.générer_bloc(corps);
-                                self.classe_courante = ancienne_classe;
-                                module.fonctions.push(IRFonction {
-                                    nom: nom_ctor,
-                                    paramètres: param_ir,
-                                    type_retour,
-                                    blocs,
-                                    est_externe: false,
-                                });
+
+                                constructeur_explicit = Some((param_ir, corps.clone()));
                             }
                             _ => {}
                         }
                     }
+
+                    let (params_constructeur, corps_constructeur) =
+                        if let Some((params, corps)) = constructeur_explicit.clone() {
+                            (params, Some(corps))
+                        } else {
+                            (Vec::new(), None)
+                        };
+
+                    let mut paramètres_init = vec![(
+                        "ceci".to_string(),
+                        IRType::Struct(décl.nom.clone(), Vec::new()),
+                    )];
+                    paramètres_init.extend(params_constructeur.clone());
+
+                    let blocs_init = if let Some(corps) = corps_constructeur {
+                        let a_base_explicite = corps
+                            .instructions
+                            .first()
+                            .map(|instr| Self::instruction_est_appel_base(instr))
+                            .unwrap_or(false);
+
+                        let ancienne_classe = self.classe_courante.clone();
+                        self.classe_courante = Some(décl.nom.clone());
+                        let anciens_types_locaux = self.types_locaux.clone();
+                        self.types_locaux.clear();
+                        self.types_locaux
+                            .insert("ceci".to_string(), Type::Classe(décl.nom.clone(), None));
+                        for (nom, type_ir) in &params_constructeur {
+                            let type_src = match type_ir {
+                                IRType::Entier => Type::Entier,
+                                IRType::Décimal => Type::Décimal,
+                                IRType::Texte => Type::Texte,
+                                IRType::Booléen => Type::Booléen,
+                                IRType::Struct(nom, _) => Type::Classe(nom.clone(), None),
+                                _ => Type::Inconnu,
+                            };
+                            self.types_locaux.insert(nom.clone(), type_src);
+                        }
+                        let mut blocs = self.générer_bloc(&corps);
+
+                        if !a_base_explicite {
+                            if let Some(parent) = &décl.parent {
+                                if let Some(entree) = blocs.first_mut() {
+                                    entree.instructions.insert(
+                                        0,
+                                        IRInstruction::AppelFonction {
+                                            destination: None,
+                                            fonction: format!("{}__init", parent),
+                                            arguments: vec![IRValeur::Référence(
+                                                "ceci".to_string(),
+                                            )],
+                                            type_retour: IRType::Vide,
+                                        },
+                                    );
+                                }
+                            }
+                        }
+
+                        self.types_locaux = anciens_types_locaux;
+                        self.classe_courante = ancienne_classe;
+                        blocs
+                    } else {
+                        let mut instructions = Vec::new();
+                        if let Some(parent) = &décl.parent {
+                            instructions.push(IRInstruction::AppelFonction {
+                                destination: None,
+                                fonction: format!("{}__init", parent),
+                                arguments: vec![IRValeur::Référence("ceci".to_string())],
+                                type_retour: IRType::Vide,
+                            });
+                        }
+                        vec![IRBloc {
+                            nom: "entree".to_string(),
+                            instructions,
+                        }]
+                    };
+
+                    module.fonctions.push(IRFonction {
+                        nom: format!("{}__init", décl.nom),
+                        paramètres: paramètres_init,
+                        type_retour: IRType::Vide,
+                        blocs: blocs_init,
+                        est_externe: false,
+                    });
+
+                    let mut instructions_wrapper = vec![
+                        IRInstruction::Allocation {
+                            nom: "ceci".to_string(),
+                            type_var: IRType::Struct(décl.nom.clone(), Vec::new()),
+                        },
+                        IRInstruction::Affecter {
+                            destination: "ceci".to_string(),
+                            valeur: IRValeur::Allocation(IRType::Struct(
+                                décl.nom.clone(),
+                                Vec::new(),
+                            )),
+                            type_var: IRType::Struct(décl.nom.clone(), Vec::new()),
+                        },
+                    ];
+
+                    let mut args_init = vec![IRValeur::Référence("ceci".to_string())];
+                    for (nom, _) in &params_constructeur {
+                        args_init.push(IRValeur::Référence(nom.clone()));
+                    }
+                    instructions_wrapper.push(IRInstruction::AppelFonction {
+                        destination: None,
+                        fonction: format!("{}__init", décl.nom),
+                        arguments: args_init,
+                        type_retour: IRType::Vide,
+                    });
+                    instructions_wrapper.push(IRInstruction::Retourner(Some(
+                        IRValeur::Référence("ceci".to_string()),
+                    )));
+
+                    module.fonctions.push(IRFonction {
+                        nom: format!("{}_constructeur", décl.nom),
+                        paramètres: params_constructeur,
+                        type_retour: IRType::Struct(décl.nom.clone(), Vec::new()),
+                        blocs: vec![IRBloc {
+                            nom: "entree".to_string(),
+                            instructions: instructions_wrapper,
+                        }],
+                        est_externe: false,
+                    });
                 }
                 InstrAST::Interface { .. } => {}
                 InstrAST::Constante {
@@ -290,7 +708,7 @@ impl GénérateurIR {
             module.fonctions.insert(
                 0,
                 IRFonction {
-                    nom: "gallois_principal".to_string(),
+                    nom: "galois_principal".to_string(),
                     paramètres: Vec::new(),
                     type_retour: IRType::Entier,
                     blocs: tous_blocs,
@@ -352,13 +770,18 @@ impl GénérateurIR {
         décl: &DéclarationFonctionAST,
         nom: &str,
     ) -> IRFonction {
+        let anciens_types_locaux = self.types_locaux.clone();
+        self.types_locaux.clear();
+
         let mut paramètres = Vec::new();
         for p in &décl.paramètres {
-            let type_ir = if let Some(t) = &p.type_ann {
-                self.convertir_type_ir(&self.convertir_type_ast(t))
+            let type_src = if let Some(t) = &p.type_ann {
+                self.convertir_type_ast(t)
             } else {
-                self.chercher_type_var(&p.nom)
+                Type::Inconnu
             };
+            let type_ir = self.convertir_type_ir(&type_src);
+            self.types_locaux.insert(p.nom.clone(), type_src);
             paramètres.push((p.nom.clone(), type_ir));
         }
 
@@ -375,6 +798,8 @@ impl GénérateurIR {
         };
 
         let blocs = self.générer_bloc(&décl.corps);
+
+        self.types_locaux = anciens_types_locaux;
 
         IRFonction {
             nom: nom.to_string(),
@@ -398,6 +823,19 @@ impl GénérateurIR {
                     ..
                 } => {
                     let type_ir = self.type_pour_déclaration(nom, type_ann);
+                    let type_local = if let Some(t) = type_ann {
+                        Some(self.convertir_type_ast(t))
+                    } else {
+                        valeur.as_ref().and_then(|v| {
+                            self.type_statique_expression(v).or_else(|| {
+                                self.classe_dynamique_depuis_expr(v)
+                                    .map(|c| Type::Classe(c, None))
+                            })
+                        })
+                    };
+                    if let Some(tl) = type_local {
+                        self.types_locaux.insert(nom.clone(), tl);
+                    }
                     instructions.push(IRInstruction::Allocation {
                         nom: nom.clone(),
                         type_var: type_ir.clone(),
@@ -436,17 +874,16 @@ impl GénérateurIR {
                             });
                         }
                         ExprAST::AccèsMembre { objet, membre, .. } => {
-                            let obj = self.générer_expression(objet);
-                            instructions.push(IRInstruction::Stockage {
-                                destination: IRValeur::Membre(Box::new(obj), membre.clone()),
-                                valeur: val,
-                            });
+                            if let Some(dest_membre) = self.valeur_accès_membre(objet, membre) {
+                                instructions.push(IRInstruction::Stockage {
+                                    destination: dest_membre,
+                                    valeur: val,
+                                });
+                            }
                         }
                         ExprAST::AccèsIndice { objet, indice, .. } => {
-                            let obj = self.générer_expression(objet);
-                            let idx = self.générer_expression(indice);
                             instructions.push(IRInstruction::Stockage {
-                                destination: IRValeur::Index(Box::new(obj), Box::new(idx)),
+                                destination: self.valeur_accès_indice(objet, indice),
                                 valeur: val,
                             });
                         }
@@ -596,6 +1033,19 @@ impl GénérateurIR {
                 ..
             } => {
                 let type_ir = self.type_pour_déclaration(nom, type_ann);
+                let type_local = if let Some(t) = type_ann {
+                    Some(self.convertir_type_ast(t))
+                } else {
+                    valeur.as_ref().and_then(|v| {
+                        self.type_statique_expression(v).or_else(|| {
+                            self.classe_dynamique_depuis_expr(v)
+                                .map(|c| Type::Classe(c, None))
+                        })
+                    })
+                };
+                if let Some(tl) = type_local {
+                    self.types_locaux.insert(nom.clone(), tl);
+                }
                 result.push(IRInstruction::Allocation {
                     nom: nom.clone(),
                     type_var: type_ir.clone(),
@@ -619,18 +1069,35 @@ impl GénérateurIR {
             InstrAST::Affectation { cible, valeur, .. } => {
                 let classe_dyn_valeur = self.classe_dynamique_depuis_expr(valeur);
                 let val = self.générer_expression(valeur);
-                if let ExprAST::Identifiant(nom, _) = cible {
-                    if let Some(classe_dyn) = classe_dyn_valeur {
-                        self.classes_dynamiques.insert(nom.clone(), classe_dyn);
-                    } else {
-                        self.classes_dynamiques.remove(nom);
+                match cible {
+                    ExprAST::Identifiant(nom, _) => {
+                        if let Some(classe_dyn) = classe_dyn_valeur {
+                            self.classes_dynamiques.insert(nom.clone(), classe_dyn);
+                        } else {
+                            self.classes_dynamiques.remove(nom);
+                        }
+                        let type_ir = self.chercher_type_var(nom);
+                        result.push(IRInstruction::Affecter {
+                            destination: nom.clone(),
+                            valeur: val,
+                            type_var: type_ir,
+                        });
                     }
-                    let type_ir = self.chercher_type_var(nom);
-                    result.push(IRInstruction::Affecter {
-                        destination: nom.clone(),
-                        valeur: val,
-                        type_var: type_ir,
-                    });
+                    ExprAST::AccèsMembre { objet, membre, .. } => {
+                        if let Some(dest_membre) = self.valeur_accès_membre(objet, membre) {
+                            result.push(IRInstruction::Stockage {
+                                destination: dest_membre,
+                                valeur: val,
+                            });
+                        }
+                    }
+                    ExprAST::AccèsIndice { objet, indice, .. } => {
+                        result.push(IRInstruction::Stockage {
+                            destination: self.valeur_accès_indice(objet, indice),
+                            valeur: val,
+                        });
+                    }
+                    _ => {}
                 }
             }
             InstrAST::Expression(expr) => {
@@ -674,7 +1141,7 @@ impl GénérateurIR {
             None
         } else {
             Some(IRBloc {
-                nom: "gallois_principal".to_string(),
+                nom: "galois_principal".to_string(),
                 instructions,
             })
         }
@@ -739,19 +1206,83 @@ impl GénérateurIR {
                         .collect();
                     IRValeur::Appel(n.clone(), args)
                 }
-                ExprAST::AccèsMembre { objet, membre, .. } => {
-                    let classe_obj = self.classe_pour_expression(objet);
-                    let nom_fn = if let Some(classe) = classe_obj {
-                        let classe_impl =
-                            self.classe_impl_méthode(&classe, membre).unwrap_or(classe);
-                        format!("{}_{}", classe_impl, membre)
-                    } else {
-                        membre.clone()
-                    };
+                ExprAST::Base(_) => {
+                    let parent = self.classe_courante.as_ref().and_then(|classe| {
+                        self.table.chercher(classe).and_then(|sym| {
+                            if let GenreSymbole::Classe { parent, .. } = &sym.genre {
+                                parent.clone()
+                            } else {
+                                None
+                            }
+                        })
+                    });
 
-                    let mut args: Vec<IRValeur> = vec![self.générer_expression(objet)];
-                    args.extend(arguments.iter().map(|a| self.générer_expression(a)));
-                    IRValeur::Appel(nom_fn, args)
+                    if let Some(parent) = parent {
+                        let mut args: Vec<IRValeur> =
+                            vec![IRValeur::Référence("ceci".to_string())];
+                        args.extend(arguments.iter().map(|a| self.générer_expression(a)));
+                        IRValeur::Appel(format!("{}__init", parent), args)
+                    } else {
+                        IRValeur::Nul
+                    }
+                }
+                ExprAST::AccèsMembre { objet, membre, .. } => {
+                    let objet_ir = self.générer_expression(objet);
+                    let args_ir: Vec<IRValeur> = arguments
+                        .iter()
+                        .map(|a| self.générer_expression(a))
+                        .collect();
+
+                    if let Some(type_obj) = self.type_statique_expression(objet) {
+                        if let Some((types_args, type_retour, dynamique, base, est_interface)) =
+                            self.signature_méthode_depuis_type(&type_obj, membre)
+                        {
+                            if dynamique {
+                                IRValeur::AppelMéthode {
+                                    objet: Box::new(objet_ir),
+                                    base,
+                                    est_interface,
+                                    méthode: membre.clone(),
+                                    arguments: args_ir,
+                                    types_arguments: types_args,
+                                    type_retour,
+                                }
+                            } else {
+                                let nom_fn = match type_obj {
+                                    Type::Classe(classe, _) | Type::Paramétré(classe, _) => {
+                                        let classe_impl = self
+                                            .classe_impl_méthode(&classe, membre)
+                                            .unwrap_or(classe);
+                                        format!("{}_{}", classe_impl, membre)
+                                    }
+                                    _ => membre.clone(),
+                                };
+
+                                let mut args: Vec<IRValeur> = vec![objet_ir];
+                                args.extend(args_ir);
+                                IRValeur::Appel(nom_fn, args)
+                            }
+                        } else {
+                            IRValeur::Appel(membre.clone(), {
+                                let mut args = vec![objet_ir];
+                                args.extend(args_ir);
+                                args
+                            })
+                        }
+                    } else {
+                        let classe_obj = self.classe_pour_expression(objet);
+                        let nom_fn = if let Some(classe) = classe_obj {
+                            let classe_impl =
+                                self.classe_impl_méthode(&classe, membre).unwrap_or(classe);
+                            format!("{}_{}", classe_impl, membre)
+                        } else {
+                            membre.clone()
+                        };
+
+                        let mut args: Vec<IRValeur> = vec![objet_ir];
+                        args.extend(args_ir);
+                        IRValeur::Appel(nom_fn, args)
+                    }
                 }
                 _ => IRValeur::Appel(
                     "_inconnu".to_string(),
@@ -763,15 +1294,14 @@ impl GénérateurIR {
             },
 
             ExprAST::AccèsMembre { objet, membre, .. } => {
-                let obj = self.générer_expression(objet);
-                IRValeur::Membre(Box::new(obj), membre.clone())
+                if let Some(v) = self.valeur_accès_membre(objet, membre) {
+                    v
+                } else {
+                    IRValeur::Nul
+                }
             }
 
-            ExprAST::AccèsIndice { objet, indice, .. } => {
-                let obj = self.générer_expression(objet);
-                let idx = self.générer_expression(indice);
-                IRValeur::Index(Box::new(obj), Box::new(idx))
-            }
+            ExprAST::AccèsIndice { objet, indice, .. } => self.valeur_accès_indice(objet, indice),
 
             ExprAST::Lambda { .. } => IRValeur::Nul,
 
@@ -811,7 +1341,24 @@ impl GénérateurIR {
                 IRValeur::AllouerTableau(IRType::Vide, éléments.len())
             }
 
-            ExprAST::InitialisationDictionnaire { .. } => IRValeur::Nul,
+            ExprAST::InitialisationDictionnaire { paires, .. } => {
+                let type_clé = paires
+                    .first()
+                    .map(|(k, _)| self.type_pour_expression(k))
+                    .unwrap_or(IRType::Entier);
+                let type_valeur = paires
+                    .first()
+                    .map(|(_, v)| self.type_pour_expression(v))
+                    .unwrap_or(IRType::Entier);
+                IRValeur::InitialisationDictionnaire {
+                    paires: paires
+                        .iter()
+                        .map(|(k, v)| (self.générer_expression(k), self.générer_expression(v)))
+                        .collect(),
+                    type_clé,
+                    type_valeur,
+                }
+            }
             ExprAST::InitialisationTuple { .. } => IRValeur::Nul,
             ExprAST::Transtypage { .. } | ExprAST::As { .. } => IRValeur::Nul,
             ExprAST::Nouveau {

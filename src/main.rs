@@ -212,10 +212,10 @@ fn lire_source(chemin: &str) -> Resultat<String> {
 }
 
 fn afficher_aide() {
-    println!("Gallois - Compilateur de langage de programmation en français");
+    println!("Galois - Compilateur de langage de programmation en français");
     println!();
     println!("USAGE:");
-    println!("  gallois <commande> [options]");
+    println!("  galois <commande> [options]");
     println!();
     println!("COMMANDES:");
     println!("  build, b <fichier> [-o sortie] [--release]  Compiler vers exécutable natif");
@@ -237,14 +237,14 @@ fn afficher_aide() {
     println!("  --keep                  Garder les fichiers intermédiaires");
     println!();
     println!("EXEMPLES:");
-    println!("  gallois init mon_projet");
-    println!("  gallois build programme.gal");
-    println!("  gallois build programme.gal --release -o app");
-    println!("  gallois run programme.gal");
-    println!("  gallois add maths 1.0");
-    println!("  gallois compiler programme.gal -o programme.ll");
-    println!("  gallois lexer programme.gal");
-    println!("  gallois parser programme.gal");
+    println!("  galois init mon_projet");
+    println!("  galois build programme.gal");
+    println!("  galois build programme.gal --release -o app");
+    println!("  galois run programme.gal");
+    println!("  galois add maths 1.0");
+    println!("  galois compiler programme.gal -o programme.ll");
+    println!("  galois lexer programme.gal");
+    println!("  galois parser programme.gal");
 }
 
 fn compiler_pipeline(chemin: &str) -> Resultat<()> {

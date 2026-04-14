@@ -41,7 +41,7 @@ gdb ./programme
 
 ```gdb
 # Point d'arrêt sur une fonction
-break gallois_principal
+break galois_principal
 break factorielle
 
 # Exécution
@@ -63,7 +63,7 @@ lldb ./programme
 ```
 
 ```lldb
-b gallois_principal
+b galois_principal
 run
 s        # step
 n        # next

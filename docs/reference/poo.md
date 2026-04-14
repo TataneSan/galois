@@ -29,6 +29,11 @@ soit chat = nouveau Animal("Minou", 3)
 afficher(chat.décrire())  // Minou a 3 ans
 ```
 
+Règles vérifiées :
+
+- Si la classe déclare un `constructeur`, le nombre et le type des arguments de `nouveau` doivent correspondre
+- Si aucun constructeur n'est déclaré, seul `nouveau Classe()` (sans argument) est accepté
+
 ## Visibilité
 
 Les membres peuvent avoir trois niveaux de visibilité :
@@ -87,6 +92,14 @@ constructeur(nom: texte, âge: entier, race: texte)
 fin
 ```
 
+Règles vérifiées :
+
+- `base(...)` est autorisé uniquement dans un constructeur
+- La classe doit avoir un parent
+- Les arguments de `base(...)` doivent correspondre au constructeur parent
+- `base(...)` doit être la première instruction du constructeur
+- Si aucun `base(...)` n'est écrit et que le parent a un constructeur sans argument, l'appel parent est inséré automatiquement
+
 ## Surcharge de méthodes
 
 Le mot-clé `surcharge` indique qu'une méthode remplace celle du parent :
@@ -132,7 +145,8 @@ soit f = nouveau Forme()  // Erreur
 
 ## Dispatch polymorphe
 
-Les appels de méthodes sur une référence de type parent sont résolus vers l'implémentation surchargeée quand le type concret est connu du compilateur.
+Le dispatch dynamique est appliqué pour les méthodes `virtuelle`/`abstraite` et pour les appels via interface.
+Les méthodes non virtuelles restent en appel direct.
 
 ```galois
 classe Animal

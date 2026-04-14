@@ -1,4 +1,4 @@
-// Bibliothèque d'entrée/sortie de Gallois
+// Bibliothèque d'entrée/sortie de Galois
 
 fonction afficher_ligne(valeur: texte)
     afficher(valeur)
