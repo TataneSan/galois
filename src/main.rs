@@ -1,5 +1,7 @@
 mod codegen;
 mod compiler;
+mod debugger;
+mod doc;
 mod error;
 mod ir;
 mod lexer;
@@ -15,6 +17,8 @@ use std::process;
 
 use codegen::GénérateurLLVM;
 use compiler::{CompilateurNatif, OptionsCompilation};
+use debugger::{Débogueur, TableDebug};
+use doc::GénérateurDoc;
 use error::Resultat;
 use ir::GénérateurIR;
 use lexer::Scanner;
@@ -54,6 +58,13 @@ enum Commande {
     Add {
         nom: String,
         version: String,
+    },
+    Doc {
+        entrée: String,
+        sortie: Option<String>,
+    },
+    Debug {
+        entrée: String,
     },
     Aide,
 }
@@ -162,6 +173,28 @@ fn analyser_arguments() -> Commande {
             let version = args.get(3).cloned().unwrap_or_else(|| "*".to_string());
             Commande::Add { nom, version }
         }
+        "doc" | "documentation" => {
+            if args.len() < 3 {
+                eprintln!("Erreur: fichier source requis");
+                process::exit(1);
+            }
+            let entrée = args[2].clone();
+            let sortie = if let Some(idx) = args.iter().position(|a| a == "-o" || a == "--output") {
+                args.get(idx + 1).cloned()
+            } else {
+                None
+            };
+            Commande::Doc { entrée, sortie }
+        }
+        "debug" | "débogue" | "debogue" => {
+            if args.len() < 3 {
+                eprintln!("Erreur: fichier source requis");
+                process::exit(1);
+            }
+            Commande::Debug {
+                entrée: args[2].clone(),
+            }
+        }
         _ => {
             eprintln!("Commande inconnue: {}", args[1]);
             process::exit(1);
@@ -194,6 +227,8 @@ fn afficher_aide() {
     println!("  parser, parse, p <fichier>                  Afficher l'AST");
     println!("  vérifier, v <fichier>                       Vérifier les types");
     println!("  ir <fichier>                                Afficher l'IR");
+    println!("  doc, documentation <fichier> [-o dossier]   Générer la documentation HTML");
+    println!("  debug, débogue <fichier>                    Lancer le débogueur");
     println!("  aide, help                                  Afficher cette aide");
     println!();
     println!("OPTIONS:");
@@ -355,6 +390,64 @@ fn exécuter_ir(chemin: &str) -> Resultat<()> {
     let module_ir = générateur.générer(&programme);
 
     println!("{:#?}", module_ir);
+
+    Ok(())
+}
+
+fn exécuter_doc(chemin: &str, sortie: Option<String>) -> Resultat<()> {
+    let source = lire_source(chemin)?;
+
+    let mut scanner = Scanner::nouveau(&source, chemin);
+    let tokens = scanner.scanner()?;
+
+    let mut parser = Parser::nouveau(tokens);
+    let programme = parser.parser_programme()?;
+
+    let mut générateur = GénérateurDoc::nouveau();
+    générateur.générer_depuis_programme(&programme)?;
+
+    let répertoire = sortie.unwrap_or_else(|| "doc".to_string());
+    générateur.générer_html(Path::new(&répertoire))?;
+
+    println!("Documentation générée dans: {}", répertoire);
+    Ok(())
+}
+
+fn exécuter_debug(chemin: &str) -> Resultat<()> {
+    let source = lire_source(chemin)?;
+
+    let mut scanner = Scanner::nouveau(&source, chemin);
+    let tokens = scanner.scanner()?;
+
+    let mut parser = Parser::nouveau(tokens);
+    let programme = parser.parser_programme()?;
+
+    let mut table = TableDebug::nouvelle();
+    table.générer_depuis_programme(&programme);
+
+    let llvm_ir = pipeline_llvm(chemin)?;
+
+    let options = OptionsCompilation {
+        fichier_entrée: chemin.into(),
+        fichier_sortie: None,
+        release: false,
+        garder_intermédiaires: true,
+        verbose: false,
+    };
+
+    let compilateur = CompilateurNatif::nouveau(options);
+    let exécutable = compilateur.compiler(&llvm_ir)?;
+
+    let débogueur = Débogueur::nouveau(&exécutable.to_string_lossy());
+    println!("Exécutable compilé: {}", exécutable.display());
+    println!(
+        "Table de debug générée avec {} entrées",
+        table.nombre_entrées()
+    );
+
+    let fichier_cmd = Path::new("debug_commands.gdb");
+    débogueur.générer_fichier_commandes(&[], fichier_cmd)?;
+    println!("Fichier de commandes gdb créé: {}", fichier_cmd.display());
 
     Ok(())
 }
@@ -595,6 +688,8 @@ fn main() {
         Commande::Parser { entrée } => exécuter_parser(&entrée),
         Commande::Vérifier { entrée } => exécuter_vérification(&entrée),
         Commande::IR { entrée } => exécuter_ir(&entrée),
+        Commande::Doc { entrée, sortie } => exécuter_doc(&entrée, sortie),
+        Commande::Debug { entrée } => exécuter_debug(&entrée),
         Commande::Aide => {
             afficher_aide();
             return;

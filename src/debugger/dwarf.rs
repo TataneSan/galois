@@ -44,6 +44,10 @@ impl TableDebug {
         }
     }
 
+    pub fn nombre_entrées(&self) -> usize {
+        self.lignes.len() + self.fonctions.len()
+    }
+
     fn visiter_instruction(&mut self, instr: &InstrAST, fonction_courante: &str) {
         match instr {
             InstrAST::Fonction(décl) => {
