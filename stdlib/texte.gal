@@ -1,0 +1,79 @@
+// Bibliothèque de manipulation de texte de Gallois
+
+classe TexteÉtendu
+    privé valeur: texte
+
+    constructeur(v: texte)
+        ceci.valeur = v
+    fin
+
+    publique fonction longueur(): entier
+        retourne valeur.longueur
+    fin
+
+    publique fonction majuscule(): texte
+        résultat = ""
+        pour c dans valeur.caractères()
+            si c >= 'a' et c <= 'z' alors
+                résultat += caractère(code(c) - 32)
+            sinon
+                résultat += c
+            fin
+        fin
+        retourne résultat
+    fin
+
+    publique fonction minuscule(): texte
+        résultat = ""
+        pour c dans valeur.caractères()
+            si c >= 'A' et c <= 'Z' alors
+                résultat += caractère(code(c) + 32)
+            sinon
+                résultat += c
+            fin
+        fin
+        retourne résultat
+    fin
+
+    publique fonction inverse(): texte
+        résultat = ""
+        pour i dans 0..valeur.longueur
+            résultat += valeur[valeur.longueur - 1 - i]
+        fin
+        retourne résultat
+    fin
+
+    publique fonction est_palindrome(): booléen
+        nettoyé = minuscule().trim()
+        retourne nettoyé == nettoyé.inverse()
+    fin
+
+    publique fonction compte(sous_chaîne: texte): entier
+        compte = 0
+        i = 0
+        tantque i <= valeur.longueur - sous_chaîne.longueur
+            si valeur.sous_chaîne(i, sous_chaîne.longueur) == sous_chaîne alors
+                compte += 1
+                i += sous_chaîne.longueur
+            sinon
+                i += 1
+            fin
+        fin
+        retourne compte
+    fin
+
+    publique fonction remplace_tous(ancien: texte, nouveau: texte): texte
+        résultat = ""
+        i = 0
+        tantque i < valeur.longueur
+            si valeur.sous_chaîne(i, ancien.longueur) == ancien alors
+                résultat += nouveau
+                i += ancien.longueur
+            sinon
+                résultat += valeur[i]
+                i += 1
+            fin
+        fin
+        retourne résultat
+    fin
+fin

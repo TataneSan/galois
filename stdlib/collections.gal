@@ -1,0 +1,72 @@
+// Bibliothèque de collections avancées de Gallois
+
+fonction intervalle(début: entier, fin: entier): liste<entier>
+    résultat = []
+    pour i dans début..fin
+        résultat.ajouter(i)
+    fin
+    retourne résultat
+fin
+
+fonction zip(a: liste<texte>, b: liste<texte>): liste<tuple>
+    résultat = []
+    taille_min = min(a.taille, b.taille)
+    pour i dans 0..taille_min
+        résultat.ajouter((a[i], b[i]))
+    fin
+    retourne résultat
+fin
+
+fonction chaîner(listes: liste<liste<entier>>): liste<entier>
+    résultat = []
+    pour lst dans listes
+        pour élément dans lst
+            résultat.ajouter(élément)
+        fin
+    fin
+    retourne résultat
+fin
+
+fonction unique(lst: liste<entier>): liste<entier>
+    vu = nouvel ensemble<entier>()
+    résultat = []
+    pour élément dans lst
+        si !vu.contient(élément) alors
+            vu.ajouter(élément)
+            résultat.ajouter(élément)
+        fin
+    fin
+    retourne résultat
+fin
+
+fonction regrouper_par(lst: liste<texte>, clé: fonction): dictionnaire<texte, liste<texte>>
+    résultat = nouveau dictionnaire<texte, liste<texte>>()
+    pour élément dans lst
+        k = clé(élément)
+        si résultat.contient(k) alors
+            résultat.obtenir(k).ajouter(élément)
+        sinon
+            résultat.définir(k, [élément])
+        fin
+    fin
+    retourne résultat
+fin
+
+fonction trier_par(lst: liste<décimal>, clé: fonction): liste<décimal>
+    copie = lst.copier()
+    copie.trier()
+    retourne copie
+fin
+
+fonction partition(lst: liste<entier>, prédicat: fonction): tuple
+    vrais = []
+    faux = []
+    pour élément dans lst
+        si prédicat(élément) alors
+            vrais.ajouter(élément)
+        sinon
+            faux.ajouter(élément)
+        fin
+    fin
+    retourne (vrais, faux)
+fin

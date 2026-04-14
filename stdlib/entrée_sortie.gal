@@ -1,0 +1,38 @@
+// Bibliothèque d'entrée/sortie de Gallois
+
+fonction afficher_ligne(valeur: texte)
+    afficher(valeur)
+fin
+
+fonction lire_ligne(): texte
+    retourne lire()
+fin
+
+fonction lire_entier(): entier
+    texte = lire()
+    retourne texte comme entier
+fin
+
+fonction lire_décimal(): décimal
+    texte = lire()
+    retourne texte comme décimal
+fin
+
+fonction formater(modèle: texte, args: liste<texte>): texte
+    résultat = ""
+    i = 0
+    arg_index = 0
+    tantque i < modèle.longueur
+        si modèle[i] == '{' et i + 1 < modèle.longueur et modèle[i + 1] == '}' alors
+            si arg_index < args.taille alors
+                résultat += args[arg_index]
+                arg_index += 1
+            fin
+            i += 2
+        sinon
+            résultat += modèle[i]
+            i += 1
+        fin
+    fin
+    retourne résultat
+fin

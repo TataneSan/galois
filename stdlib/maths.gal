@@ -1,0 +1,351 @@
+// Bibliothèque mathématique standard de Gallois
+// Ce fichier documente les fonctions disponibles, l'implémentation
+// réelle est dans le runtime du compilateur.
+
+// ===== Constantes =====
+// pi: décimal = 3.14159265358979323846
+// e: décimal = 2.71828182845904523536
+// phi: décimal = 1.61803398874989484820 (nombre d'or)
+// infini: décimal = f64::INFINITY
+// epsilon: décimal = f64::EPSILON
+
+// ===== Fonctions trigonométriques =====
+fonction sin(x: décimal): décimal
+fonction cos(x: décimal): décimal
+fonction tan(x: décimal): décimal
+fonction arcsin(x: décimal): décimal
+fonction arccos(x: décimal): décimal
+fonction arctan(x: décimal): décimal
+fonction arctan2(y: décimal, x: décimal): décimal
+
+// ===== Fonctions hyperboliques =====
+fonction sinh(x: décimal): décimal
+fonction cosh(x: décimal): décimal
+fonction tanh(x: décimal): décimal
+
+// ===== Fonctions exponentielles et logarithmiques =====
+fonction exp(x: décimal): décimal
+fonction log(x: décimal): décimal           // logarithme naturel
+fonction log2(x: décimal): décimal          // logarithme base 2
+fonction log10(x: décimal): décimal         // logarithme base 10
+fonction log_base(x: décimal, base: décimal): décimal
+
+// ===== Fonctions de puissance =====
+fonction puissance(base: décimal, exp: décimal): décimal
+fonction racine(x: décimal): décimal        // racine carrée
+fonction racine_cubique(x: décimal): décimal
+fonction racine_nième(x: décimal, n: décimal): décimal
+
+// ===== Fonctions d'arrondi =====
+fonction absolu(x: décimal): décimal
+fonction absolu_entier(x: entier): entier
+fonction plafond(x: décimal): entier        // ceil
+fonction plancher(x: décimal): entier       // floor
+fonction arrondi(x: décimal): entier        // round
+fonction tronquer(x: décimal): entier       // truncate
+
+// ===== Fonctions de signe =====
+fonction signe(x: décimal): entier          // -1, 0, ou 1
+
+// ===== Minimum et maximum =====
+fonction min(a: décimal, b: décimal): décimal
+fonction max(a: décimal, b: décimal): décimal
+fonction min_entier(a: entier, b: entier): entier
+fonction max_entier(a: entier, b: entier): entier
+
+// ===== Aléatoire =====
+fonction aléatoire(): décimal               // [0.0, 1.0)
+fonction aléatoire_entier(min: entier, max: entier): entier
+fonction aléatoire_graine(graine: entier): rien
+
+// ===== Nombre complexes =====
+classe Complexe
+    réel: décimal
+    imaginaire: décimal
+
+    constructeur(réel: décimal, imaginaire: décimal)
+        ceci.réel = réel
+        ceci.imaginaire = imaginaire
+    fin
+
+    publique fonction module(): décimal
+        retourne racine(réel² + imaginaire²)
+    fin
+
+    publique fonction argument(): décimal
+        retourne arctan2(imaginaire, réel)
+    fin
+
+    publique fonction conjugué(): Complexe
+        retourne nouveau Complexe(réel, -imaginaire)
+    fin
+
+    publique fonction ajouter(autre: Complexe): Complexe
+        retourne nouveau Complexe(réel + autre.réel, imaginaire + autre.imaginaire)
+    fin
+
+    publique fonction soustraire(autre: Complexe): Complexe
+        retourne nouveau Complexe(réel - autre.réel, imaginaire - autre.imaginaire)
+    fin
+
+    publique fonction multiplier(autre: Complexe): Complexe
+        retourne nouveau Complexe(
+            réel * autre.réel - imaginaire * autre.imaginaire,
+            réel * autre.imaginaire + imaginaire * autre.réel
+        )
+    fin
+
+    publique fonction diviser(autre: Complexe): Complexe
+        dénominateur = autre.réel² + autre.imaginaire²
+        retourne nouveau Complexe(
+            (réel * autre.réel + imaginaire * autre.imaginaire) / dénominateur,
+            (imaginaire * autre.réel - réel * autre.imaginaire) / dénominateur
+        )
+    fin
+
+    publique fonction puissance(n: entier): Complexe
+        si n == 0 alors
+            retourne nouveau Complexe(1.0, 0.0)
+        fin
+        si n < 0 alors
+            retourne ceci.puissance(-n).diviser(nouveau Complexe(1.0, 0.0))
+        fin
+        résultat = ceci
+        pour i dans 1..n
+            résultat = résultat.multiplier(ceci)
+        fin
+        retourne résultat
+    fin
+fin
+
+// ===== Fractions =====
+classe Fraction
+    privé numérateur: entier
+    privé dénominateur: entier
+
+    constructeur(num: entier, dénom: entier)
+        si dénom == 0 alors
+            afficher("Erreur: dénominateur nul")
+        fin
+        pgcd_val = pgcd(absolu_entier(num), absolu_entier(dénom))
+        si dénom < 0 alors
+            ceci.numérateur = -num / pgcd_val
+            ceci.dénominateur = -dénom / pgcd_val
+        sinon
+            ceci.numérateur = num / pgcd_val
+            ceci.dénominateur = dénom / pgcd_val
+        fin
+    fin
+
+    publique fonction valeur_décimale(): décimal
+        retourne numérateur comme décimal / dénominateur comme décimal
+    fin
+
+    publique fonction ajouter(autre: Fraction): Fraction
+        retourne nouveau Fraction(
+            numérateur * autre.dénominateur + autre.numérateur * dénominateur,
+            dénominateur * autre.dénominateur
+        )
+    fin
+
+    publique fonction soustraire(autre: Fraction): Fraction
+        retourne nouveau Fraction(
+            numérateur * autre.dénominateur - autre.numérateur * dénominateur,
+            dénominateur * autre.dénominateur
+        )
+    fin
+
+    publique fonction multiplier(autre: Fraction): Fraction
+        retourne nouveau Fraction(
+            numérateur * autre.numérateur,
+            dénominateur * autre.dénominateur
+        )
+    fin
+
+    publique fonction diviser(autre: Fraction): Fraction
+        retourne nouveau Fraction(
+            numérateur * autre.dénominateur,
+            dénominateur * autre.numérateur
+        )
+    fin
+fin
+
+// ===== Utilitaires =====
+fonction pgcd(a: entier, b: entier): entier
+    tantque b != 0
+        temp = b
+        b = a % b
+        a = temp
+    fin
+    retourne a
+fin
+
+fonction ppcm(a: entier, b: entier): entier
+    retourne absolu_entier(a * b) / pgcd(a, b)
+fin
+
+fonction factorielle(n: entier): entier
+    si n <= 1 alors retourne 1 fin
+    retourne n * factorielle(n - 1)
+fin
+
+fonction fibonacci(n: entier): entier
+    si n <= 0 alors retourne 0 fin
+    si n == 1 alors retourne 1 fin
+    a = 0
+    b = 1
+    pour i dans 2..n
+        temp = a + b
+        a = b
+        b = temp
+    fin
+    retourne b
+fin
+
+fonction est_premier(n: entier): booléen
+    si n < 2 alors retourne faux fin
+    si n == 2 alors retourne vrai fin
+    si n % 2 == 0 alors retourne faux fin
+    i = 3
+    tantque i * i <= n
+        si n % i == 0 alors retourne faux fin
+        i += 2
+    fin
+    retourne vrai
+fin
+
+// ===== Statistiques =====
+fonction moyenne(données: liste<décimal>): décimal
+    somme = données |> réduire(0.0, (acc, x) => acc + x)
+    retourne somme / données.taille comme décimal
+fin
+
+fonction médiane(données: liste<décimal>): décimal
+    trié = données.copier()
+    trié.trier()
+    n = trié.taille
+    si n % 2 == 0 alors
+        retourne (trié[n/2 - 1] + trié[n/2]) / 2.0
+    sinon
+        retourne trié[n/2]
+    fin
+fin
+
+fonction écart_type(données: liste<décimal>): décimal
+    m = moyenne(données)
+    variance = données |> transformer(x => (x - m) ** 2)
+                               |> réduire(0.0, (acc, x) => acc + x)
+    retourne racine(variance / données.taille comme décimal)
+fin
+
+fonction variance(données: liste<décimal>): décimal
+    m = moyenne(données)
+    somme = 0.0
+    pour x dans données
+        somme += (x - m) ** 2
+    fin
+    retourne somme / données.taille comme décimal
+fin
+
+// ===== Matrices =====
+classe Matrice
+    privé lignes: entier
+    privé colonnes: entier
+    privé données: liste<liste<décimal>>
+
+    constructeur(lignes: entier, colonnes: entier)
+        ceci.lignes = lignes
+        ceci.colonnes = colonnes
+        ceci.données = []
+        pour i dans 0..lignes
+            ligne = []
+            pour j dans 0..colonnes
+                ligne.ajouter(0.0)
+            fin
+            données.ajouter(ligne)
+        fin
+    fin
+
+    publique fonction obtenir(i: entier, j: entier): décimal
+        retourne données[i][j]
+    fin
+
+    publique fonction définir(i: entier, j: entier, valeur: décimal)
+        données[i][j] = valeur
+    fin
+
+    publique fonction additionner(autre: Matrice): Matrice
+        résultat = nouveau Matrice(lignes, colonnes)
+        pour i dans 0..lignes
+            pour j dans 0..colonnes
+                résultat.définir(i, j, données[i][j] + autre.obtenir(i, j))
+            fin
+        fin
+        retourne résultat
+    fin
+
+    publique fonction multiplier(autre: Matrice): Matrice
+        résultat = nouveau Matrice(lignes, autre.colonnes)
+        pour i dans 0..lignes
+            pour j dans 0..autre.colonnes
+                somme = 0.0
+                pour k dans 0..colonnes
+                    somme += données[i][k] * autre.obtenir(k, j)
+                fin
+                résultat.définir(i, j, somme)
+            fin
+        fin
+        retourne résultat
+    fin
+
+    publique fonction transposée(): Matrice
+        résultat = nouveau Matrice(colonnes, lignes)
+        pour i dans 0..lignes
+            pour j dans 0..colonnes
+                résultat.définir(j, i, données[i][j])
+            fin
+        fin
+        retourne résultat
+    fin
+
+    publique fonction trace(): décimal
+        somme = 0.0
+        pour i dans 0..min(lignes, colonnes)
+            somme += données[i][i]
+        fin
+        retourne somme
+    fin
+
+    publique fonction déterminant(): décimal
+        si lignes != colonnes alors
+            afficher("Erreur: matrice non carrée")
+            retourne 0.0
+        fin
+        si lignes == 1 alors retourne données[0][0] fin
+        si lignes == 2 alors
+            retourne données[0][0] * données[1][1] - données[0][1] * données[1][0]
+        fin
+        det = 0.0
+        pour j dans 0..colonnes
+            sous = ceci.sous_matrice(0, j)
+            det += ((-1) ** j comme décimal) * données[0][j] * sous.déterminant()
+        fin
+        retourne det
+    fin
+
+    privée fonction sous_matrice(ligne_exclue: entier, colonne_exclue: entier): Matrice
+        résultat = nouveau Matrice(lignes - 1, colonnes - 1)
+        ri = 0
+        pour i dans 0..lignes
+            si i == ligne_exclue alors continuer fin
+            rj = 0
+            pour j dans 0..colonnes
+                si j == colonne_exclue alors continuer fin
+                résultat.définir(ri, rj, données[i][j])
+                rj += 1
+            fin
+            ri += 1
+        fin
+        retourne résultat
+    fin
+fin

@@ -1,0 +1,112 @@
+// Exemple Gallois - Programme de démonstration
+
+// Déclaration de variables
+soit x: entier = 42
+soit nom: texte = "Gallois"
+mutable compteur: entier = 0
+
+// Fonction récursive avec optimisation tail-call
+récursif fonction factorielle(n: entier): entier
+    si n <= 1 alors
+        retourne 1
+    sinon
+        retourne n * factorielle(n - 1)
+    fin
+fin
+
+// Fonction avec paramètres par défaut
+fonction saluer(nom: texte, salutation: texte = "Bonjour")
+    afficher(salutation + " " + nom + " !")
+fin
+
+// Fonction avec pipeline
+fonction traiter_données(données: liste<entier>): décimal
+    résultat = données |> filtrer(x => x > 0)
+                       |> transformer(x => x * 2)
+                       |> réduire(0, (acc, x) => acc + x)
+    retourne résultat / données.taille comme décimal
+fin
+
+// Classe avec héritage
+classe Animal
+    publique nom: texte
+    publique âge: entier
+
+    constructeur(nom: texte, âge: entier)
+        ceci.nom = nom
+        ceci.âge = âge
+    fin
+
+    publique fonction décrire(): texte
+        retourne nom + " a " + âge comme texte + " ans"
+    fin
+
+    publique fonction parler(): texte
+        retourne "..."
+    fin
+fin
+
+classe Chien hérite Animal
+    publique race: texte
+
+    constructeur(nom: texte, âge: entier, race: texte)
+        base(nom, âge)
+        ceci.race = race
+    fin
+
+    publique fonction parler(): texte
+        retourne "Wouf !"
+    fin
+
+    publique fonction rapporter(): texte
+        retourne nom + " rapporte la balle"
+    fin
+fin
+
+// Interface
+interface Affichable
+    fonction vers_texte(): texte
+fin
+
+// Utilisation de collections
+soit nombres: liste<entier> = [1, 2, 3, 4, 5]
+soit dico: dictionnaire<texte, entier> = ["un": 1, "deux": 2, "trois": 3]
+soit ens: ensemble<entier> = nouvel ensemble([1, 2, 3, 4, 5])
+
+// Pile et file
+soit ma_pile: pile<entier> = nouvelle pile<entier>()
+ma_pile.empiler(1)
+ma_pile.empiler(2)
+ma_pile.empiler(3)
+soit sommet = ma_pile.dépiler()
+
+soit ma_file: file<texte> = nouvelle file<texte>()
+ma_file.enfiler("premier")
+ma_file.enfiler("deuxième")
+soit premier = ma_file.défiler()
+
+// Pattern matching
+fonction classification(n: entier): texte
+    sélectionner n
+        cas 0 => "zéro"
+        cas 1 => "un"
+        cas 2 => "deux"
+        cas _ => "autre"
+    fin
+fin
+
+// Programme principal
+fonction principal()
+    afficher("Bienvenue en Gallois !")
+    afficher(factorielle(10))
+
+    soit résultat = traiter_données([1, -2, 3, -4, 5])
+    afficher(résultat)
+
+    soit médor = nouveau Chien("Médor", 5, "Berger")
+    afficher(médor.décrire())
+    afficher(médor.parler())
+
+    saluer("Alice")
+    saluer("Bob", "Salut")
+fin
