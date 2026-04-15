@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <math.h>
 #include <time.h>
+#include <ctype.h>
 
 // ===== Types Galois =====
 
@@ -313,6 +314,20 @@ char* gal_decimal_vers_texte(double v) {
 
 char* gal_bool_vers_texte(_Bool v) {
     return gal_dupliquer_chaine(v ? "vrai" : "faux");
+}
+
+char* gal_format_texte(const char* fmt) {
+    return gal_dupliquer_chaine(fmt ? fmt : "");
+}
+
+char* gal_majuscule(const char* s) {
+    if (!s) return gal_dupliquer_chaine("");
+    char* out = gal_dupliquer_chaine(s);
+    if (!out) return NULL;
+    for (char* p = out; *p; ++p) {
+        *p = (char)toupper((unsigned char)*p);
+    }
+    return out;
 }
 
 // ===== Opérations sur les listes =====
@@ -853,6 +868,29 @@ gal_décimal gal_aleatoire() {
 
 gal_entier gal_aleatoire_entier(gal_entier min, gal_entier max) {
     return gal_aléatoire_entier(min, max);
+}
+
+gal_entier gal_temps() {
+    return (gal_entier)time(NULL);
+}
+
+char* gal_lire_ligne() {
+    char tampon[4096];
+    if (!fgets(tampon, sizeof(tampon), stdin)) {
+        return gal_dupliquer_chaine("");
+    }
+    tampon[strcspn(tampon, "\r\n")] = '\0';
+    return gal_dupliquer_chaine(tampon);
+}
+
+gal_entier gal_lire_entier() {
+    char* ligne = gal_lire_ligne();
+    if (!ligne) return 0;
+    char* fin = NULL;
+    long long valeur = strtoll(ligne, &fin, 10);
+    free(ligne);
+    if (fin == ligne) return 0;
+    return (gal_entier)valeur;
 }
 
 // ===== Fonctions utilitaires =====

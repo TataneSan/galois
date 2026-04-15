@@ -225,6 +225,34 @@ impl GénérateurLLVM {
             (vec![IRType::Booléen], IRType::Texte),
         );
         self.signatures_fonctions.insert(
+            "gal_lire_ligne".to_string(),
+            (vec![], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_lire_entier".to_string(),
+            (vec![], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_temps".to_string(),
+            (vec![], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_pgcd".to_string(),
+            (vec![IRType::Entier, IRType::Entier], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_ppcm".to_string(),
+            (vec![IRType::Entier, IRType::Entier], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_format_texte".to_string(),
+            (vec![IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_majuscule".to_string(),
+            (vec![IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
             "gal_liste_nouveau".to_string(),
             (vec![IRType::Entier], IRType::Liste(Box::new(IRType::Entier))),
         );
@@ -515,6 +543,13 @@ impl GénérateurLLVM {
         self.écrire("declare i8* @gal_entier_vers_texte(i64)\n");
         self.écrire("declare i8* @gal_decimal_vers_texte(double)\n");
         self.écrire("declare i8* @gal_bool_vers_texte(i1)\n\n");
+        self.écrire("declare i8* @gal_lire_ligne()\n");
+        self.écrire("declare i64 @gal_lire_entier()\n");
+        self.écrire("declare i64 @gal_temps()\n");
+        self.écrire("declare i64 @gal_pgcd(i64, i64)\n");
+        self.écrire("declare i64 @gal_ppcm(i64, i64)\n");
+        self.écrire("declare i8* @gal_format_texte(i8*)\n");
+        self.écrire("declare i8* @gal_majuscule(i8*)\n");
 
         self.générer_fonctions_runtime();
 
