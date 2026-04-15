@@ -242,8 +242,8 @@ fin
 
 -- Utilisation
 soit gestionnaire = nouveau GestionnaireTâches()
-gestionnaire.ajouter("Apprendre Galois")
-gestionnaire.ajouter("Écrire un programme")
+gestionnaire.ajouter("Apprendre Galois", "")
+gestionnaire.ajouter("Écrire un programme", "")
 gestionnaire.compléter(0)
 gestionnaire.afficher_toutes()
 ```
@@ -262,6 +262,7 @@ fonction lire_fichier(chemin: texte): texte
     soit f = fopen(chemin, "r")
     -- ... lecture ...
     fclose(f)
+    soit contenu = ""
     retourne contenu
 fin
 

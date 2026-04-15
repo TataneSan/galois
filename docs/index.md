@@ -128,6 +128,8 @@ cargo build --release
 ### Pattern Matching
 
 ```galois
+soit note = 75
+
 sélectionner note
     cas 0..59 => "Échec"
     cas 60..69 => "Passable"
@@ -140,10 +142,10 @@ fin
 ### Lambdas et Pipe
 
 ```galois
-soit résultat = [1, 2, 3, 4, 5]
-    |> liste.filtrer(x => x % 2 == 0)
-    |> liste.transformer(x => x * 2)
-    |> liste.somme()
+soit nombres = [1, 2, 3, 4, 5]
+soit pairs = liste.filtrer(nombres, x => x % 2 == 0)
+soit doublés = liste.transformer(pairs, x => x * 2)
+soit résultat = liste.somme(doublés)
 
 afficher(résultat)  -- 12
 ```

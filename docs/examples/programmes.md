@@ -212,7 +212,7 @@ fonction crible_ératosthène(limite: entier): liste<entier>
         j += 1
     fin
 
-    soit premiers = nouvelle liste<entier>()
+    soit premiers: liste<entier> = []
     mutable n = 2
     tantque n <= limite faire
         si est_premier[n] == 1 alors
