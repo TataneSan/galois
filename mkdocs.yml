@@ -28,11 +28,21 @@ theme:
         icon: material/brightness-4
         name: Mode sombre
   features:
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.tracking
+    - navigation.path
+    - navigation.indexes
     - navigation.tabs
     - navigation.sections
     - navigation.expand
     - navigation.top
     - navigation.footer
+    - toc.follow
+    - content.tabs.link
+    - content.tooltips
+    - content.action.edit
+    - content.action.view
     - search.suggest
     - search.highlight
     - content.code.copy
@@ -41,11 +51,18 @@ theme:
     code: JetBrains Mono
   icon:
     logo: material/code-braces
+    repo: fontawesome/brands/github
 
 extra:
+  homepage: index.md
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/TataneSan/galois
+  status:
+    new: Nouveau
+    deprecated: Deprecie
+
+edit_uri: edit/master/docs/
 
 extra_css:
   - stylesheets/extra.css

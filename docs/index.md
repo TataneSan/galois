@@ -2,6 +2,17 @@
 
 **Galois** est un langage de programmation compilé, entierement ecrit en francais, qui compile vers du code natif via LLVM.
 
+<div class="galois-hero" markdown>
+
+# Le langage compile en francais
+
+Codez avec une syntaxe naturelle en francais, un typage statique moderne et une compilation native via LLVM.
+
+[Demarrage rapide](guides/demarrage.md){ .md-button .md-button--primary }
+[Reference complete](reference/langage.md){ .md-button }
+
+</div>
+
 !!! tip "Version actuelle: 0.1.0"
 
     Galois est en developpement actif. Consultez le [Changelog](CHANGELOG.md) pour les dernieres modifications.
