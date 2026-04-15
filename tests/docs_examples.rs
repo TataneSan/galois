@@ -99,8 +99,10 @@ fn exemples_hors_doc_supplémentaires() {
         ("file_basique.gal", "1\n2\n2"),
         ("classe_paire.gal", "11"),
         ("compteur_nes.gal", "6"),
+        ("ffi_externe_local.gal", "vrai"),
         ("ffi_fichier_basique.gal", "vrai"),
         ("parité_drapeaux.gal", "2\n1"),
+        ("sans_top_level.gal", ""),
     ];
 
     for (nom, attendu) in cas {

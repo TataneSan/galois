@@ -1,0 +1,3 @@
+fonction utilitaire(): entier
+    retourne 42
+fin

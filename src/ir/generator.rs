@@ -2,7 +2,7 @@ use crate::ir::{IRBloc, IRFonction, IRInstruction, IRModule, IROp, IRStruct, IRT
 use crate::parser::ast::*;
 use crate::semantic::symbols::{GenreSymbole, MéthodeClasseSymbole, TableSymboles};
 use crate::semantic::types::Type;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct GénérateurIR {
     compteur_temp: usize,
@@ -1108,12 +1108,144 @@ impl GénérateurIR {
         )
     }
 
+    fn ir_fonction_externe(
+        &self,
+        nom: &str,
+        paramètres: &[ParamètreAST],
+        type_retour: &Option<TypeAST>,
+    ) -> IRFonction {
+        let paramètres_ir = paramètres
+            .iter()
+            .map(|p| {
+                let type_src = if let Some(t) = &p.type_ann {
+                    self.convertir_type_ast(t)
+                } else {
+                    Type::Inconnu
+                };
+                (p.nom.clone(), self.convertir_type_ir(&type_src))
+            })
+            .collect();
+
+        let type_retour_ir = if let Some(rt) = type_retour {
+            self.convertir_type_ir(&self.convertir_type_ast(rt))
+        } else {
+            IRType::Vide
+        };
+
+        IRFonction {
+            nom: nom.to_string(),
+            paramètres: paramètres_ir,
+            type_retour: type_retour_ir,
+            blocs: Vec::new(),
+            est_externe: true,
+        }
+    }
+
+    fn collecter_externes_bloc(&mut self, bloc: &BlocAST, externes: &mut Vec<IRFonction>) {
+        self.collecter_externes_instructions(&bloc.instructions, externes);
+    }
+
+    fn collecter_externes_instructions(&mut self, instructions: &[InstrAST], externes: &mut Vec<IRFonction>) {
+        for instr in instructions {
+            match instr {
+                InstrAST::Externe {
+                    nom,
+                    paramètres,
+                    type_retour,
+                    ..
+                } => {
+                    if self.table.chercher(nom).is_none() {
+                        let paramètres_type = paramètres
+                            .iter()
+                            .map(|p| {
+                                let type_src = if let Some(t) = &p.type_ann {
+                                    self.convertir_type_ast(t)
+                                } else {
+                                    Type::Inconnu
+                                };
+                                (p.nom.clone(), type_src)
+                            })
+                            .collect();
+                        let type_retour_sym = if let Some(rt) = type_retour {
+                            self.convertir_type_ast(rt)
+                        } else {
+                            Type::Rien
+                        };
+                        self.table.définir(
+                            nom,
+                            GenreSymbole::Fonction {
+                                paramètres: paramètres_type,
+                                type_retour: type_retour_sym,
+                                est_async: false,
+                            },
+                        );
+                    }
+                    externes.push(self.ir_fonction_externe(nom, paramètres, type_retour));
+                }
+                InstrAST::Fonction(décl) => self.collecter_externes_bloc(&décl.corps, externes),
+                InstrAST::Classe(décl) => {
+                    for membre in &décl.membres {
+                        match membre {
+                            MembreClasseAST::Méthode { déclaration, .. } => {
+                                self.collecter_externes_bloc(&déclaration.corps, externes);
+                            }
+                            MembreClasseAST::Constructeur { corps, .. } => {
+                                self.collecter_externes_bloc(corps, externes);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                InstrAST::Module { bloc, .. } => self.collecter_externes_bloc(bloc, externes),
+                InstrAST::Si {
+                    bloc_alors,
+                    branches_sinonsi,
+                    bloc_sinon,
+                    ..
+                } => {
+                    self.collecter_externes_bloc(bloc_alors, externes);
+                    for (_, bloc) in branches_sinonsi {
+                        self.collecter_externes_bloc(bloc, externes);
+                    }
+                    if let Some(bloc) = bloc_sinon {
+                        self.collecter_externes_bloc(bloc, externes);
+                    }
+                }
+                InstrAST::TantQue { bloc, .. }
+                | InstrAST::Pour { bloc, .. }
+                | InstrAST::PourCompteur { bloc, .. } => self.collecter_externes_bloc(bloc, externes),
+                InstrAST::Sélectionner {
+                    cas,
+                    par_défaut,
+                    ..
+                } => {
+                    for (_, bloc) in cas {
+                        self.collecter_externes_bloc(bloc, externes);
+                    }
+                    if let Some(bloc) = par_défaut {
+                        self.collecter_externes_bloc(bloc, externes);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     pub fn générer(&mut self, programme: &ProgrammeAST) -> IRModule {
         let mut module = IRModule {
             fonctions: Vec::new(),
             structures: Vec::new(),
             globales: Vec::new(),
         };
+
+        let mut externes = Vec::new();
+        self.collecter_externes_instructions(&programme.instructions, &mut externes);
+        let mut externes_vus = HashSet::new();
+        for f in externes {
+            if externes_vus.insert(f.nom.clone()) {
+                module.fonctions.push(f);
+            }
+        }
 
         for instr in &programme.instructions {
             match instr {
@@ -1122,38 +1254,7 @@ impl GénérateurIR {
                         module.fonctions.push(fonction);
                     }
                 }
-                InstrAST::Externe {
-                    nom,
-                    paramètres,
-                    type_retour,
-                    ..
-                } => {
-                    let paramètres_ir = paramètres
-                        .iter()
-                        .map(|p| {
-                            let type_src = if let Some(t) = &p.type_ann {
-                                self.convertir_type_ast(t)
-                            } else {
-                                Type::Inconnu
-                            };
-                            (p.nom.clone(), self.convertir_type_ir(&type_src))
-                        })
-                        .collect();
-
-                    let type_retour_ir = if let Some(rt) = type_retour {
-                        self.convertir_type_ir(&self.convertir_type_ast(rt))
-                    } else {
-                        IRType::Vide
-                    };
-
-                    module.fonctions.push(IRFonction {
-                        nom: nom.clone(),
-                        paramètres: paramètres_ir,
-                        type_retour: type_retour_ir,
-                        blocs: Vec::new(),
-                        est_externe: true,
-                    });
-                }
+                InstrAST::Externe { .. } => {}
                 InstrAST::Classe(décl) => {
                     module.structures.push(IRStruct {
                         nom: décl.nom.clone(),

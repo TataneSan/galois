@@ -1,0 +1,13 @@
+fonction fermeture_valide(): booléen
+    externe fonction fopen(path: texte, mode: texte): pointeur_vide
+    externe fonction fclose(f: pointeur_vide): entier
+
+    soit f = fopen("/dev/null", "r")
+    si f == nul alors
+        retourne faux
+    fin
+
+    retourne fclose(f) == 0
+fin
+
+afficher(fermeture_valide())

@@ -1123,12 +1123,12 @@ impl GénérateurLLVM {
         self.générer_dispatch_dynamiques();
 
         let a_principal = module.fonctions.iter().any(|f| f.nom == "galois_principal");
+        self.écrire("define i32 @main() {\n");
         if a_principal {
-            self.écrire("define i32 @main() {\n");
             self.écrire("  call i64 @galois_principal()\n");
-            self.écrire("  ret i32 0\n");
-            self.écrire("}\n\n");
         }
+        self.écrire("  ret i32 0\n");
+        self.écrire("}\n\n");
 
         for (nom, contenu, len) in &self.chaînes {
             let déclaration = format!(
