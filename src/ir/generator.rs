@@ -361,6 +361,9 @@ impl GénérateurIR {
                     Some(Type::ListeChaînée(Box::new(Type::Entier)))
                 }
                 "ensemble" => Some(Type::Ensemble(Box::new(Type::Entier))),
+                "dictionnaire" => {
+                    Some(Type::Dictionnaire(Box::new(Type::Texte), Box::new(Type::Entier)))
+                }
                 _ => Some(Type::Classe(classe.clone(), None)),
             },
             ExprAST::Conditionnelle { alors, sinon, .. } => {
@@ -470,12 +473,42 @@ impl GénérateurIR {
             "aleatoire_entier" => "gal_aleatoire_entier".to_string(),
             "aleatoire_graine" => "gal_aleatoire_graine".to_string(),
             "temps" => "gal_temps".to_string(),
+            "temps_ms" => "gal_temps_ms".to_string(),
+            "temps_ns" => "gal_temps_ns".to_string(),
+            "temps_mono_ms" => "gal_temps_mono_ms".to_string(),
             "lire_ligne" => "gal_lire_ligne".to_string(),
             "lire_entier" => "gal_lire_entier".to_string(),
             "entier_depuis_texte" => "atoi".to_string(),
             "décimal_depuis_texte" | "decimal_depuis_texte" => "atof".to_string(),
             "format" | "formater" => "gal_format_texte".to_string(),
             "majuscule" => "gal_majuscule".to_string(),
+            "minuscule" => "gal_minuscule".to_string(),
+            "trim" => "gal_trim".to_string(),
+            "trim_début" | "trim_debut" => "gal_trim_debut".to_string(),
+            "trim_fin" => "gal_trim_fin".to_string(),
+            "est_vide" => "gal_texte_est_vide".to_string(),
+            "contient" => "gal_texte_contient".to_string(),
+            "commence_par" => "gal_texte_commence_par".to_string(),
+            "finit_par" => "gal_texte_finit_par".to_string(),
+            "sous_chaîne" | "sous_chaine" => "gal_texte_sous_chaine".to_string(),
+            "remplacer" => "gal_texte_remplacer".to_string(),
+            "répéter" | "repeter" => "gal_texte_repeter".to_string(),
+            "split" | "séparer" | "separer" | "diviser" => "gal_texte_split".to_string(),
+            "caractères" | "caracteres" => "gal_texte_caracteres".to_string(),
+            "entier" => "gal_texte_vers_entier".to_string(),
+            "décimal" | "decimal" => "gal_texte_vers_decimal".to_string(),
+            "pid" => "gal_systeme_pid".to_string(),
+            "uid" => "gal_systeme_uid".to_string(),
+            "repertoire_courant" => "gal_systeme_repertoire_courant".to_string(),
+            "nom_hote" => "gal_systeme_nom_hote".to_string(),
+            "plateforme" => "gal_systeme_plateforme".to_string(),
+            "variable_env" => "gal_systeme_variable_env".to_string(),
+            "definir_env" => "gal_systeme_definir_env".to_string(),
+            "existe_env" => "gal_systeme_existe_env".to_string(),
+            "resoudre_ipv4" => "gal_reseau_resoudre_ipv4".to_string(),
+            "resoudre_nom" => "gal_reseau_resoudre_nom".to_string(),
+            "nom_hote_local" => "gal_reseau_nom_hote_local".to_string(),
+            "est_ipv4" => "gal_reseau_est_ipv4".to_string(),
             "ajouter" => "gal_liste_ajouter".to_string(),
             "obtenir" => "gal_liste_obtenir".to_string(),
             "taille" | "longueur" => "gal_liste_taille".to_string(),
@@ -492,6 +525,8 @@ impl GénérateurIR {
             "min" => "gal_min".to_string(),
             "max" => "gal_max".to_string(),
             "pgcd" => "gal_pgcd".to_string(),
+            "ppcm" => "gal_ppcm".to_string(),
+            "intervalle" => "gal_intervalle".to_string(),
             "empiler" => "gal_pile_empiler_i64".to_string(),
             "dépiler" | "depiler" => "gal_pile_depiler_i64".to_string(),
             "sommet" => "gal_pile_sommet_i64".to_string(),
@@ -503,28 +538,81 @@ impl GénérateurIR {
 
     fn nom_fonction_méthode_collection(&self, type_obj: &Type, membre: &str) -> Option<String> {
         match type_obj {
+            Type::Texte => match membre {
+                "taille" | "longueur" => Some("strlen".to_string()),
+                "majuscule" => Some("gal_majuscule".to_string()),
+                "minuscule" => Some("gal_minuscule".to_string()),
+                "trim" => Some("gal_trim".to_string()),
+                "trim_début" | "trim_debut" => Some("gal_trim_debut".to_string()),
+                "trim_fin" => Some("gal_trim_fin".to_string()),
+                "est_vide" => Some("gal_texte_est_vide".to_string()),
+                "contient" => Some("gal_texte_contient".to_string()),
+                "commence_par" => Some("gal_texte_commence_par".to_string()),
+                "finit_par" => Some("gal_texte_finit_par".to_string()),
+                "sous_chaîne" | "sous_chaine" => Some("gal_texte_sous_chaine".to_string()),
+                "remplacer" => Some("gal_texte_remplacer".to_string()),
+                "répéter" | "repeter" => Some("gal_texte_repeter".to_string()),
+                "split" | "séparer" | "separer" | "diviser" => Some("gal_texte_split".to_string()),
+                "caractères" | "caracteres" => Some("gal_texte_caracteres".to_string()),
+                "entier" => Some("gal_texte_vers_entier".to_string()),
+                "décimal" | "decimal" => Some("gal_texte_vers_decimal".to_string()),
+                _ => None,
+            },
             Type::Dictionnaire(_, _) => match membre {
                 "taille" | "longueur" => Some("gal_dictionnaire_taille".to_string()),
+                "est_vide" => Some("gal_dictionnaire_est_vide".to_string()),
+                "contient" => Some("gal_dictionnaire_contient_texte".to_string()),
+                "obtenir" => Some("gal_dictionnaire_obtenir_texte_i64".to_string()),
+                "définir" | "definir" => Some("gal_dictionnaire_definir_texte_i64".to_string()),
+                "supprimer" => Some("gal_dictionnaire_supprimer_texte".to_string()),
+                "clés" | "cles" => Some("gal_dictionnaire_cles".to_string()),
+                "valeurs" => Some("gal_dictionnaire_valeurs".to_string()),
+                "paires" | "entrées" | "entrees" => Some("gal_dictionnaire_paires".to_string()),
+                "vider" => Some("gal_dictionnaire_vider".to_string()),
                 _ => None,
             },
             Type::Pile(_) => match membre {
+                "taille" | "longueur" => Some("gal_pile_taille".to_string()),
+                "est_vide" => Some("gal_pile_est_vide".to_string()),
                 "empiler" => Some("gal_pile_empiler_i64".to_string()),
                 "dépiler" | "depiler" => Some("gal_pile_depiler_i64".to_string()),
                 "sommet" => Some("gal_pile_sommet_i64".to_string()),
+                "vider" => Some("gal_pile_vider".to_string()),
                 _ => None,
             },
             Type::File(_) => match membre {
+                "taille" | "longueur" => Some("gal_file_taille".to_string()),
+                "est_vide" => Some("gal_file_est_vide".to_string()),
                 "enfiler" => Some("gal_file_enfiler_i64".to_string()),
                 "défiler" | "defiler" => Some("gal_file_defiler_i64".to_string()),
+                "tête" | "tete" | "premier" => Some("gal_file_tete_i64".to_string()),
+                "queue" | "dernier" => Some("gal_file_queue_i64".to_string()),
+                "vider" => Some("gal_file_vider".to_string()),
                 _ => None,
             },
-            Type::Liste(t) | Type::Tableau(t, _) | Type::ListeChaînée(t) => {
+            Type::Liste(t) | Type::Tableau(t, _) => {
                 if matches!(**t, Type::Entier) {
                     match membre {
                         "ajouter" => Some("gal_liste_ajouter_i64".to_string()),
                         "obtenir" => Some("gal_liste_obtenir_i64".to_string()),
                         "contient" => Some("gal_liste_contient_i64".to_string()),
                         "taille" | "longueur" => Some("gal_liste_taille".to_string()),
+                        "est_vide" => Some("gal_liste_est_vide".to_string()),
+                        "insérer" | "inserer" => Some("gal_liste_inserer_i64".to_string()),
+                        "supprimer" | "supprimer_indice" => {
+                            Some("gal_liste_supprimer_indice_i64".to_string())
+                        }
+                        "trier" => Some("gal_liste_trier_i64".to_string()),
+                        "inverser" => Some("gal_liste_inverser_i64".to_string()),
+                        "vider" => Some("gal_liste_vider".to_string()),
+                        "indice" => Some("gal_liste_indice_i64".to_string()),
+                        "premier" => Some("gal_liste_premier_i64".to_string()),
+                        "dernier" => Some("gal_liste_dernier_i64".to_string()),
+                        "sous_liste" => Some("gal_liste_sous_liste_i64".to_string()),
+                        "joindre" => Some("gal_liste_joindre_i64".to_string()),
+                        "avec_indice" => Some("gal_liste_avec_indice_i64".to_string()),
+                        "mapper" => Some("gal_liste_transformer_i64".to_string()),
+                        "appliquer_chacun" => Some("gal_liste_appliquer_chacun_noop".to_string()),
                         _ => None,
                     }
                 } else {
@@ -532,14 +620,47 @@ impl GénérateurIR {
                         "ajouter" => Some("gal_liste_ajouter_ptr".to_string()),
                         "obtenir" => Some("gal_liste_obtenir_ptr".to_string()),
                         "taille" | "longueur" => Some("gal_liste_taille".to_string()),
+                        "est_vide" => Some("gal_liste_est_vide".to_string()),
+                        "vider" => Some("gal_liste_vider".to_string()),
                         _ => None,
                     }
                 }
             }
+            Type::ListeChaînée(_) => match membre {
+                "taille" | "longueur" => Some("gal_liste_taille".to_string()),
+                "est_vide" => Some("gal_liste_chainee_est_vide".to_string()),
+                "ajouter" => Some("gal_liste_chainee_ajouter_fin_i64".to_string()),
+                "ajouter_début" | "ajouter_debut" => {
+                    Some("gal_liste_chainee_ajouter_debut_i64".to_string())
+                }
+                "ajouter_fin" => Some("gal_liste_chainee_ajouter_fin_i64".to_string()),
+                "insérer" | "inserer" => Some("gal_liste_chainee_inserer_i64".to_string()),
+                "obtenir" => Some("gal_liste_obtenir_i64".to_string()),
+                "supprimer" => Some("gal_liste_chainee_supprimer_i64".to_string()),
+                "premier" => Some("gal_liste_chainee_premier_i64".to_string()),
+                "dernier" => Some("gal_liste_chainee_dernier_i64".to_string()),
+                "parcourir" => Some("gal_liste_chainee_parcourir_noop".to_string()),
+                "inverser" => Some("gal_liste_chainee_inverser".to_string()),
+                "vider" => Some("gal_liste_chainee_vider".to_string()),
+                _ => None,
+            },
             Type::Ensemble(t) => {
                 if matches!(**t, Type::Entier) {
                     match membre {
                         "ajouter" => Some("gal_ensemble_ajouter_i64".to_string()),
+                        "supprimer" => Some("gal_ensemble_supprimer_i64".to_string()),
+                        "union" => Some("gal_ensemble_union_i64".to_string()),
+                        "intersection" => Some("gal_ensemble_intersection_i64".to_string()),
+                        "différence" | "difference" => {
+                            Some("gal_ensemble_difference_i64".to_string())
+                        }
+                        "diff_symétrique" | "diff_symetrique" => {
+                            Some("gal_ensemble_diff_symetrique_i64".to_string())
+                        }
+                        "est_sous_ensemble" => Some("gal_ensemble_est_sous_ensemble_i64".to_string()),
+                        "est_sur_ensemble" => Some("gal_ensemble_est_sur_ensemble_i64".to_string()),
+                        "vers_liste" => Some("gal_ensemble_vers_liste_i64".to_string()),
+                        "vider" => Some("gal_ensemble_vider".to_string()),
                         "contient" => Some("gal_ensemble_contient_i64".to_string()),
                         "taille" | "longueur" => Some("gal_ensemble_taille".to_string()),
                         "est_vide" => Some("gal_ensemble_est_vide".to_string()),
@@ -1943,9 +2064,29 @@ impl GénérateurIR {
                 appelé, arguments, ..
             } => match appelé.as_ref() {
                 ExprAST::Identifiant(n, _) => {
-                    if matches!(n.as_str(), "filtrer" | "transformer" | "somme" | "réduire") {
+                    if matches!(n.as_str(), "filtrer" | "transformer" | "mapper" | "somme" | "réduire") {
                         if let Some(appel_spécial) = self.générer_appel_module_liste(n, arguments) {
                             return appel_spécial;
+                        }
+                    }
+                    if matches!(n.as_str(), "taille" | "longueur") && arguments.len() == 1 {
+                        let arg_expr = &arguments[0];
+                        let arg_ir = self.générer_expression(arg_expr);
+                        if let Some(type_arg) = self.type_statique_expression(arg_expr) {
+                            let fn_nom = match type_arg {
+                                Type::Texte => Some("strlen"),
+                                Type::Dictionnaire(_, _) => Some("gal_dictionnaire_taille"),
+                                Type::Ensemble(_) => Some("gal_ensemble_taille"),
+                                Type::Pile(_) => Some("gal_pile_taille"),
+                                Type::File(_) => Some("gal_file_taille"),
+                                Type::Liste(_) | Type::Tableau(_, _) | Type::ListeChaînée(_) => {
+                                    Some("gal_liste_taille")
+                                }
+                                _ => None,
+                            };
+                            if let Some(fn_nom) = fn_nom {
+                                return IRValeur::Appel(fn_nom.to_string(), vec![arg_ir]);
+                            }
                         }
                     }
                     let args: Vec<IRValeur> = arguments
@@ -1995,7 +2136,7 @@ impl GénérateurIR {
                             }
                             return IRValeur::Appel(self.nom_fonction_native(membre), args_ir);
                         } else if matches!(type_obj, Type::Liste(_))
-                            && matches!(membre.as_str(), "filtrer" | "transformer" | "somme" | "réduire")
+                            && matches!(membre.as_str(), "filtrer" | "transformer" | "mapper" | "somme" | "réduire")
                         {
                             let mut args_avec_objet = Vec::with_capacity(arguments.len() + 1);
                             args_avec_objet.push(objet.as_ref().clone());
@@ -2129,36 +2270,98 @@ impl GénérateurIR {
                     let obj = self.générer_expression(objet);
                     if let Some(type_obj) = self.type_statique_expression(objet) {
                         match type_obj {
+                            Type::Module(nom_module) => match (nom_module.as_str(), membre.as_str()) {
+                                ("maths", "pi") | ("maths", "PI") | ("Maths", "pi") | ("Maths", "PI") => {
+                                    IRValeur::Décimal(std::f64::consts::PI)
+                                }
+                                _ => IRValeur::Nul,
+                            },
                             Type::Texte => match membre.as_str() {
                                 "longueur" | "taille" => {
                                     IRValeur::Appel("strlen".to_string(), vec![obj])
                                 }
-                                "est_vide" => IRValeur::Opération(
-                                    IROp::Égal,
-                                    Box::new(IRValeur::Appel("strlen".to_string(), vec![obj])),
-                                    Some(Box::new(IRValeur::Entier(0))),
-                                ),
+                                "est_vide" => {
+                                    IRValeur::Appel("gal_texte_est_vide".to_string(), vec![obj])
+                                }
+                                "caractères" | "caracteres" => {
+                                    IRValeur::Appel("gal_texte_caracteres".to_string(), vec![obj])
+                                }
                                 "majuscule" | "minuscule" | "trim" | "trim_début" | "trim_fin" => {
                                     obj
                                 }
                                 _ => IRValeur::Nul,
                             },
-                            Type::Liste(_)
-                            | Type::Tableau(_, _)
-                            | Type::Pile(_)
-                            | Type::File(_)
-                            | Type::ListeChaînée(_) => match membre.as_str() {
+                            Type::Liste(_) | Type::Tableau(_, _) => match membre.as_str() {
                                 "taille" | "longueur" => {
                                     IRValeur::Appel("gal_liste_taille".to_string(), vec![obj])
                                 }
-                                "est_vide" => IRValeur::Opération(
-                                    IROp::Égal,
-                                    Box::new(IRValeur::Appel(
-                                        "gal_liste_taille".to_string(),
-                                        vec![obj],
-                                    )),
-                                    Some(Box::new(IRValeur::Entier(0))),
+                                "est_vide" => {
+                                    IRValeur::Appel("gal_liste_est_vide".to_string(), vec![obj])
+                                }
+                                "premier" => {
+                                    IRValeur::Appel("gal_liste_premier_i64".to_string(), vec![obj])
+                                }
+                                "dernier" => {
+                                    IRValeur::Appel("gal_liste_dernier_i64".to_string(), vec![obj])
+                                }
+                                "avec_indice" => IRValeur::Appel(
+                                    "gal_liste_avec_indice_i64".to_string(),
+                                    vec![obj],
                                 ),
+                                _ => IRValeur::Nul,
+                            },
+                            Type::Pile(_) => match membre.as_str() {
+                                "taille" | "longueur" => {
+                                    IRValeur::Appel("gal_pile_taille".to_string(), vec![obj])
+                                }
+                                "est_vide" => {
+                                    IRValeur::Appel("gal_pile_est_vide".to_string(), vec![obj])
+                                }
+                                "sommet" => {
+                                    IRValeur::Appel("gal_pile_sommet_i64".to_string(), vec![obj])
+                                }
+                                _ => IRValeur::Nul,
+                            },
+                            Type::File(_) => match membre.as_str() {
+                                "taille" | "longueur" => {
+                                    IRValeur::Appel("gal_file_taille".to_string(), vec![obj])
+                                }
+                                "est_vide" => {
+                                    IRValeur::Appel("gal_file_est_vide".to_string(), vec![obj])
+                                }
+                                "tête" | "tete" | "premier" => {
+                                    IRValeur::Appel("gal_file_tete_i64".to_string(), vec![obj])
+                                }
+                                "queue" | "dernier" => {
+                                    IRValeur::Appel("gal_file_queue_i64".to_string(), vec![obj])
+                                }
+                                _ => IRValeur::Nul,
+                            },
+                            Type::ListeChaînée(_) => match membre.as_str() {
+                                "taille" | "longueur" => {
+                                    IRValeur::Appel("gal_liste_taille".to_string(), vec![obj])
+                                }
+                                "est_vide" => IRValeur::Appel(
+                                    "gal_liste_chainee_est_vide".to_string(),
+                                    vec![obj],
+                                ),
+                                "premier" => IRValeur::Appel(
+                                    "gal_liste_chainee_premier_i64".to_string(),
+                                    vec![obj],
+                                ),
+                                "dernier" => IRValeur::Appel(
+                                    "gal_liste_chainee_dernier_i64".to_string(),
+                                    vec![obj],
+                                ),
+                                _ => IRValeur::Nul,
+                            },
+                            Type::Ensemble(_) => match membre.as_str() {
+                                "taille" | "longueur" => {
+                                    IRValeur::Appel("gal_ensemble_taille".to_string(), vec![obj])
+                                }
+                                "est_vide" => {
+                                    IRValeur::Appel("gal_ensemble_est_vide".to_string(), vec![obj])
+                                }
                                 _ => IRValeur::Nul,
                             },
                             Type::Dictionnaire(_, _) => match membre.as_str() {
@@ -2166,13 +2369,20 @@ impl GénérateurIR {
                                     "gal_dictionnaire_taille".to_string(),
                                     vec![obj],
                                 ),
-                                "est_vide" => IRValeur::Opération(
-                                    IROp::Égal,
-                                    Box::new(IRValeur::Appel(
-                                        "gal_dictionnaire_taille".to_string(),
-                                        vec![obj],
-                                    )),
-                                    Some(Box::new(IRValeur::Entier(0))),
+                                "est_vide" => IRValeur::Appel(
+                                    "gal_dictionnaire_est_vide".to_string(),
+                                    vec![obj],
+                                ),
+                                "clés" | "cles" => {
+                                    IRValeur::Appel("gal_dictionnaire_cles".to_string(), vec![obj])
+                                }
+                                "valeurs" => IRValeur::Appel(
+                                    "gal_dictionnaire_valeurs".to_string(),
+                                    vec![obj],
+                                ),
+                                "paires" | "entrées" | "entrees" => IRValeur::Appel(
+                                    "gal_dictionnaire_paires".to_string(),
+                                    vec![obj],
                                 ),
                                 _ => IRValeur::Nul,
                             },
@@ -2300,6 +2510,9 @@ impl GénérateurIR {
                 }
                 if classe == "ensemble" {
                     return IRValeur::Appel("gal_ensemble_nouveau".to_string(), vec![]);
+                }
+                if classe == "dictionnaire" {
+                    return IRValeur::Appel("gal_dictionnaire_nouveau".to_string(), vec![]);
                 }
                 let args: Vec<IRValeur> = arguments
                     .iter()

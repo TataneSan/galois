@@ -79,6 +79,14 @@ depuis EntréeSortie importe lire_ligne
 depuis Collections importe filtrer, transformer, réduire
 ```
 
+### Modules utilitaires natifs
+
+```galois
+afficher(maths.temps_ms())
+afficher(systeme.pid())
+afficher(reseau.est_ipv4("127.0.0.1"))
+```
+
 ## Chemins de module
 
 Les modules peuvent être organisés en hiérarchie :

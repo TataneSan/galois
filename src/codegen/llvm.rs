@@ -62,7 +62,7 @@ impl GénérateurLLVM {
             IRType::Texte => "i8*".to_string(),
             IRType::Nul => "i8*".to_string(),
             IRType::Tableau(_, Some(n)) => format!("[{} x i64]", n),
-            IRType::Tableau(_, None) => "{ i64, i64, i64* }".to_string(),
+            IRType::Tableau(_, None) => "i8*".to_string(),
             IRType::Liste(_) => "i8*".to_string(),
             IRType::Pile(_) => "i8*".to_string(),
             IRType::File(_) => "i8*".to_string(),
@@ -237,6 +237,30 @@ impl GénérateurLLVM {
             (vec![], IRType::Entier),
         );
         self.signatures_fonctions.insert(
+            "gal_temps_ms".to_string(),
+            (vec![], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_temps_ns".to_string(),
+            (vec![], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_temps_mono_ms".to_string(),
+            (vec![], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_aleatoire".to_string(),
+            (vec![], IRType::Décimal),
+        );
+        self.signatures_fonctions.insert(
+            "gal_aleatoire_entier".to_string(),
+            (vec![IRType::Entier, IRType::Entier], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_aleatoire_graine".to_string(),
+            (vec![IRType::Entier], IRType::Vide),
+        );
+        self.signatures_fonctions.insert(
             "gal_pgcd".to_string(),
             (vec![IRType::Entier, IRType::Entier], IRType::Entier),
         );
@@ -245,12 +269,124 @@ impl GénérateurLLVM {
             (vec![IRType::Entier, IRType::Entier], IRType::Entier),
         );
         self.signatures_fonctions.insert(
+            "gal_intervalle".to_string(),
+            (vec![IRType::Entier, IRType::Entier], IRType::Liste(Box::new(IRType::Entier))),
+        );
+        self.signatures_fonctions.insert(
             "gal_format_texte".to_string(),
             (vec![IRType::Texte], IRType::Texte),
         );
         self.signatures_fonctions.insert(
             "gal_majuscule".to_string(),
             (vec![IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_minuscule".to_string(),
+            (vec![IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_trim".to_string(),
+            (vec![IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_trim_debut".to_string(),
+            (vec![IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_trim_fin".to_string(),
+            (vec![IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_texte_est_vide".to_string(),
+            (vec![IRType::Texte], IRType::Booléen),
+        );
+        self.signatures_fonctions.insert(
+            "gal_texte_contient".to_string(),
+            (vec![IRType::Texte, IRType::Texte], IRType::Booléen),
+        );
+        self.signatures_fonctions.insert(
+            "gal_texte_commence_par".to_string(),
+            (vec![IRType::Texte, IRType::Texte], IRType::Booléen),
+        );
+        self.signatures_fonctions.insert(
+            "gal_texte_finit_par".to_string(),
+            (vec![IRType::Texte, IRType::Texte], IRType::Booléen),
+        );
+        self.signatures_fonctions.insert(
+            "gal_texte_sous_chaine".to_string(),
+            (vec![IRType::Texte, IRType::Entier, IRType::Entier], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_texte_remplacer".to_string(),
+            (vec![IRType::Texte, IRType::Texte, IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_texte_repeter".to_string(),
+            (vec![IRType::Texte, IRType::Entier], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_texte_split".to_string(),
+            (vec![IRType::Texte, IRType::Texte], IRType::Liste(Box::new(IRType::Texte))),
+        );
+        self.signatures_fonctions.insert(
+            "gal_texte_caracteres".to_string(),
+            (vec![IRType::Texte], IRType::Liste(Box::new(IRType::Texte))),
+        );
+        self.signatures_fonctions.insert(
+            "gal_texte_vers_entier".to_string(),
+            (vec![IRType::Texte], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_texte_vers_decimal".to_string(),
+            (vec![IRType::Texte], IRType::Décimal),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_pid".to_string(),
+            (vec![], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_uid".to_string(),
+            (vec![], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_repertoire_courant".to_string(),
+            (vec![], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_nom_hote".to_string(),
+            (vec![], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_plateforme".to_string(),
+            (vec![], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_variable_env".to_string(),
+            (vec![IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_definir_env".to_string(),
+            (vec![IRType::Texte, IRType::Texte], IRType::Vide),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_existe_env".to_string(),
+            (vec![IRType::Texte], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_reseau_resoudre_ipv4".to_string(),
+            (vec![IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_reseau_resoudre_nom".to_string(),
+            (vec![IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_reseau_nom_hote_local".to_string(),
+            (vec![], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_reseau_est_ipv4".to_string(),
+            (vec![IRType::Texte], IRType::Entier),
         );
         self.signatures_fonctions.insert(
             "gal_liste_nouveau".to_string(),
@@ -317,6 +453,78 @@ impl GénérateurLLVM {
             (vec![IRType::Liste(Box::new(IRType::Entier)), IRType::Entier], IRType::Booléen),
         );
         self.signatures_fonctions.insert(
+            "gal_liste_est_vide".to_string(),
+            (vec![IRType::Liste(Box::new(IRType::Entier))], IRType::Booléen),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_inserer_i64".to_string(),
+            (
+                vec![
+                    IRType::Liste(Box::new(IRType::Entier)),
+                    IRType::Entier,
+                    IRType::Entier,
+                ],
+                IRType::Vide,
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_supprimer_indice_i64".to_string(),
+            (vec![IRType::Liste(Box::new(IRType::Entier)), IRType::Entier], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_trier_i64".to_string(),
+            (vec![IRType::Liste(Box::new(IRType::Entier))], IRType::Vide),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_inverser_i64".to_string(),
+            (vec![IRType::Liste(Box::new(IRType::Entier))], IRType::Vide),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_vider".to_string(),
+            (vec![IRType::Liste(Box::new(IRType::Entier))], IRType::Vide),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_indice_i64".to_string(),
+            (vec![IRType::Liste(Box::new(IRType::Entier)), IRType::Entier], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_premier_i64".to_string(),
+            (vec![IRType::Liste(Box::new(IRType::Entier))], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_dernier_i64".to_string(),
+            (vec![IRType::Liste(Box::new(IRType::Entier))], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_sous_liste_i64".to_string(),
+            (
+                vec![
+                    IRType::Liste(Box::new(IRType::Entier)),
+                    IRType::Entier,
+                    IRType::Entier,
+                ],
+                IRType::Liste(Box::new(IRType::Entier)),
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_joindre_i64".to_string(),
+            (vec![IRType::Liste(Box::new(IRType::Entier)), IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_avec_indice_i64".to_string(),
+            (
+                vec![IRType::Liste(Box::new(IRType::Entier))],
+                IRType::Liste(Box::new(IRType::Entier)),
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_appliquer_chacun_noop".to_string(),
+            (
+                vec![IRType::Liste(Box::new(IRType::Entier)), IRType::Texte],
+                IRType::Vide,
+            ),
+        );
+        self.signatures_fonctions.insert(
             "gal_liste_ajouter_ptr".to_string(),
             (vec![IRType::Liste(Box::new(IRType::Entier)), IRType::Texte], IRType::Vide),
         );
@@ -345,8 +553,153 @@ impl GénérateurLLVM {
             (vec![IRType::Ensemble(Box::new(IRType::Entier))], IRType::Booléen),
         );
         self.signatures_fonctions.insert(
+            "gal_ensemble_supprimer_i64".to_string(),
+            (vec![IRType::Ensemble(Box::new(IRType::Entier)), IRType::Entier], IRType::Booléen),
+        );
+        self.signatures_fonctions.insert(
+            "gal_ensemble_union_i64".to_string(),
+            (
+                vec![
+                    IRType::Ensemble(Box::new(IRType::Entier)),
+                    IRType::Ensemble(Box::new(IRType::Entier)),
+                ],
+                IRType::Ensemble(Box::new(IRType::Entier)),
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_ensemble_intersection_i64".to_string(),
+            (
+                vec![
+                    IRType::Ensemble(Box::new(IRType::Entier)),
+                    IRType::Ensemble(Box::new(IRType::Entier)),
+                ],
+                IRType::Ensemble(Box::new(IRType::Entier)),
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_ensemble_difference_i64".to_string(),
+            (
+                vec![
+                    IRType::Ensemble(Box::new(IRType::Entier)),
+                    IRType::Ensemble(Box::new(IRType::Entier)),
+                ],
+                IRType::Ensemble(Box::new(IRType::Entier)),
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_ensemble_diff_symetrique_i64".to_string(),
+            (
+                vec![
+                    IRType::Ensemble(Box::new(IRType::Entier)),
+                    IRType::Ensemble(Box::new(IRType::Entier)),
+                ],
+                IRType::Ensemble(Box::new(IRType::Entier)),
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_ensemble_est_sous_ensemble_i64".to_string(),
+            (
+                vec![
+                    IRType::Ensemble(Box::new(IRType::Entier)),
+                    IRType::Ensemble(Box::new(IRType::Entier)),
+                ],
+                IRType::Booléen,
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_ensemble_est_sur_ensemble_i64".to_string(),
+            (
+                vec![
+                    IRType::Ensemble(Box::new(IRType::Entier)),
+                    IRType::Ensemble(Box::new(IRType::Entier)),
+                ],
+                IRType::Booléen,
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_ensemble_vers_liste_i64".to_string(),
+            (
+                vec![IRType::Ensemble(Box::new(IRType::Entier))],
+                IRType::Liste(Box::new(IRType::Entier)),
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_ensemble_vider".to_string(),
+            (vec![IRType::Ensemble(Box::new(IRType::Entier))], IRType::Vide),
+        );
+        self.signatures_fonctions.insert(
             "gal_dictionnaire_taille".to_string(),
             (vec![IRType::Dictionnaire(Box::new(IRType::Texte), Box::new(IRType::Entier))], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_dictionnaire_est_vide".to_string(),
+            (vec![IRType::Dictionnaire(Box::new(IRType::Texte), Box::new(IRType::Entier))], IRType::Booléen),
+        );
+        self.signatures_fonctions.insert(
+            "gal_dictionnaire_contient_texte".to_string(),
+            (
+                vec![
+                    IRType::Dictionnaire(Box::new(IRType::Texte), Box::new(IRType::Entier)),
+                    IRType::Texte,
+                ],
+                IRType::Booléen,
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_dictionnaire_obtenir_texte_i64".to_string(),
+            (
+                vec![
+                    IRType::Dictionnaire(Box::new(IRType::Texte), Box::new(IRType::Entier)),
+                    IRType::Texte,
+                ],
+                IRType::Entier,
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_dictionnaire_definir_texte_i64".to_string(),
+            (
+                vec![
+                    IRType::Dictionnaire(Box::new(IRType::Texte), Box::new(IRType::Entier)),
+                    IRType::Texte,
+                    IRType::Entier,
+                ],
+                IRType::Vide,
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_dictionnaire_supprimer_texte".to_string(),
+            (
+                vec![
+                    IRType::Dictionnaire(Box::new(IRType::Texte), Box::new(IRType::Entier)),
+                    IRType::Texte,
+                ],
+                IRType::Vide,
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_dictionnaire_cles".to_string(),
+            (
+                vec![IRType::Dictionnaire(Box::new(IRType::Texte), Box::new(IRType::Entier))],
+                IRType::Liste(Box::new(IRType::Texte)),
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_dictionnaire_valeurs".to_string(),
+            (
+                vec![IRType::Dictionnaire(Box::new(IRType::Texte), Box::new(IRType::Entier))],
+                IRType::Liste(Box::new(IRType::Entier)),
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_dictionnaire_paires".to_string(),
+            (
+                vec![IRType::Dictionnaire(Box::new(IRType::Texte), Box::new(IRType::Entier))],
+                IRType::Liste(Box::new(IRType::Texte)),
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_dictionnaire_vider".to_string(),
+            (vec![IRType::Dictionnaire(Box::new(IRType::Texte), Box::new(IRType::Entier))], IRType::Vide),
         );
         self.signatures_fonctions.insert(
             "gal_pile_nouveau".to_string(),
@@ -365,6 +718,18 @@ impl GénérateurLLVM {
             (vec![IRType::Pile(Box::new(IRType::Entier))], IRType::Entier),
         );
         self.signatures_fonctions.insert(
+            "gal_pile_taille".to_string(),
+            (vec![IRType::Pile(Box::new(IRType::Entier))], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_pile_est_vide".to_string(),
+            (vec![IRType::Pile(Box::new(IRType::Entier))], IRType::Booléen),
+        );
+        self.signatures_fonctions.insert(
+            "gal_pile_vider".to_string(),
+            (vec![IRType::Pile(Box::new(IRType::Entier))], IRType::Vide),
+        );
+        self.signatures_fonctions.insert(
             "gal_file_nouveau".to_string(),
             (vec![IRType::Entier], IRType::File(Box::new(IRType::Entier))),
         );
@@ -375,6 +740,73 @@ impl GénérateurLLVM {
         self.signatures_fonctions.insert(
             "gal_file_defiler_i64".to_string(),
             (vec![IRType::File(Box::new(IRType::Entier))], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_file_taille".to_string(),
+            (vec![IRType::File(Box::new(IRType::Entier))], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_file_est_vide".to_string(),
+            (vec![IRType::File(Box::new(IRType::Entier))], IRType::Booléen),
+        );
+        self.signatures_fonctions.insert(
+            "gal_file_tete_i64".to_string(),
+            (vec![IRType::File(Box::new(IRType::Entier))], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_file_queue_i64".to_string(),
+            (vec![IRType::File(Box::new(IRType::Entier))], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_file_vider".to_string(),
+            (vec![IRType::File(Box::new(IRType::Entier))], IRType::Vide),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_chainee_est_vide".to_string(),
+            (vec![IRType::ListeChaînée(Box::new(IRType::Entier))], IRType::Booléen),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_chainee_ajouter_debut_i64".to_string(),
+            (vec![IRType::ListeChaînée(Box::new(IRType::Entier)), IRType::Entier], IRType::Vide),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_chainee_ajouter_fin_i64".to_string(),
+            (vec![IRType::ListeChaînée(Box::new(IRType::Entier)), IRType::Entier], IRType::Vide),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_chainee_inserer_i64".to_string(),
+            (
+                vec![
+                    IRType::ListeChaînée(Box::new(IRType::Entier)),
+                    IRType::Entier,
+                    IRType::Entier,
+                ],
+                IRType::Vide,
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_chainee_supprimer_i64".to_string(),
+            (vec![IRType::ListeChaînée(Box::new(IRType::Entier)), IRType::Entier], IRType::Booléen),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_chainee_premier_i64".to_string(),
+            (vec![IRType::ListeChaînée(Box::new(IRType::Entier))], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_chainee_dernier_i64".to_string(),
+            (vec![IRType::ListeChaînée(Box::new(IRType::Entier))], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_chainee_parcourir_noop".to_string(),
+            (vec![IRType::ListeChaînée(Box::new(IRType::Entier)), IRType::Texte], IRType::Vide),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_chainee_inverser".to_string(),
+            (vec![IRType::ListeChaînée(Box::new(IRType::Entier))], IRType::Vide),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_chainee_vider".to_string(),
+            (vec![IRType::ListeChaînée(Box::new(IRType::Entier))], IRType::Vide),
         );
         self.signatures_fonctions.insert(
             "gal_sin".to_string(),
@@ -504,30 +936,80 @@ impl GénérateurLLVM {
         self.écrire("declare i64 @gal_dict_get_bool(i8*, i8, i32*)\n");
         self.écrire("declare i64 @gal_dict_get_nul(i8*, i32*)\n\n");
         self.écrire("declare i64 @gal_dictionnaire_taille(i8*)\n");
+        self.écrire("declare void @gal_dictionnaire_definir_texte_i64(i8*, i8*, i64)\n");
+        self.écrire("declare i64 @gal_dictionnaire_obtenir_texte_i64(i8*, i8*)\n");
+        self.écrire("declare i1 @gal_dictionnaire_contient_texte(i8*, i8*)\n");
+        self.écrire("declare void @gal_dictionnaire_supprimer_texte(i8*, i8*)\n");
+        self.écrire("declare i1 @gal_dictionnaire_est_vide(i8*)\n");
+        self.écrire("declare i8* @gal_dictionnaire_cles(i8*)\n");
+        self.écrire("declare i8* @gal_dictionnaire_valeurs(i8*)\n");
+        self.écrire("declare i8* @gal_dictionnaire_paires(i8*)\n");
+        self.écrire("declare void @gal_dictionnaire_vider(i8*)\n");
         self.écrire("declare i8* @gal_liste_nouveau(i64)\n");
         self.écrire("declare void @gal_liste_ajouter(i8*, i8*)\n");
         self.écrire("declare i8* @gal_liste_obtenir(i8*, i64)\n");
         self.écrire("declare i64 @gal_liste_taille(i8*)\n");
+        self.écrire("declare i1 @gal_liste_est_vide(i8*)\n");
         self.écrire("declare i8* @gal_liste_filtrer_i64(i8*, i64, i64, i64)\n");
         self.écrire("declare i8* @gal_liste_transformer_i64(i8*, i64, i64)\n");
         self.écrire("declare i64 @gal_liste_somme_i64(i8*)\n");
         self.écrire("declare void @gal_liste_ajouter_i64(i8*, i64)\n");
         self.écrire("declare i64 @gal_liste_obtenir_i64(i8*, i64)\n");
         self.écrire("declare i1 @gal_liste_contient_i64(i8*, i64)\n");
+        self.écrire("declare void @gal_liste_inserer_i64(i8*, i64, i64)\n");
+        self.écrire("declare i64 @gal_liste_supprimer_indice_i64(i8*, i64)\n");
+        self.écrire("declare void @gal_liste_trier_i64(i8*)\n");
+        self.écrire("declare void @gal_liste_inverser_i64(i8*)\n");
+        self.écrire("declare void @gal_liste_vider(i8*)\n");
+        self.écrire("declare i64 @gal_liste_indice_i64(i8*, i64)\n");
+        self.écrire("declare i64 @gal_liste_premier_i64(i8*)\n");
+        self.écrire("declare i64 @gal_liste_dernier_i64(i8*)\n");
+        self.écrire("declare i8* @gal_liste_sous_liste_i64(i8*, i64, i64)\n");
+        self.écrire("declare i8* @gal_liste_joindre_i64(i8*, i8*)\n");
+        self.écrire("declare i8* @gal_liste_avec_indice_i64(i8*)\n");
+        self.écrire("declare void @gal_liste_appliquer_chacun_noop(i8*, i8*)\n");
         self.écrire("declare void @gal_liste_ajouter_ptr(i8*, i8*)\n");
         self.écrire("declare i8* @gal_liste_obtenir_ptr(i8*, i64)\n");
+        self.écrire("declare i8* @gal_intervalle(i64, i64)\n");
         self.écrire("declare i8* @gal_ensemble_nouveau()\n");
         self.écrire("declare void @gal_ensemble_ajouter_i64(i8*, i64)\n");
         self.écrire("declare i1 @gal_ensemble_contient_i64(i8*, i64)\n");
         self.écrire("declare i64 @gal_ensemble_taille(i8*)\n");
         self.écrire("declare i1 @gal_ensemble_est_vide(i8*)\n");
+        self.écrire("declare i1 @gal_ensemble_supprimer_i64(i8*, i64)\n");
+        self.écrire("declare i8* @gal_ensemble_union_i64(i8*, i8*)\n");
+        self.écrire("declare i8* @gal_ensemble_intersection_i64(i8*, i8*)\n");
+        self.écrire("declare i8* @gal_ensemble_difference_i64(i8*, i8*)\n");
+        self.écrire("declare i8* @gal_ensemble_diff_symetrique_i64(i8*, i8*)\n");
+        self.écrire("declare i1 @gal_ensemble_est_sous_ensemble_i64(i8*, i8*)\n");
+        self.écrire("declare i1 @gal_ensemble_est_sur_ensemble_i64(i8*, i8*)\n");
+        self.écrire("declare i8* @gal_ensemble_vers_liste_i64(i8*)\n");
+        self.écrire("declare void @gal_ensemble_vider(i8*)\n");
         self.écrire("declare i8* @gal_pile_nouveau(i64)\n");
         self.écrire("declare void @gal_pile_empiler_i64(i8*, i64)\n");
         self.écrire("declare i64 @gal_pile_depiler_i64(i8*)\n");
         self.écrire("declare i64 @gal_pile_sommet_i64(i8*)\n");
+        self.écrire("declare i64 @gal_pile_taille(i8*)\n");
+        self.écrire("declare i1 @gal_pile_est_vide(i8*)\n");
+        self.écrire("declare void @gal_pile_vider(i8*)\n");
         self.écrire("declare i8* @gal_file_nouveau(i64)\n");
         self.écrire("declare void @gal_file_enfiler_i64(i8*, i64)\n");
         self.écrire("declare i64 @gal_file_defiler_i64(i8*)\n");
+        self.écrire("declare i64 @gal_file_taille(i8*)\n");
+        self.écrire("declare i1 @gal_file_est_vide(i8*)\n");
+        self.écrire("declare i64 @gal_file_tete_i64(i8*)\n");
+        self.écrire("declare i64 @gal_file_queue_i64(i8*)\n");
+        self.écrire("declare void @gal_file_vider(i8*)\n");
+        self.écrire("declare i1 @gal_liste_chainee_est_vide(i8*)\n");
+        self.écrire("declare void @gal_liste_chainee_ajouter_debut_i64(i8*, i64)\n");
+        self.écrire("declare void @gal_liste_chainee_ajouter_fin_i64(i8*, i64)\n");
+        self.écrire("declare void @gal_liste_chainee_inserer_i64(i8*, i64, i64)\n");
+        self.écrire("declare i1 @gal_liste_chainee_supprimer_i64(i8*, i64)\n");
+        self.écrire("declare i64 @gal_liste_chainee_premier_i64(i8*)\n");
+        self.écrire("declare i64 @gal_liste_chainee_dernier_i64(i8*)\n");
+        self.écrire("declare void @gal_liste_chainee_parcourir_noop(i8*, i8*)\n");
+        self.écrire("declare void @gal_liste_chainee_inverser(i8*)\n");
+        self.écrire("declare void @gal_liste_chainee_vider(i8*)\n");
         self.écrire("declare double @gal_sin(double)\n");
         self.écrire("declare double @gal_cos(double)\n");
         self.écrire("declare double @gal_tan(double)\n");
@@ -546,10 +1028,40 @@ impl GénérateurLLVM {
         self.écrire("declare i8* @gal_lire_ligne()\n");
         self.écrire("declare i64 @gal_lire_entier()\n");
         self.écrire("declare i64 @gal_temps()\n");
+        self.écrire("declare i64 @gal_temps_ms()\n");
+        self.écrire("declare i64 @gal_temps_ns()\n");
+        self.écrire("declare i64 @gal_temps_mono_ms()\n");
         self.écrire("declare i64 @gal_pgcd(i64, i64)\n");
         self.écrire("declare i64 @gal_ppcm(i64, i64)\n");
         self.écrire("declare i8* @gal_format_texte(i8*)\n");
         self.écrire("declare i8* @gal_majuscule(i8*)\n");
+        self.écrire("declare i8* @gal_minuscule(i8*)\n");
+        self.écrire("declare i8* @gal_trim(i8*)\n");
+        self.écrire("declare i8* @gal_trim_debut(i8*)\n");
+        self.écrire("declare i8* @gal_trim_fin(i8*)\n");
+        self.écrire("declare i1 @gal_texte_est_vide(i8*)\n");
+        self.écrire("declare i1 @gal_texte_contient(i8*, i8*)\n");
+        self.écrire("declare i1 @gal_texte_commence_par(i8*, i8*)\n");
+        self.écrire("declare i1 @gal_texte_finit_par(i8*, i8*)\n");
+        self.écrire("declare i8* @gal_texte_sous_chaine(i8*, i64, i64)\n");
+        self.écrire("declare i8* @gal_texte_remplacer(i8*, i8*, i8*)\n");
+        self.écrire("declare i8* @gal_texte_repeter(i8*, i64)\n");
+        self.écrire("declare i8* @gal_texte_split(i8*, i8*)\n");
+        self.écrire("declare i8* @gal_texte_caracteres(i8*)\n");
+        self.écrire("declare i64 @gal_texte_vers_entier(i8*)\n");
+        self.écrire("declare double @gal_texte_vers_decimal(i8*)\n");
+        self.écrire("declare i64 @gal_systeme_pid()\n");
+        self.écrire("declare i64 @gal_systeme_uid()\n");
+        self.écrire("declare i8* @gal_systeme_repertoire_courant()\n");
+        self.écrire("declare i8* @gal_systeme_nom_hote()\n");
+        self.écrire("declare i8* @gal_systeme_plateforme()\n");
+        self.écrire("declare i8* @gal_systeme_variable_env(i8*)\n");
+        self.écrire("declare void @gal_systeme_definir_env(i8*, i8*)\n");
+        self.écrire("declare i64 @gal_systeme_existe_env(i8*)\n");
+        self.écrire("declare i8* @gal_reseau_resoudre_ipv4(i8*)\n");
+        self.écrire("declare i8* @gal_reseau_resoudre_nom(i8*)\n");
+        self.écrire("declare i8* @gal_reseau_nom_hote_local()\n");
+        self.écrire("declare i64 @gal_reseau_est_ipv4(i8*)\n");
 
         self.générer_fonctions_runtime();
 
@@ -1023,10 +1535,11 @@ impl GénérateurLLVM {
                     ));
                 }
 
-                let type_ret = self.type_llvm_stockage(type_retour);
+                let type_retour_effectif = signature.1.clone();
+                let type_ret = self.type_llvm_stockage(&type_retour_effectif);
                 let nom_mangling = self.nom_llvm(fonction);
 
-                if matches!(type_retour, IRType::Vide) {
+                if matches!(type_retour_effectif, IRType::Vide) {
                     self.écrire(&format!(
                         "  call {} @{}({})\n",
                         type_ret, nom_mangling, args_code
@@ -1392,9 +1905,29 @@ impl GénérateurLLVM {
                     code.push_str(&arg_code);
                 }
                 let (fn_aff, type_aff) = self.fonction_runtime_affichage(&type_arg);
+                let type_src = self.type_llvm_stockage(&type_arg);
+                let arg_aff = if type_aff == "i64" && type_src != "i64" {
+                    if type_src.ends_with('*') {
+                        let cast = self.reg_suivant();
+                        code.push_str(&format!("  {} = ptrtoint {} {} to i64\n", cast, type_src, arg_reg));
+                        cast
+                    } else if type_src == "double" {
+                        let cast = self.reg_suivant();
+                        code.push_str(&format!("  {} = fptosi double {} to i64\n", cast, arg_reg));
+                        cast
+                    } else if type_src == "i1" {
+                        let cast = self.reg_suivant();
+                        code.push_str(&format!("  {} = zext i1 {} to i64\n", cast, arg_reg));
+                        cast
+                    } else {
+                        "0".to_string()
+                    }
+                } else {
+                    arg_reg
+                };
                 code.push_str(&format!(
                     "  call void @{}({} {})\n",
-                    fn_aff, type_aff, arg_reg
+                    fn_aff, type_aff, arg_aff
                 ));
             }
             return ("0".to_string(), code);
@@ -1989,7 +2522,14 @@ impl GénérateurLLVM {
                     }
                 }
             }
-            IRValeur::Appel(nom, args) => self.générer_appel_typé(nom, args, &IRType::Entier),
+            IRValeur::Appel(nom, args) => {
+                let type_attendu = self
+                    .signatures_fonctions
+                    .get(nom)
+                    .map(|(_, t)| t.clone())
+                    .unwrap_or(IRType::Entier);
+                self.générer_appel_typé(nom, args, &type_attendu)
+            }
             IRValeur::InitialisationDictionnaire {
                 paires,
                 type_clé,

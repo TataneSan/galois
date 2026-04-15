@@ -310,6 +310,30 @@ impl Vérificateur {
             },
         );
         symboles_maths.insert(
+            "temps_ms".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "temps_ns".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "temps_mono_ms".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
             "sin".to_string(),
             GenreSymbole::Fonction {
                 paramètres: vec![("x".to_string(), Type::Décimal)],
@@ -378,6 +402,22 @@ impl Vérificateur {
             GenreSymbole::Fonction {
                 paramètres: vec![("x".to_string(), Type::Décimal)],
                 type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "pgcd".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("a".to_string(), Type::Entier), ("b".to_string(), Type::Entier)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "ppcm".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("a".to_string(), Type::Entier), ("b".to_string(), Type::Entier)],
+                type_retour: Type::Entier,
                 est_async: false,
             },
         );
@@ -474,6 +514,119 @@ impl Vérificateur {
         );
         table.définir("EntréeSortie", GenreSymbole::Module { symboles: symboles_es.clone() });
         table.définir("entrée_sortie", GenreSymbole::Module { symboles: symboles_es });
+
+        // Module système
+        let mut symboles_systeme = HashMap::new();
+        symboles_systeme.insert(
+            "pid".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: Vec::new(),
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "uid".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: Vec::new(),
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "repertoire_courant".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: Vec::new(),
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "nom_hote".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: Vec::new(),
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "plateforme".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: Vec::new(),
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "variable_env".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("nom".to_string(), Type::Texte)],
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "definir_env".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![
+                    ("nom".to_string(), Type::Texte),
+                    ("valeur".to_string(), Type::Texte),
+                ],
+                type_retour: Type::Rien,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "existe_env".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("nom".to_string(), Type::Texte)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        table.définir("système", GenreSymbole::Module { symboles: symboles_systeme.clone() });
+        table.définir("systeme", GenreSymbole::Module { symboles: symboles_systeme.clone() });
+        table.définir("Système", GenreSymbole::Module { symboles: symboles_systeme.clone() });
+        table.définir("Systeme", GenreSymbole::Module { symboles: symboles_systeme });
+
+        // Module réseau
+        let mut symboles_reseau = HashMap::new();
+        symboles_reseau.insert(
+            "resoudre_ipv4".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("hote".to_string(), Type::Texte)],
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        symboles_reseau.insert(
+            "resoudre_nom".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("ip".to_string(), Type::Texte)],
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        symboles_reseau.insert(
+            "nom_hote_local".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: Vec::new(),
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        symboles_reseau.insert(
+            "est_ipv4".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("ip".to_string(), Type::Texte)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        table.définir("réseau", GenreSymbole::Module { symboles: symboles_reseau.clone() });
+        table.définir("reseau", GenreSymbole::Module { symboles: symboles_reseau.clone() });
+        table.définir("Réseau", GenreSymbole::Module { symboles: symboles_reseau.clone() });
+        table.définir("Reseau", GenreSymbole::Module { symboles: symboles_reseau });
 
         Self {
             table,
@@ -2246,6 +2399,12 @@ impl Vérificateur {
                 if classe == "ensemble" {
                     return Ok(Type::Ensemble(Box::new(Type::Entier)));
                 }
+                if classe == "dictionnaire" {
+                    return Ok(Type::Dictionnaire(
+                        Box::new(Type::Texte),
+                        Box::new(Type::Entier),
+                    ));
+                }
 
                 let arguments_types: Vec<Type> = arguments
                     .iter()
@@ -2495,7 +2654,8 @@ impl Vérificateur {
     ) -> Type {
         match membre {
             "taille" | "longueur" => Type::Entier,
-            "est_vide" | "contient" => Type::Booléen,
+            "est_vide" => Type::Booléen,
+            "contient" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Booléen)),
             "ajouter" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Rien)),
             "insérer" => Type::Fonction(vec![Type::Entier, type_élément.clone()], Box::new(Type::Rien)),
             "supprimer" | "supprimer_indice" => Type::Fonction(vec![Type::Entier], Box::new(type_élément.clone())),

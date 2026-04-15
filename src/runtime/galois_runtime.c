@@ -6,6 +6,13 @@
 #include <math.h>
 #include <time.h>
 #include <ctype.h>
+#include <unistd.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/utsname.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 
 // ===== Types Galois =====
 
@@ -99,6 +106,11 @@ struct gal_file {
     int64_t début;
     int64_t fin;
 };
+
+// Déclarations anticipées pour les helpers texte qui renvoient des listes.
+gal_liste* gal_liste_nouveau(int64_t taille_élément);
+void gal_liste_ajouter_i64(gal_liste* l, int64_t valeur);
+void gal_liste_ajouter_ptr(gal_liste* l, void* valeur);
 
 // ===== GC - Ramasse-miettes =====
 
@@ -330,6 +342,184 @@ char* gal_majuscule(const char* s) {
     return out;
 }
 
+char* gal_minuscule(const char* s) {
+    if (!s) return gal_dupliquer_chaine("");
+    char* out = gal_dupliquer_chaine(s);
+    if (!out) return NULL;
+    for (char* p = out; *p; ++p) {
+        *p = (char)tolower((unsigned char)*p);
+    }
+    return out;
+}
+
+static char* gal_sous_chaine_cstr(const char* s, int64_t début, int64_t longueur) {
+    if (!s) return gal_dupliquer_chaine("");
+    int64_t len = (int64_t)strlen(s);
+    if (début < 0) début = 0;
+    if (début > len) début = len;
+    if (longueur < 0) longueur = 0;
+    if (début + longueur > len) longueur = len - début;
+
+    char* out = (char*)malloc((size_t)longueur + 1);
+    if (!out) return NULL;
+    memcpy(out, s + début, (size_t)longueur);
+    out[longueur] = '\0';
+    return out;
+}
+
+char* gal_trim_debut(const char* s) {
+    if (!s) return gal_dupliquer_chaine("");
+    while (*s && isspace((unsigned char)*s)) s++;
+    return gal_dupliquer_chaine(s);
+}
+
+char* gal_trim_fin(const char* s) {
+    if (!s) return gal_dupliquer_chaine("");
+    size_t len = strlen(s);
+    while (len > 0 && isspace((unsigned char)s[len - 1])) len--;
+    char* out = (char*)malloc(len + 1);
+    if (!out) return NULL;
+    memcpy(out, s, len);
+    out[len] = '\0';
+    return out;
+}
+
+char* gal_trim(const char* s) {
+    if (!s) return gal_dupliquer_chaine("");
+    const char* début = s;
+    while (*début && isspace((unsigned char)*début)) début++;
+    const char* fin = s + strlen(s);
+    while (fin > début && isspace((unsigned char)*(fin - 1))) fin--;
+    size_t len = (size_t)(fin - début);
+    char* out = (char*)malloc(len + 1);
+    if (!out) return NULL;
+    memcpy(out, début, len);
+    out[len] = '\0';
+    return out;
+}
+
+int8_t gal_texte_est_vide(const char* s) {
+    return (!s || *s == '\0') ? 1 : 0;
+}
+
+int8_t gal_texte_contient(const char* s, const char* sous) {
+    if (!s || !sous) return 0;
+    return strstr(s, sous) ? 1 : 0;
+}
+
+int8_t gal_texte_commence_par(const char* s, const char* préfixe) {
+    if (!s || !préfixe) return 0;
+    size_t lp = strlen(préfixe);
+    return strncmp(s, préfixe, lp) == 0 ? 1 : 0;
+}
+
+int8_t gal_texte_finit_par(const char* s, const char* suffixe) {
+    if (!s || !suffixe) return 0;
+    size_t ls = strlen(s);
+    size_t lsf = strlen(suffixe);
+    if (lsf > ls) return 0;
+    return strcmp(s + (ls - lsf), suffixe) == 0 ? 1 : 0;
+}
+
+char* gal_texte_sous_chaine(const char* s, int64_t début, int64_t longueur) {
+    return gal_sous_chaine_cstr(s, début, longueur);
+}
+
+char* gal_texte_repeter(const char* s, int64_t n) {
+    if (!s || n <= 0) return gal_dupliquer_chaine("");
+    size_t ls = strlen(s);
+    size_t total = ls * (size_t)n;
+    char* out = (char*)malloc(total + 1);
+    if (!out) return NULL;
+    char* p = out;
+    for (int64_t i = 0; i < n; i++) {
+        memcpy(p, s, ls);
+        p += ls;
+    }
+    out[total] = '\0';
+    return out;
+}
+
+char* gal_texte_remplacer(const char* s, const char* ancien, const char* nouveau) {
+    if (!s) return gal_dupliquer_chaine("");
+    if (!ancien || !*ancien) return gal_dupliquer_chaine(s);
+    if (!nouveau) nouveau = "";
+
+    size_t ls = strlen(s);
+    size_t la = strlen(ancien);
+    size_t ln = strlen(nouveau);
+    size_t count = 0;
+
+    const char* p = s;
+    while ((p = strstr(p, ancien)) != NULL) {
+        count++;
+        p += la;
+    }
+
+    size_t out_len = ls + count * (ln - la);
+    char* out = (char*)malloc(out_len + 1);
+    if (!out) return NULL;
+
+    const char* src = s;
+    char* dst = out;
+    while ((p = strstr(src, ancien)) != NULL) {
+        size_t seg = (size_t)(p - src);
+        memcpy(dst, src, seg);
+        dst += seg;
+        memcpy(dst, nouveau, ln);
+        dst += ln;
+        src = p + la;
+    }
+    strcpy(dst, src);
+    return out;
+}
+
+gal_liste* gal_texte_split(const char* s, const char* séparateur) {
+    gal_liste* out = gal_liste_nouveau(sizeof(char*));
+    if (!out) return NULL;
+    if (!s) return out;
+    if (!séparateur) séparateur = "";
+
+    size_t ls = strlen(s);
+    size_t lsep = strlen(séparateur);
+
+    if (lsep == 0) {
+        for (size_t i = 0; i < ls; i++) {
+            char* morceau = (char*)malloc(2);
+            if (!morceau) continue;
+            morceau[0] = s[i];
+            morceau[1] = '\0';
+            gal_liste_ajouter_ptr(out, morceau);
+        }
+        return out;
+    }
+
+    const char* début = s;
+    const char* p = NULL;
+    while ((p = strstr(début, séparateur)) != NULL) {
+        int64_t len = (int64_t)(p - début);
+        char* morceau = gal_sous_chaine_cstr(début, 0, len);
+        gal_liste_ajouter_ptr(out, morceau);
+        début = p + lsep;
+    }
+    gal_liste_ajouter_ptr(out, gal_dupliquer_chaine(début));
+    return out;
+}
+
+gal_liste* gal_texte_caracteres(const char* s) {
+    return gal_texte_split(s, "");
+}
+
+int64_t gal_texte_vers_entier(const char* s) {
+    if (!s) return 0;
+    return (int64_t)strtoll(s, NULL, 10);
+}
+
+double gal_texte_vers_decimal(const char* s) {
+    if (!s) return 0.0;
+    return strtod(s, NULL);
+}
+
 // ===== Opérations sur les listes =====
 
 gal_liste* gal_liste_nouveau(int64_t taille_élément) {
@@ -480,6 +670,212 @@ int64_t gal_liste_somme_i64(gal_liste* l) {
         if (v) somme += *v;
     }
     return somme;
+}
+
+int8_t gal_liste_est_vide(gal_liste* l) {
+    return (!l || l->taille == 0) ? 1 : 0;
+}
+
+void gal_liste_inserer_i64(gal_liste* l, int64_t indice, int64_t valeur) {
+    if (!l) return;
+    if (indice < 0) indice = 0;
+    if (indice > l->taille) indice = l->taille;
+    if (l->taille >= l->capacité) {
+        l->capacité *= 2;
+        l->données = realloc(l->données, l->capacité * l->taille_élément);
+        if (!l->données) exit(1);
+    }
+    char* base = (char*)l->données;
+    memmove(
+        base + (indice + 1) * l->taille_élément,
+        base + indice * l->taille_élément,
+        (size_t)(l->taille - indice) * (size_t)l->taille_élément
+    );
+    memcpy(base + indice * l->taille_élément, &valeur, sizeof(int64_t));
+    l->taille++;
+}
+
+int64_t gal_liste_supprimer_indice_i64(gal_liste* l, int64_t indice) {
+    if (!l || indice < 0 || indice >= l->taille) return 0;
+    int64_t valeur = *(int64_t*)((char*)l->données + indice * l->taille_élément);
+    memmove(
+        (char*)l->données + indice * l->taille_élément,
+        (char*)l->données + (indice + 1) * l->taille_élément,
+        (size_t)(l->taille - indice - 1) * (size_t)l->taille_élément
+    );
+    l->taille--;
+    return valeur;
+}
+
+int64_t gal_liste_indice_i64(gal_liste* l, int64_t valeur) {
+    if (!l) return -1;
+    for (int64_t i = 0; i < l->taille; i++) {
+        if (*(int64_t*)((char*)l->données + i * l->taille_élément) == valeur) return i;
+    }
+    return -1;
+}
+
+int64_t gal_liste_premier_i64(gal_liste* l) {
+    return gal_liste_obtenir_i64(l, 0);
+}
+
+int64_t gal_liste_dernier_i64(gal_liste* l) {
+    if (!l || l->taille == 0) return 0;
+    return gal_liste_obtenir_i64(l, l->taille - 1);
+}
+
+gal_liste* gal_liste_sous_liste_i64(gal_liste* l, int64_t début, int64_t fin) {
+    gal_liste* out = gal_liste_nouveau(sizeof(int64_t));
+    if (!out || !l) return out;
+    if (début < 0) début = 0;
+    if (fin < début) fin = début;
+    if (fin > l->taille) fin = l->taille;
+    for (int64_t i = début; i < fin; i++) {
+        int64_t v = gal_liste_obtenir_i64(l, i);
+        gal_liste_ajouter_i64(out, v);
+    }
+    return out;
+}
+
+char* gal_liste_joindre_i64(gal_liste* l, const char* séparateur) {
+    if (!l || l->taille == 0) return gal_dupliquer_chaine("");
+    if (!séparateur) séparateur = "";
+    size_t lsep = strlen(séparateur);
+    size_t total = 1;
+    char tampon[64];
+    for (int64_t i = 0; i < l->taille; i++) {
+        int n = snprintf(tampon, sizeof(tampon), "%lld", (long long)gal_liste_obtenir_i64(l, i));
+        if (n > 0) total += (size_t)n;
+        if (i + 1 < l->taille) total += lsep;
+    }
+    char* out = (char*)malloc(total);
+    if (!out) return NULL;
+    out[0] = '\0';
+    for (int64_t i = 0; i < l->taille; i++) {
+        snprintf(tampon, sizeof(tampon), "%lld", (long long)gal_liste_obtenir_i64(l, i));
+        strcat(out, tampon);
+        if (i + 1 < l->taille) strcat(out, séparateur);
+    }
+    return out;
+}
+
+gal_liste* gal_liste_avec_indice_i64(gal_liste* l) {
+    gal_liste* out = gal_liste_nouveau(sizeof(int64_t));
+    if (!out || !l) return out;
+    for (int64_t i = 0; i < l->taille; i++) {
+        gal_liste_ajouter_i64(out, i);
+        gal_liste_ajouter_i64(out, gal_liste_obtenir_i64(l, i));
+    }
+    return out;
+}
+
+void gal_liste_appliquer_chacun_noop(gal_liste* l, const char* _callback) {
+    (void)l;
+    (void)_callback;
+}
+
+static int gal_cmp_i64(const void* a, const void* b) {
+    int64_t va = *(const int64_t*)a;
+    int64_t vb = *(const int64_t*)b;
+    return (va > vb) - (va < vb);
+}
+
+void gal_liste_trier_i64(gal_liste* l) {
+    if (!l || l->taille <= 1) return;
+    qsort(l->données, (size_t)l->taille, (size_t)l->taille_élément, gal_cmp_i64);
+}
+
+void gal_liste_inverser_i64(gal_liste* l) {
+    if (!l) return;
+    for (int64_t i = 0, j = l->taille - 1; i < j; i++, j--) {
+        int64_t a = gal_liste_obtenir_i64(l, i);
+        int64_t b = gal_liste_obtenir_i64(l, j);
+        memcpy((char*)l->données + i * l->taille_élément, &b, sizeof(int64_t));
+        memcpy((char*)l->données + j * l->taille_élément, &a, sizeof(int64_t));
+    }
+}
+
+void gal_liste_vider(gal_liste* l) {
+    if (!l) return;
+    l->taille = 0;
+}
+
+gal_liste* gal_intervalle(int64_t début, int64_t fin) {
+    gal_liste* out = gal_liste_nouveau(sizeof(int64_t));
+    if (!out) return NULL;
+    int64_t pas = (début <= fin) ? 1 : -1;
+    for (int64_t v = début; ; v += pas) {
+        gal_liste_ajouter_i64(out, v);
+        if (v == fin) break;
+    }
+    return out;
+}
+
+int8_t gal_ensemble_supprimer_i64(gal_liste* e, int64_t valeur) {
+    int64_t idx = gal_liste_indice_i64(e, valeur);
+    if (idx < 0) return 0;
+    (void)gal_liste_supprimer_indice_i64(e, idx);
+    return 1;
+}
+
+gal_liste* gal_ensemble_union_i64(gal_liste* a, gal_liste* b) {
+    gal_liste* out = gal_ensemble_nouveau();
+    if (!out) return NULL;
+    if (a) for (int64_t i = 0; i < a->taille; i++) gal_ensemble_ajouter_i64(out, gal_liste_obtenir_i64(a, i));
+    if (b) for (int64_t i = 0; i < b->taille; i++) gal_ensemble_ajouter_i64(out, gal_liste_obtenir_i64(b, i));
+    return out;
+}
+
+gal_liste* gal_ensemble_intersection_i64(gal_liste* a, gal_liste* b) {
+    gal_liste* out = gal_ensemble_nouveau();
+    if (!out) return NULL;
+    if (!a || !b) return out;
+    for (int64_t i = 0; i < a->taille; i++) {
+        int64_t v = gal_liste_obtenir_i64(a, i);
+        if (gal_ensemble_contient_i64(b, v)) gal_ensemble_ajouter_i64(out, v);
+    }
+    return out;
+}
+
+gal_liste* gal_ensemble_difference_i64(gal_liste* a, gal_liste* b) {
+    gal_liste* out = gal_ensemble_nouveau();
+    if (!out) return NULL;
+    if (!a) return out;
+    for (int64_t i = 0; i < a->taille; i++) {
+        int64_t v = gal_liste_obtenir_i64(a, i);
+        if (!b || !gal_ensemble_contient_i64(b, v)) gal_ensemble_ajouter_i64(out, v);
+    }
+    return out;
+}
+
+gal_liste* gal_ensemble_diff_symetrique_i64(gal_liste* a, gal_liste* b) {
+    gal_liste* ab = gal_ensemble_difference_i64(a, b);
+    gal_liste* ba = gal_ensemble_difference_i64(b, a);
+    gal_liste* out = gal_ensemble_union_i64(ab, ba);
+    return out;
+}
+
+int8_t gal_ensemble_est_sous_ensemble_i64(gal_liste* a, gal_liste* b) {
+    if (!a) return 1;
+    for (int64_t i = 0; i < a->taille; i++) {
+        if (!gal_ensemble_contient_i64(b, gal_liste_obtenir_i64(a, i))) return 0;
+    }
+    return 1;
+}
+
+int8_t gal_ensemble_est_sur_ensemble_i64(gal_liste* a, gal_liste* b) {
+    return gal_ensemble_est_sous_ensemble_i64(b, a);
+}
+
+gal_liste* gal_ensemble_vers_liste_i64(gal_liste* e) {
+    gal_liste* out = gal_liste_nouveau(sizeof(int64_t));
+    if (!out || !e) return out;
+    for (int64_t i = 0; i < e->taille; i++) gal_liste_ajouter_i64(out, gal_liste_obtenir_i64(e, i));
+    return out;
+}
+
+void gal_ensemble_vider(gal_liste* e) {
+    gal_liste_vider(e);
 }
 
 // ===== Opérations sur les dictionnaires =====
@@ -706,6 +1102,109 @@ int64_t gal_dictionnaire_taille(gal_dictionnaire* d) {
     return d ? d->taille : 0;
 }
 
+void gal_dictionnaire_definir_texte_i64(gal_dictionnaire* d, const char* clé, int64_t valeur) {
+    gal_dict_set_texte(d, clé, (uint64_t)valeur);
+}
+
+int64_t gal_dictionnaire_obtenir_texte_i64(gal_dictionnaire* d, const char* clé) {
+    int trouvé = 0;
+    uint64_t bits = gal_dict_get_texte(d, clé, &trouvé);
+    return trouvé ? (int64_t)bits : 0;
+}
+
+int8_t gal_dictionnaire_contient_texte(gal_dictionnaire* d, const char* clé) {
+    return gal_dictionnaire_contient(d, clé) ? 1 : 0;
+}
+
+static int gal_dictionnaire_supprimer_cle(gal_dictionnaire* d, gal_cle_dict clé) {
+    if (!d) return 0;
+    uint64_t indice = gal_hash_cle(clé) % (uint64_t)d->nombre_seaux;
+    gal_dict_entry* courant = d->seaux[indice];
+    gal_dict_entry* précédent = NULL;
+    while (courant) {
+        if (gal_cles_egales(courant->clé, clé)) {
+            if (précédent) précédent->suivant = courant->suivant;
+            else d->seaux[indice] = courant->suivant;
+            free(courant);
+            d->taille--;
+            return 1;
+        }
+        précédent = courant;
+        courant = courant->suivant;
+    }
+    return 0;
+}
+
+void gal_dictionnaire_supprimer_texte(gal_dictionnaire* d, const char* clé) {
+    gal_cle_dict k;
+    k.type = GAL_CLE_TEXTE;
+    k.valeur.texte = clé;
+    (void)gal_dictionnaire_supprimer_cle(d, k);
+}
+
+int8_t gal_dictionnaire_est_vide(gal_dictionnaire* d) {
+    return gal_dictionnaire_taille(d) == 0 ? 1 : 0;
+}
+
+void gal_dictionnaire_vider(gal_dictionnaire* d) {
+    if (!d) return;
+    for (int64_t i = 0; i < d->nombre_seaux; i++) {
+        gal_dict_entry* e = d->seaux[i];
+        while (e) {
+            gal_dict_entry* suivant = e->suivant;
+            free(e);
+            e = suivant;
+        }
+        d->seaux[i] = NULL;
+    }
+    d->taille = 0;
+}
+
+gal_liste* gal_dictionnaire_cles(gal_dictionnaire* d) {
+    gal_liste* out = gal_liste_nouveau(sizeof(char*));
+    if (!out || !d) return out;
+    for (int64_t i = 0; i < d->nombre_seaux; i++) {
+        for (gal_dict_entry* e = d->seaux[i]; e; e = e->suivant) {
+            if (e->clé.type == GAL_CLE_TEXTE) {
+                gal_liste_ajouter_ptr(out, gal_dupliquer_chaine(e->clé.valeur.texte));
+            }
+        }
+    }
+    return out;
+}
+
+gal_liste* gal_dictionnaire_valeurs(gal_dictionnaire* d) {
+    gal_liste* out = gal_liste_nouveau(sizeof(int64_t));
+    if (!out || !d) return out;
+    for (int64_t i = 0; i < d->nombre_seaux; i++) {
+        for (gal_dict_entry* e = d->seaux[i]; e; e = e->suivant) {
+            int64_t v = (int64_t)e->valeur_bits;
+            gal_liste_ajouter_i64(out, v);
+        }
+    }
+    return out;
+}
+
+gal_liste* gal_dictionnaire_paires(gal_dictionnaire* d) {
+    gal_liste* out = gal_liste_nouveau(sizeof(char*));
+    if (!out || !d) return out;
+    char tampon[512];
+    for (int64_t i = 0; i < d->nombre_seaux; i++) {
+        for (gal_dict_entry* e = d->seaux[i]; e; e = e->suivant) {
+            if (e->clé.type != GAL_CLE_TEXTE) continue;
+            snprintf(
+                tampon,
+                sizeof(tampon),
+                "%s:%lld",
+                e->clé.valeur.texte ? e->clé.valeur.texte : "",
+                (long long)(int64_t)e->valeur_bits
+            );
+            gal_liste_ajouter_ptr(out, gal_dupliquer_chaine(tampon));
+        }
+    }
+    return out;
+}
+
 // ===== Opérations sur les piles =====
 
 gal_pile* gal_pile_nouveau(int64_t taille_élément) {
@@ -757,6 +1256,19 @@ int64_t gal_pile_sommet_i64(gal_pile* p) {
     void* ptr = gal_pile_sommet(p);
     if (!ptr) return 0;
     return *(int64_t*)ptr;
+}
+
+int64_t gal_pile_taille(gal_pile* p) {
+    return p ? p->taille : 0;
+}
+
+int8_t gal_pile_est_vide(gal_pile* p) {
+    return gal_pile_taille(p) == 0 ? 1 : 0;
+}
+
+void gal_pile_vider(gal_pile* p) {
+    if (!p) return;
+    p->taille = 0;
 }
 
 // ===== Opérations sur les files =====
@@ -818,6 +1330,78 @@ int64_t gal_file_defiler_i64(gal_file* f) {
     return *(int64_t*)ptr;
 }
 
+int64_t gal_file_taille(gal_file* f) {
+    return f ? f->taille : 0;
+}
+
+int8_t gal_file_est_vide(gal_file* f) {
+    return gal_file_taille(f) == 0 ? 1 : 0;
+}
+
+int64_t gal_file_tete_i64(gal_file* f) {
+    if (!f || f->taille == 0) return 0;
+    int64_t idx = f->début % f->capacité;
+    return *(int64_t*)((char*)f->données + idx * f->taille_élément);
+}
+
+int64_t gal_file_queue_i64(gal_file* f) {
+    if (!f || f->taille == 0) return 0;
+    int64_t idx = (f->fin - 1) % f->capacité;
+    if (idx < 0) idx += f->capacité;
+    return *(int64_t*)((char*)f->données + idx * f->taille_élément);
+}
+
+void gal_file_vider(gal_file* f) {
+    if (!f) return;
+    f->taille = 0;
+    f->début = 0;
+    f->fin = 0;
+}
+
+int8_t gal_liste_chainee_est_vide(gal_liste* l) {
+    return gal_liste_est_vide(l);
+}
+
+void gal_liste_chainee_ajouter_debut_i64(gal_liste* l, int64_t valeur) {
+    gal_liste_inserer_i64(l, 0, valeur);
+}
+
+void gal_liste_chainee_ajouter_fin_i64(gal_liste* l, int64_t valeur) {
+    gal_liste_ajouter_i64(l, valeur);
+}
+
+void gal_liste_chainee_inserer_i64(gal_liste* l, int64_t indice, int64_t valeur) {
+    gal_liste_inserer_i64(l, indice, valeur);
+}
+
+int8_t gal_liste_chainee_supprimer_i64(gal_liste* l, int64_t valeur) {
+    int64_t idx = gal_liste_indice_i64(l, valeur);
+    if (idx < 0) return 0;
+    (void)gal_liste_supprimer_indice_i64(l, idx);
+    return 1;
+}
+
+int64_t gal_liste_chainee_premier_i64(gal_liste* l) {
+    return gal_liste_premier_i64(l);
+}
+
+int64_t gal_liste_chainee_dernier_i64(gal_liste* l) {
+    return gal_liste_dernier_i64(l);
+}
+
+void gal_liste_chainee_parcourir_noop(gal_liste* l, const char* _callback) {
+    (void)l;
+    (void)_callback;
+}
+
+void gal_liste_chainee_inverser(gal_liste* l) {
+    gal_liste_inverser_i64(l);
+}
+
+void gal_liste_chainee_vider(gal_liste* l) {
+    gal_liste_vider(l);
+}
+
 // ===== Fonctions mathématiques =====
 
 gal_décimal gal_sin(gal_décimal x) { return sin(x); }
@@ -871,7 +1455,35 @@ gal_entier gal_aleatoire_entier(gal_entier min, gal_entier max) {
 }
 
 gal_entier gal_temps() {
-    return (gal_entier)time(NULL);
+    struct timespec ts;
+    if (clock_gettime(CLOCK_REALTIME, &ts) != 0) {
+        return (gal_entier)time(NULL);
+    }
+    return (gal_entier)ts.tv_sec;
+}
+
+gal_entier gal_temps_ms() {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_REALTIME, &ts) != 0) {
+        return (gal_entier)time(NULL) * 1000;
+    }
+    return (gal_entier)ts.tv_sec * 1000 + (gal_entier)(ts.tv_nsec / 1000000);
+}
+
+gal_entier gal_temps_ns() {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_REALTIME, &ts) != 0) {
+        return (gal_entier)time(NULL) * 1000000000LL;
+    }
+    return (gal_entier)ts.tv_sec * 1000000000LL + (gal_entier)ts.tv_nsec;
+}
+
+gal_entier gal_temps_mono_ms() {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        return gal_temps_ms();
+    }
+    return (gal_entier)ts.tv_sec * 1000 + (gal_entier)(ts.tv_nsec / 1000000);
 }
 
 char* gal_lire_ligne() {
@@ -891,6 +1503,129 @@ gal_entier gal_lire_entier() {
     free(ligne);
     if (fin == ligne) return 0;
     return (gal_entier)valeur;
+}
+
+gal_entier gal_systeme_pid() {
+    return (gal_entier)getpid();
+}
+
+gal_entier gal_systeme_uid() {
+    return (gal_entier)getuid();
+}
+
+char* gal_systeme_repertoire_courant() {
+    char tampon[4096];
+    if (!getcwd(tampon, sizeof(tampon))) {
+        return gal_dupliquer_chaine("");
+    }
+    return gal_dupliquer_chaine(tampon);
+}
+
+char* gal_systeme_nom_hote() {
+    char tampon[256];
+    if (gethostname(tampon, sizeof(tampon)) != 0) {
+        return gal_dupliquer_chaine("");
+    }
+    tampon[sizeof(tampon) - 1] = '\0';
+    return gal_dupliquer_chaine(tampon);
+}
+
+char* gal_systeme_plateforme() {
+    struct utsname info;
+    if (uname(&info) != 0) {
+        return gal_dupliquer_chaine("inconnu");
+    }
+    char tampon[512];
+    int n = snprintf(
+        tampon,
+        sizeof(tampon),
+        "%s %s %s",
+        info.sysname,
+        info.release,
+        info.machine
+    );
+    if (n < 0) return gal_dupliquer_chaine("inconnu");
+    return gal_dupliquer_chaine(tampon);
+}
+
+char* gal_systeme_variable_env(const char* nom) {
+    if (!nom || !*nom) return gal_dupliquer_chaine("");
+    const char* valeur = getenv(nom);
+    if (!valeur) return gal_dupliquer_chaine("");
+    return gal_dupliquer_chaine(valeur);
+}
+
+void gal_systeme_definir_env(const char* nom, const char* valeur) {
+    if (!nom || !*nom) return;
+    if (!valeur) valeur = "";
+    setenv(nom, valeur, 1);
+}
+
+gal_entier gal_systeme_existe_env(const char* nom) {
+    if (!nom || !*nom) return 0;
+    return getenv(nom) ? 1 : 0;
+}
+
+gal_entier gal_reseau_est_ipv4(const char* ip) {
+    struct in_addr addr;
+    if (!ip) return 0;
+    return inet_pton(AF_INET, ip, &addr) == 1 ? 1 : 0;
+}
+
+char* gal_reseau_resoudre_ipv4(const char* hote) {
+    if (!hote || !*hote) return gal_dupliquer_chaine("");
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+
+    struct addrinfo* résultat = NULL;
+    if (getaddrinfo(hote, NULL, &hints, &résultat) != 0 || !résultat) {
+        return gal_dupliquer_chaine("");
+    }
+
+    char ip[INET_ADDRSTRLEN] = {0};
+    for (struct addrinfo* ai = résultat; ai; ai = ai->ai_next) {
+        if (ai->ai_family == AF_INET) {
+            struct sockaddr_in* sa = (struct sockaddr_in*)ai->ai_addr;
+            if (inet_ntop(AF_INET, &sa->sin_addr, ip, sizeof(ip))) {
+                break;
+            }
+        }
+    }
+    freeaddrinfo(résultat);
+    if (!ip[0]) return gal_dupliquer_chaine("");
+    return gal_dupliquer_chaine(ip);
+}
+
+char* gal_reseau_resoudre_nom(const char* ip) {
+    if (!ip || !*ip) return gal_dupliquer_chaine("");
+
+    struct sockaddr_in sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET;
+    if (inet_pton(AF_INET, ip, &sa.sin_addr) != 1) {
+        return gal_dupliquer_chaine("");
+    }
+
+    char hote[NI_MAXHOST];
+    if (getnameinfo(
+            (struct sockaddr*)&sa,
+            sizeof(sa),
+            hote,
+            sizeof(hote),
+            NULL,
+            0,
+            NI_NAMEREQD) != 0) {
+        return gal_dupliquer_chaine("");
+    }
+
+    return gal_dupliquer_chaine(hote);
+}
+
+char* gal_reseau_nom_hote_local() {
+    return gal_systeme_nom_hote();
 }
 
 // ===== Fonctions utilitaires =====
