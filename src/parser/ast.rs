@@ -338,6 +338,7 @@ pub enum InstrAST {
 
     Pour {
         variable: String,
+        variable_valeur: Option<String>,
         itérable: ExprAST,
         bloc: BlocAST,
         position: Position,

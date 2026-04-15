@@ -992,6 +992,7 @@ impl Vérificateur {
             }
             InstrAST::Pour {
                 variable,
+                variable_valeur,
                 itérable,
                 bloc,
                 ..
@@ -1017,6 +1018,22 @@ impl Vérificateur {
                         mutable: false,
                     },
                 );
+                if let Some(nom_valeur) = variable_valeur {
+                    if let Type::Dictionnaire(_, v) = &type_itérable {
+                        self.table.définir(
+                            nom_valeur,
+                            GenreSymbole::Variable {
+                                type_sym: *v.clone(),
+                                mutable: false,
+                            },
+                        );
+                    } else {
+                        self.erreur(
+                            itérable.position().clone(),
+                            "La décomposition 'clé, valeur' n'est supportée que pour les dictionnaires",
+                        );
+                    }
+                }
                 self.vérifier_bloc(bloc)?;
                 self.table.sortir_portée();
             }

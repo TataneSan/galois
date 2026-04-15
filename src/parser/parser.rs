@@ -651,22 +651,30 @@ impl Parser {
         let position = self.position_actuelle();
         self.avancer();
 
-        let variable = if self.token_actuel() == &Token::ParenthèseOuvrante {
+        let (variable, variable_valeur) = if self.token_actuel() == &Token::ParenthèseOuvrante {
             self.avancer();
             let principal = self.lire_identifiant("Attendu variable après 'pour'")?;
+            let mut secondaire = None;
             while self.token_actuel() == &Token::Virgule {
                 self.avancer();
-                let _ = self.lire_identifiant("Attendu variable dans décomposition")?;
+                let nom = self.lire_identifiant("Attendu variable dans décomposition")?;
+                if secondaire.is_none() {
+                    secondaire = Some(nom);
+                }
             }
             self.attendre(&Token::ParenthèseFermante, "Attendu ')' après variables")?;
-            principal
+            (principal, secondaire)
         } else {
             let principal = self.lire_identifiant("Attendu variable après 'pour'")?;
+            let mut secondaire = None;
             while self.token_actuel() == &Token::Virgule {
                 self.avancer();
-                let _ = self.lire_identifiant("Attendu variable dans décomposition")?;
+                let nom = self.lire_identifiant("Attendu variable dans décomposition")?;
+                if secondaire.is_none() {
+                    secondaire = Some(nom);
+                }
             }
-            principal
+            (principal, secondaire)
         };
 
         if self.token_actuel() == &Token::Dans {
@@ -685,6 +693,7 @@ impl Parser {
 
             Ok(InstrAST::Pour {
                 variable,
+                variable_valeur,
                 itérable,
                 bloc,
                 position,
