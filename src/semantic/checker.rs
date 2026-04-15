@@ -178,6 +178,36 @@ impl Vérificateur {
         })
     }
 
+    fn constructeur_classe_ou_parent(&self, classe: &str) -> Option<MéthodeClasseSymbole> {
+        let mut courante = Some(classe.to_string());
+        while let Some(nom) = courante {
+            let (constructeur, parent) = self
+                .table
+                .chercher(&nom)
+                .and_then(|sym| {
+                    if let GenreSymbole::Classe {
+                        constructeur,
+                        parent,
+                        ..
+                    } = &sym.genre
+                    {
+                        Some((constructeur.clone(), parent.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or((None, None));
+
+            if constructeur.is_some() {
+                return constructeur;
+            }
+
+            courante = parent;
+        }
+
+        None
+    }
+
     fn instruction_est_appel_base(instr: &InstrAST) -> bool {
         matches!(
             instr,
@@ -1652,25 +1682,34 @@ impl Vérificateur {
                     if let GenreSymbole::Classe {
                         est_abstraite,
                         constructeur,
+                        parent,
                         ..
                     } = &sym.genre
                     {
-                        Some((*est_abstraite, constructeur.clone()))
+                        Some((*est_abstraite, constructeur.clone(), parent.clone()))
                     } else {
                         None
                     }
                 });
 
                 match infos_classe {
-                    Some((true, _)) => {
+                    Some((true, _, _)) => {
                         self.erreur(
                             position.clone(),
                             &format!("Impossible d'instancier la classe abstraite '{}'", classe),
                         );
                         Type::Inconnu
                     }
-                    Some((false, constructeur)) => {
-                        if let Some(constructeur) = constructeur {
+                    Some((false, constructeur, parent)) => {
+                        let constructeur_effectif = if constructeur.is_some() {
+                            constructeur
+                        } else {
+                            parent
+                                .as_ref()
+                                .and_then(|p| self.constructeur_classe_ou_parent(p))
+                        };
+
+                        if let Some(constructeur) = constructeur_effectif {
                             if arguments_types.len() != constructeur.paramètres.len() {
                                 self.erreur(
                                     position.clone(),
@@ -1708,7 +1747,7 @@ impl Vérificateur {
                             self.erreur(
                                 position.clone(),
                                 &format!(
-                                    "La classe '{}' n'a pas de constructeur explicite; aucun argument n'est accepté",
+                                    "La classe '{}' n'a pas de constructeur compatible; aucun argument n'est accepté",
                                     classe
                                 ),
                             );

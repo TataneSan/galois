@@ -210,6 +210,36 @@ impl GénérateurIR {
         }
     }
 
+    fn constructeur_classe_ou_parent(&self, classe: &str) -> Option<MéthodeClasseSymbole> {
+        let mut courante = Some(classe.to_string());
+        while let Some(nom) = courante {
+            let (constructeur, parent) = self
+                .table
+                .chercher(&nom)
+                .and_then(|sym| {
+                    if let GenreSymbole::Classe {
+                        constructeur,
+                        parent,
+                        ..
+                    } = &sym.genre
+                    {
+                        Some((constructeur.clone(), parent.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or((None, None));
+
+            if constructeur.is_some() {
+                return constructeur;
+            }
+
+            courante = parent;
+        }
+
+        None
+    }
+
     fn type_champ_depuis_classe(&self, classe: &str, champ: &str) -> Option<(String, Type)> {
         let mut courante = Some(classe.to_string());
         while let Some(cn) = courante {
@@ -523,6 +553,17 @@ impl GénérateurIR {
                     let (params_constructeur, corps_constructeur) =
                         if let Some((params, corps)) = constructeur_explicit.clone() {
                             (params, Some(corps))
+                        } else if let Some(parent) = &décl.parent {
+                            let params_hérités = self
+                                .constructeur_classe_ou_parent(parent)
+                                .map(|c| {
+                                    c.paramètres
+                                        .iter()
+                                        .map(|(nom, t)| (nom.clone(), IRType::from(t)))
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            (params_hérités, None)
                         } else {
                             (Vec::new(), None)
                         };
@@ -583,10 +624,14 @@ impl GénérateurIR {
                     } else {
                         let mut instructions = Vec::new();
                         if let Some(parent) = &décl.parent {
+                            let mut args_parent = vec![IRValeur::Référence("ceci".to_string())];
+                            for (nom, _) in &params_constructeur {
+                                args_parent.push(IRValeur::Référence(nom.clone()));
+                            }
                             instructions.push(IRInstruction::AppelFonction {
                                 destination: None,
                                 fonction: format!("{}__init", parent),
-                                arguments: vec![IRValeur::Référence("ceci".to_string())],
+                                arguments: args_parent,
                                 type_retour: IRType::Vide,
                             });
                         }

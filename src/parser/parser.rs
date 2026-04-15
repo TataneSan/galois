@@ -2,6 +2,10 @@ use crate::error::{Erreur, Position, Resultat};
 use crate::lexer::token::{Token, TokenAvecPosition};
 use crate::parser::ast::*;
 
+mod helpers;
+mod imports;
+mod oop;
+
 pub struct Parser {
     tokens: Vec<TokenAvecPosition>,
     position: usize,
@@ -52,12 +56,6 @@ impl Parser {
         }
     }
 
-    fn sauter_nouvelles_lignes(&mut self) {
-        while self.token_actuel() == &Token::NouvelleLigne {
-            self.avancer();
-        }
-    }
-
     fn est_fin_bloc(&self) -> bool {
         matches!(
             self.token_actuel(),
@@ -77,6 +75,13 @@ impl Parser {
 
         while self.token_actuel() != &Token::FinDeFichier {
             self.sauter_nouvelles_lignes();
+            while self.token_actuel() == &Token::Indentation
+                || self.token_actuel() == &Token::Désindentation
+                || self.token_actuel() == &Token::Fin
+            {
+                self.avancer();
+                self.sauter_nouvelles_lignes();
+            }
             if self.token_actuel() == &Token::FinDeFichier {
                 break;
             }
@@ -92,12 +97,40 @@ impl Parser {
 
     fn parser_instruction(&mut self) -> Resultat<InstrAST> {
         match self.token_actuel().clone() {
+            Token::FinDeFichier => Err(Erreur::syntaxique(
+                self.position_actuelle(),
+                "Fin de fichier inattendue",
+            )),
+            Token::NouvelleLigne | Token::Indentation | Token::Désindentation | Token::Fin => {
+                self.avancer();
+                self.parser_instruction()
+            }
             Token::Soit | Token::Mutable => self.parser_déclaration(),
             Token::Constante => self.parser_constante(),
-            Token::Fonction | Token::Récursif | Token::Asynchrone => self.parser_fonction(),
+            Token::Fonction => {
+                if self.token_suivant() == &Token::ParenthèseOuvrante {
+                    self.parser_affectation_ou_expression()
+                } else {
+                    self.parser_fonction()
+                }
+            }
+            Token::Récursif | Token::Asynchrone => self.parser_fonction(),
             Token::Classe => self.parser_classe(),
+            Token::Abstraite => {
+                if self.token_suivant() == &Token::Classe {
+                    self.avancer();
+                    self.parser_classe()
+                } else {
+                    self.parser_affectation_ou_expression()
+                }
+            }
             Token::Interface => self.parser_interface(),
             Token::Externe => self.parser_externe(),
+            Token::Constructeur => {
+                let pos = self.position_actuelle();
+                let _ = self.parser_constructeur()?;
+                Ok(InstrAST::Expression(ExprAST::LittéralNul(pos)))
+            }
             Token::Si => self.parser_si(),
             Token::TantQue => self.parser_tantque(),
             Token::Pour => self.parser_pour(),
@@ -115,6 +148,11 @@ impl Parser {
             }
             Token::Module => self.parser_module(),
             Token::Importe => self.parser_importe(),
+            Token::Depuis => self.parser_importe_depuis(),
+            Token::Exporte | Token::Publique | Token::Privé | Token::Protégé => {
+                self.avancer();
+                self.parser_instruction()
+            }
             _ => self.parser_affectation_ou_expression(),
         }
     }
@@ -123,19 +161,10 @@ impl Parser {
         let position = self.position_actuelle();
         let mutable = self.avancer() == Token::Mutable;
 
-        let nom = match self.avancer() {
-            Token::Identifiant(n) => n,
-            t => {
-                return Err(Erreur::syntaxique(
-                    self.position_actuelle(),
-                    &format!(
-                        "Attendu identifiant après '{}', obtenu: {}",
-                        if mutable { "mutable" } else { "soit" },
-                        t
-                    ),
-                ))
-            }
-        };
+        let nom = self.lire_identifiant(&format!(
+            "Attendu identifiant après '{}'",
+            if mutable { "mutable" } else { "soit" }
+        ))?;
 
         let type_ann = if self.token_actuel() == &Token::DeuxPoints {
             self.avancer();
@@ -164,15 +193,7 @@ impl Parser {
         let position = self.position_actuelle();
         self.avancer();
 
-        let nom = match self.avancer() {
-            Token::Identifiant(n) => n,
-            t => {
-                return Err(Erreur::syntaxique(
-                    self.position_actuelle(),
-                    &format!("Attendu identifiant après 'constante', obtenu: {}", t),
-                ))
-            }
-        };
+        let nom = self.lire_identifiant("Attendu identifiant après 'constante'")?;
 
         let type_ann = if self.token_actuel() == &Token::DeuxPoints {
             self.avancer();
@@ -218,15 +239,20 @@ impl Parser {
             self.avancer();
         }
 
-        let nom = match self.avancer() {
-            Token::Identifiant(n) => n,
-            t => {
-                return Err(Erreur::syntaxique(
-                    self.position_actuelle(),
-                    &format!("Attendu nom de fonction, obtenu: {}", t),
-                ))
+        let nom = self.lire_identifiant("Attendu nom de fonction")?;
+
+        if self.token_actuel() == &Token::Inférieur {
+            self.avancer();
+            loop {
+                self.lire_identifiant("Attendu paramètre de type")?;
+                if self.token_actuel() == &Token::Virgule {
+                    self.avancer();
+                } else {
+                    break;
+                }
             }
-        };
+            self.attendre(&Token::Supérieur, "Attendu '>' après paramètres de type")?;
+        }
 
         self.attendre(
             &Token::ParenthèseOuvrante,
@@ -266,15 +292,7 @@ impl Parser {
 
         loop {
             let position = self.position_actuelle();
-            let nom = match self.avancer() {
-                Token::Identifiant(n) => n,
-                t => {
-                    return Err(Erreur::syntaxique(
-                        self.position_actuelle(),
-                        &format!("Attendu nom de paramètre, obtenu: {}", t),
-                    ))
-                }
-            };
+            let nom = self.lire_identifiant("Attendu nom de paramètre")?;
 
             let type_ann = if self.token_actuel() == &Token::DeuxPoints {
                 self.avancer();
@@ -339,9 +357,14 @@ impl Parser {
                 let type_élément = self.parser_type()?;
                 let taille = if self.token_actuel() == &Token::Virgule {
                     self.avancer();
-                    match self.parser_expression()? {
-                        ExprAST::LittéralEntier(n, _) => Some(n as usize),
-                        _ => None,
+                    match self.avancer() {
+                        Token::Entier(n) => Some(n as usize),
+                        t => {
+                            return Err(Erreur::syntaxique(
+                                self.position_actuelle(),
+                                &format!("Attendu taille entière du tableau, obtenu: {}", t),
+                            ));
+                        }
                     }
                 } else {
                     None
@@ -410,6 +433,34 @@ impl Parser {
                 }
                 self.attendre(&Token::ParenthèseFermante, "Attendu ')'")?;
                 Ok(TypeAST::Tuple(types))
+            }
+            Token::Fonction => {
+                self.avancer();
+                self.attendre(&Token::ParenthèseOuvrante, "Attendu '(' après 'fonction'")?;
+                let mut params = Vec::new();
+                if self.token_actuel() != &Token::ParenthèseFermante {
+                    loop {
+                        params.push(self.parser_type()?);
+                        if self.token_actuel() == &Token::Virgule {
+                            self.avancer();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                self.attendre(
+                    &Token::ParenthèseFermante,
+                    "Attendu ')' après types paramètres",
+                )?;
+                let retour = if self.token_actuel() == &Token::DeuxPoints
+                    || self.token_actuel() == &Token::Flèche
+                {
+                    self.avancer();
+                    self.parser_type()?
+                } else {
+                    TypeAST::Rien
+                };
+                Ok(TypeAST::Fonction(params, Box::new(retour)))
             }
             Token::Identifiant(nom) => {
                 self.avancer();
@@ -546,9 +597,21 @@ impl Parser {
                 }
                 Token::Sinon => {
                     self.avancer();
-                    self.sauter_nouvelles_lignes();
-                    bloc_sinon = Some(self.parser_bloc()?);
-                    break;
+                    if self.token_actuel() == &Token::Si {
+                        self.avancer();
+                        let cond = self.parser_expression()?;
+                        self.sauter_nouvelles_lignes();
+                        if self.token_actuel() == &Token::Alors {
+                            self.avancer();
+                            self.sauter_nouvelles_lignes();
+                        }
+                        let bloc = self.parser_bloc()?;
+                        branches_sinonsi.push((cond, bloc));
+                    } else {
+                        self.sauter_nouvelles_lignes();
+                        bloc_sinon = Some(self.parser_bloc()?);
+                        break;
+                    }
                 }
                 _ => break,
             }
@@ -588,19 +651,31 @@ impl Parser {
         let position = self.position_actuelle();
         self.avancer();
 
-        let variable = match self.avancer() {
-            Token::Identifiant(n) => n,
-            t => {
-                return Err(Erreur::syntaxique(
-                    self.position_actuelle(),
-                    &format!("Attendu variable après 'pour', obtenu: {}", t),
-                ))
+        let variable = if self.token_actuel() == &Token::ParenthèseOuvrante {
+            self.avancer();
+            let principal = self.lire_identifiant("Attendu variable après 'pour'")?;
+            while self.token_actuel() == &Token::Virgule {
+                self.avancer();
+                let _ = self.lire_identifiant("Attendu variable dans décomposition")?;
             }
+            self.attendre(&Token::ParenthèseFermante, "Attendu ')' après variables")?;
+            principal
+        } else {
+            let principal = self.lire_identifiant("Attendu variable après 'pour'")?;
+            while self.token_actuel() == &Token::Virgule {
+                self.avancer();
+                let _ = self.lire_identifiant("Attendu variable dans décomposition")?;
+            }
+            principal
         };
 
         if self.token_actuel() == &Token::Dans {
             self.avancer();
             let itérable = self.parser_expression()?;
+            if self.token_actuel() == &Token::Où {
+                self.avancer();
+                let _ = self.parser_expression()?;
+            }
             self.sauter_nouvelles_lignes();
             if self.token_actuel() == &Token::Faire {
                 self.avancer();
@@ -703,6 +778,21 @@ impl Parser {
                                 position: position.clone(),
                             },
                         ));
+                    } else if matches!(
+                        self.token_actuel(),
+                        Token::ParDéfaut
+                            | Token::Cas
+                            | Token::Fin
+                            | Token::Désindentation
+                            | Token::FinDeFichier
+                    ) {
+                        cas.push((
+                            pattern,
+                            BlocAST {
+                                instructions: Vec::new(),
+                                position: position.clone(),
+                            },
+                        ));
                     } else {
                         let bloc = self.parser_bloc()?;
                         cas.push((pattern, bloc));
@@ -716,6 +806,14 @@ impl Parser {
                         let expr = self.parser_expression()?;
                         par_défaut = Some(BlocAST {
                             instructions: vec![InstrAST::Expression(expr)],
+                            position: position.clone(),
+                        });
+                    } else if matches!(
+                        self.token_actuel(),
+                        Token::Fin | Token::Désindentation | Token::FinDeFichier
+                    ) {
+                        par_défaut = Some(BlocAST {
+                            instructions: Vec::new(),
                             position: position.clone(),
                         });
                     } else {
@@ -746,26 +844,36 @@ impl Parser {
     fn parser_pattern(&mut self) -> Resultat<PatternAST> {
         let position = self.position_actuelle();
 
-        match self.token_actuel().clone() {
+        let mut pattern = match self.token_actuel().clone() {
             Token::Entier(v) => {
                 self.avancer();
-                Ok(PatternAST::LittéralEntier(v, position))
+                if self.token_actuel() == &Token::DoublePoint {
+                    self.avancer();
+                    let fin = self.parser_expression()?;
+                    Ok(PatternAST::Intervalle {
+                        début: Box::new(ExprAST::LittéralEntier(v, position.clone())),
+                        fin: Box::new(fin),
+                        position: position.clone(),
+                    })
+                } else {
+                    Ok(PatternAST::LittéralEntier(v, position.clone()))
+                }
             }
             Token::Texte(v) => {
                 self.avancer();
-                Ok(PatternAST::LittéralTexte(v, position))
+                Ok(PatternAST::LittéralTexte(v, position.clone()))
             }
             Token::Booléen(v) => {
                 self.avancer();
-                Ok(PatternAST::LittéralBooléen(v, position))
+                Ok(PatternAST::LittéralBooléen(v, position.clone()))
             }
             Token::Nul | Token::NulType => {
                 self.avancer();
-                Ok(PatternAST::Nul(position))
+                Ok(PatternAST::Nul(position.clone()))
             }
             Token::Tiret => {
                 self.avancer();
-                Ok(PatternAST::Jocker(position))
+                Ok(PatternAST::Jocker(position.clone()))
             }
             Token::Identifiant(nom) => {
                 self.avancer();
@@ -797,10 +905,10 @@ impl Parser {
                     Ok(PatternAST::Constructeur {
                         nom,
                         champs,
-                        position,
+                        position: position.clone(),
                     })
                 } else {
-                    Ok(PatternAST::Identifiant(nom, position))
+                    Ok(PatternAST::Identifiant(nom, position.clone()))
                 }
             }
             Token::CrochetOuvrant => {
@@ -815,6 +923,21 @@ impl Parser {
                     }
                     if self.token_actuel() == &Token::DoublePoint {
                         self.avancer();
+                        if self.token_actuel() == &Token::Point {
+                            self.avancer();
+                        }
+                        reste = Some(Box::new(self.parser_pattern()?));
+                        self.sauter_nouvelles_lignes();
+                        self.attendre(&Token::CrochetFermant, "Attendu ']'")?;
+                        break;
+                    }
+                    if self.token_actuel() == &Token::Point
+                        && self.token_apercu(1) == &Token::Point
+                        && self.token_apercu(2) == &Token::Point
+                    {
+                        self.avancer();
+                        self.avancer();
+                        self.avancer();
                         reste = Some(Box::new(self.parser_pattern()?));
                         self.sauter_nouvelles_lignes();
                         self.attendre(&Token::CrochetFermant, "Attendu ']'")?;
@@ -825,7 +948,7 @@ impl Parser {
                         self.avancer();
                     }
                 }
-                Ok(PatternAST::Liste(éléments, reste, position))
+                Ok(PatternAST::Liste(éléments, reste, position.clone()))
             }
             Token::ParenthèseOuvrante => {
                 self.avancer();
@@ -841,13 +964,34 @@ impl Parser {
                         self.avancer();
                     }
                 }
-                Ok(PatternAST::Tuple(éléments, position))
+                Ok(PatternAST::Tuple(éléments, position.clone()))
+            }
+            Token::DoublePoint | Token::Point => {
+                self.avancer();
+                if self.token_actuel() == &Token::Point {
+                    self.avancer();
+                }
+                Ok(PatternAST::Jocker(position.clone()))
             }
             t => Err(Erreur::syntaxique(
                 self.position_actuelle(),
                 &format!("Attendu pattern, obtenu: {}", t),
             )),
+        }?;
+
+        while self.token_actuel() == &Token::Ou {
+            self.avancer();
+            let suivant = self.parser_pattern()?;
+            pattern = match pattern {
+                PatternAST::Ou(mut patterns, pos) => {
+                    patterns.push(suivant);
+                    PatternAST::Ou(patterns, pos)
+                }
+                autre => PatternAST::Ou(vec![autre, suivant], position.clone()),
+            };
         }
+
+        Ok(pattern)
     }
 
     fn parser_retourne(&mut self) -> Resultat<InstrAST> {
@@ -864,365 +1008,6 @@ impl Parser {
         };
 
         Ok(InstrAST::Retourne { valeur, position })
-    }
-
-    fn parser_classe(&mut self) -> Resultat<InstrAST> {
-        let position = self.position_actuelle();
-        self.avancer();
-
-        let est_abstraite = if self.token_actuel() == &Token::Abstraite {
-            self.avancer();
-            true
-        } else {
-            false
-        };
-
-        let nom = match self.avancer() {
-            Token::Identifiant(n) => n,
-            t => {
-                return Err(Erreur::syntaxique(
-                    self.position_actuelle(),
-                    &format!("Attendu nom de classe, obtenu: {}", t),
-                ))
-            }
-        };
-
-        let parent = if self.token_actuel() == &Token::Hérite {
-            self.avancer();
-            match self.avancer() {
-                Token::Identifiant(n) => Some(n),
-                t => {
-                    return Err(Erreur::syntaxique(
-                        self.position_actuelle(),
-                        &format!("Attendu nom de classe parente, obtenu: {}", t),
-                    ))
-                }
-            }
-        } else {
-            None
-        };
-
-        let mut interfaces = Vec::new();
-        if self.token_actuel() == &Token::Implémente {
-            self.avancer();
-            loop {
-                match self.avancer() {
-                    Token::Identifiant(n) => interfaces.push(n),
-                    t => {
-                        return Err(Erreur::syntaxique(
-                            self.position_actuelle(),
-                            &format!("Attendu nom d'interface, obtenu: {}", t),
-                        ))
-                    }
-                }
-                if self.token_actuel() == &Token::Virgule {
-                    self.avancer();
-                } else {
-                    break;
-                }
-            }
-        }
-
-        self.sauter_nouvelles_lignes();
-        if self.token_actuel() == &Token::Indentation {
-            self.avancer();
-        }
-
-        let mut membres = Vec::new();
-
-        loop {
-            self.sauter_nouvelles_lignes();
-            if self.token_actuel() == &Token::Fin
-                || self.token_actuel() == &Token::Désindentation
-                || self.token_actuel() == &Token::FinDeFichier
-            {
-                if self.token_actuel() == &Token::Désindentation {
-                    self.avancer();
-                }
-                if self.token_actuel() == &Token::Fin {
-                    self.avancer();
-                }
-                break;
-            }
-
-            membres.push(self.parser_membre_classe()?);
-        }
-
-        Ok(InstrAST::Classe(DéclarationClasseAST {
-            nom,
-            parent,
-            interfaces,
-            membres,
-            est_abstraite,
-            position,
-        }))
-    }
-
-    fn parser_membre_classe(&mut self) -> Resultat<MembreClasseAST> {
-        let visibilité = match self.token_actuel() {
-            Token::Publique => {
-                self.avancer();
-                VisibilitéAST::Publique
-            }
-            Token::Privé => {
-                self.avancer();
-                VisibilitéAST::Privée
-            }
-            Token::Protégé => {
-                self.avancer();
-                VisibilitéAST::Protégée
-            }
-            _ => VisibilitéAST::Publique,
-        };
-
-        if self.token_actuel() == &Token::Constructeur {
-            return self.parser_constructeur();
-        }
-
-        if self.token_actuel() == &Token::Virtuelle
-            || self.token_actuel() == &Token::Abstraite
-            || self.token_actuel() == &Token::Surcharge
-            || self.token_actuel() == &Token::Fonction
-        {
-            let position = self.position_actuelle();
-
-            let est_virtuelle = if self.token_actuel() == &Token::Virtuelle {
-                self.avancer();
-                true
-            } else {
-                false
-            };
-
-            let est_abstraite = if self.token_actuel() == &Token::Abstraite {
-                self.avancer();
-                true
-            } else {
-                false
-            };
-
-            let est_surcharge = if self.token_actuel() == &Token::Surcharge {
-                self.avancer();
-                true
-            } else {
-                false
-            };
-
-            let déclaration = self.parser_déclaration_fonction()?;
-
-            return Ok(MembreClasseAST::Méthode {
-                déclaration,
-                visibilité,
-                est_virtuelle,
-                est_abstraite,
-                est_surcharge,
-                position,
-            });
-        }
-
-        let position = self.position_actuelle();
-        let nom = match self.avancer() {
-            Token::Identifiant(n) => n,
-            t => {
-                return Err(Erreur::syntaxique(
-                    self.position_actuelle(),
-                    &format!("Attendu membre de classe, obtenu: {}", t),
-                ))
-            }
-        };
-
-        let type_ann = if self.token_actuel() == &Token::DeuxPoints {
-            self.avancer();
-            Some(self.parser_type()?)
-        } else {
-            None
-        };
-
-        let valeur_défaut = if self.token_actuel() == &Token::Affecte {
-            self.avancer();
-            Some(self.parser_expression()?)
-        } else {
-            None
-        };
-
-        Ok(MembreClasseAST::Champ {
-            nom,
-            type_ann,
-            valeur_défaut,
-            visibilité,
-            position,
-        })
-    }
-
-    fn parser_constructeur(&mut self) -> Resultat<MembreClasseAST> {
-        let position = self.position_actuelle();
-        self.avancer();
-
-        self.attendre(
-            &Token::ParenthèseOuvrante,
-            "Attendu '(' après 'constructeur'",
-        )?;
-        let paramètres = self.parser_paramètres()?;
-        self.attendre(&Token::ParenthèseFermante, "Attendu ')' après paramètres")?;
-
-        self.sauter_nouvelles_lignes();
-        let corps = self.parser_bloc()?;
-
-        Ok(MembreClasseAST::Constructeur {
-            paramètres,
-            corps,
-            position,
-        })
-    }
-
-    fn parser_interface(&mut self) -> Resultat<InstrAST> {
-        let position = self.position_actuelle();
-        self.avancer();
-
-        let nom = match self.avancer() {
-            Token::Identifiant(n) => n,
-            t => {
-                return Err(Erreur::syntaxique(
-                    self.position_actuelle(),
-                    &format!("Attendu nom d'interface, obtenu: {}", t),
-                ))
-            }
-        };
-
-        self.sauter_nouvelles_lignes();
-        if self.token_actuel() == &Token::Indentation {
-            self.avancer();
-        }
-
-        let mut méthodes = Vec::new();
-
-        loop {
-            self.sauter_nouvelles_lignes();
-            if self.token_actuel() == &Token::Fin
-                || self.token_actuel() == &Token::Désindentation
-                || self.token_actuel() == &Token::FinDeFichier
-            {
-                if self.token_actuel() == &Token::Désindentation {
-                    self.avancer();
-                }
-                if self.token_actuel() == &Token::Fin {
-                    self.avancer();
-                }
-                break;
-            }
-
-            if self.token_actuel() == &Token::Fonction {
-                let pos = self.position_actuelle();
-                self.avancer();
-                let nom_méth = match self.avancer() {
-                    Token::Identifiant(n) => n,
-                    t => {
-                        return Err(Erreur::syntaxique(
-                            self.position_actuelle(),
-                            &format!("Attendu nom de méthode, obtenu: {}", t),
-                        ))
-                    }
-                };
-                self.attendre(&Token::ParenthèseOuvrante, "Attendu '('")?;
-                let params = self.parser_paramètres()?;
-                self.attendre(&Token::ParenthèseFermante, "Attendu ')'")?;
-                let type_retour = if self.token_actuel() == &Token::Flèche
-                    || self.token_actuel() == &Token::DeuxPoints
-                {
-                    self.avancer();
-                    Some(self.parser_type()?)
-                } else {
-                    None
-                };
-                méthodes.push(SignatureMéthodeAST {
-                    nom: nom_méth,
-                    paramètres: params,
-                    type_retour,
-                    position: pos,
-                });
-            }
-        }
-
-        Ok(InstrAST::Interface(DéclarationInterfaceAST {
-            nom,
-            méthodes,
-            position,
-        }))
-    }
-
-    fn parser_module(&mut self) -> Resultat<InstrAST> {
-        let position = self.position_actuelle();
-        self.avancer();
-
-        let nom = match self.avancer() {
-            Token::Identifiant(n) => n,
-            t => {
-                return Err(Erreur::syntaxique(
-                    self.position_actuelle(),
-                    &format!("Attendu nom de module, obtenu: {}", t),
-                ))
-            }
-        };
-
-        self.sauter_nouvelles_lignes();
-        let bloc = self.parser_bloc()?;
-
-        Ok(InstrAST::Module {
-            nom,
-            bloc,
-            position,
-        })
-    }
-
-    fn parser_importe(&mut self) -> Resultat<InstrAST> {
-        let position = self.position_actuelle();
-        self.avancer();
-
-        let mut chemin = Vec::new();
-        let mut symboles = Vec::new();
-
-        if self.token_actuel() == &Token::Depuis {
-            self.avancer();
-            loop {
-                match self.avancer() {
-                    Token::Identifiant(n) => chemin.push(n),
-                    t => {
-                        return Err(Erreur::syntaxique(
-                            self.position_actuelle(),
-                            &format!("Attendu chemin de module, obtenu: {}", t),
-                        ))
-                    }
-                }
-                if self.token_actuel() == &Token::Point {
-                    self.avancer();
-                } else {
-                    break;
-                }
-            }
-            self.attendre(&Token::Importe, "Attendu 'importe' après 'depuis'")?;
-        }
-
-        loop {
-            match self.avancer() {
-                Token::Identifiant(n) => symboles.push(n),
-                t => {
-                    return Err(Erreur::syntaxique(
-                        self.position_actuelle(),
-                        &format!("Attendu symbole à importer, obtenu: {}", t),
-                    ))
-                }
-            }
-            if self.token_actuel() == &Token::Virgule {
-                self.avancer();
-            } else {
-                break;
-            }
-        }
-
-        Ok(InstrAST::Importe {
-            chemin,
-            symboles,
-            position,
-        })
     }
 
     fn parser_externe(&mut self) -> Resultat<InstrAST> {
@@ -1319,6 +1104,7 @@ impl Parser {
     // ===== Expressions (par précédence) =====
 
     fn parser_expression(&mut self) -> Resultat<ExprAST> {
+        self.sauter_trivia();
         self.parser_ou()
     }
 
@@ -1362,6 +1148,21 @@ impl Parser {
         let mut gauche = self.parser_pipe()?;
 
         loop {
+            if self.token_actuel() == &Token::Dans {
+                let position = self.position_actuelle();
+                self.avancer();
+                let droite = self.parser_pipe()?;
+                gauche = ExprAST::AppelFonction {
+                    appelé: Box::new(ExprAST::Identifiant(
+                        "contient".to_string(),
+                        position.clone(),
+                    )),
+                    arguments: vec![droite, gauche],
+                    position,
+                };
+                continue;
+            }
+
             let op = match self.token_actuel() {
                 Token::Égal => OpBinaire::Égal,
                 Token::Différent => OpBinaire::Différent,
@@ -1373,6 +1174,10 @@ impl Parser {
             };
             let position = self.position_actuelle();
             self.avancer();
+            self.sauter_nouvelles_lignes();
+            if self.token_actuel() == &Token::Indentation {
+                self.avancer();
+            }
             let droite = self.parser_pipe()?;
             gauche = ExprAST::Binaire {
                 op,
@@ -1386,12 +1191,26 @@ impl Parser {
     }
 
     fn parser_pipe(&mut self) -> Resultat<ExprAST> {
-        let mut gauche = self.parser_addition()?;
+        let mut gauche = self.parser_intervalle()?;
 
-        while self.token_actuel() == &Token::Pipe {
+        loop {
+            self.sauter_nouvelles_lignes();
+            if self.token_actuel() == &Token::Indentation {
+                let sauvegarde = self.position;
+                self.avancer();
+                self.sauter_nouvelles_lignes();
+                if self.token_actuel() != &Token::Pipe {
+                    self.position = sauvegarde;
+                }
+            }
+
+            if self.token_actuel() != &Token::Pipe {
+                break;
+            }
+
             let position = self.position_actuelle();
             self.avancer();
-            let droite = self.parser_addition()?;
+            let droite = self.parser_intervalle()?;
             gauche = ExprAST::Pipe {
                 gauche: Box::new(gauche),
                 droite: Box::new(droite),
@@ -1399,6 +1218,24 @@ impl Parser {
             };
         }
 
+        Ok(gauche)
+    }
+
+    fn parser_intervalle(&mut self) -> Resultat<ExprAST> {
+        let mut gauche = self.parser_addition()?;
+        while self.token_actuel() == &Token::DoublePoint {
+            let position = self.position_actuelle();
+            self.avancer();
+            let droite = self.parser_addition()?;
+            gauche = ExprAST::AppelFonction {
+                appelé: Box::new(ExprAST::Identifiant(
+                    "intervalle".to_string(),
+                    position.clone(),
+                )),
+                arguments: vec![gauche, droite],
+                position,
+            };
+        }
         Ok(gauche)
     }
 
@@ -1413,6 +1250,10 @@ impl Parser {
             };
             let position = self.position_actuelle();
             self.avancer();
+            self.sauter_nouvelles_lignes();
+            if self.token_actuel() == &Token::Indentation {
+                self.avancer();
+            }
             let droite = self.parser_multiplication()?;
             gauche = ExprAST::Binaire {
                 op,
@@ -1438,6 +1279,10 @@ impl Parser {
             };
             let position = self.position_actuelle();
             self.avancer();
+            self.sauter_nouvelles_lignes();
+            if self.token_actuel() == &Token::Indentation {
+                self.avancer();
+            }
             let droite = self.parser_puissance()?;
             gauche = ExprAST::Binaire {
                 op,
@@ -1504,13 +1349,13 @@ impl Parser {
                     self.avancer();
                     let mut arguments = Vec::new();
                     loop {
-                        self.sauter_nouvelles_lignes();
+                        self.sauter_trivia();
                         if self.token_actuel() == &Token::ParenthèseFermante {
                             self.avancer();
                             break;
                         }
                         arguments.push(self.parser_expression()?);
-                        self.sauter_nouvelles_lignes();
+                        self.sauter_trivia();
                         if self.token_actuel() == &Token::Virgule {
                             self.avancer();
                         }
@@ -1524,20 +1369,36 @@ impl Parser {
                 Token::Point => {
                     let position = self.position_actuelle();
                     self.avancer();
-                    let membre = match self.avancer() {
-                        Token::Identifiant(n) => n,
-                        t => {
-                            return Err(Erreur::syntaxique(
-                                self.position_actuelle(),
-                                &format!("Attendu nom de membre, obtenu: {}", t),
-                            ))
+                    match self.avancer() {
+                        Token::Identifiant(n) => {
+                            expr = ExprAST::AccèsMembre {
+                                objet: Box::new(expr),
+                                membre: n,
+                                position,
+                            };
                         }
-                    };
-                    expr = ExprAST::AccèsMembre {
-                        objet: Box::new(expr),
-                        membre,
-                        position,
-                    };
+                        Token::Entier(i) => {
+                            expr = ExprAST::AccèsIndice {
+                                objet: Box::new(expr),
+                                indice: Box::new(ExprAST::LittéralEntier(i, position.clone())),
+                                position,
+                            };
+                        }
+                        t => {
+                            if let Some(n) = Self::token_vers_identifiant(t.clone()) {
+                                expr = ExprAST::AccèsMembre {
+                                    objet: Box::new(expr),
+                                    membre: n,
+                                    position,
+                                };
+                            } else {
+                                return Err(Erreur::syntaxique(
+                                    self.position_actuelle(),
+                                    &format!("Attendu nom de membre, obtenu: {}", t),
+                                ));
+                            }
+                        }
+                    }
                 }
                 Token::CrochetOuvrant => {
                     let position = self.position_actuelle();
@@ -1576,6 +1437,16 @@ impl Parser {
                             position,
                         };
                     }
+                }
+                Token::Comme => {
+                    let position = self.position_actuelle();
+                    self.avancer();
+                    let type_cible = self.parser_type()?;
+                    expr = ExprAST::As {
+                        expr: Box::new(expr),
+                        type_cible,
+                        position,
+                    };
                 }
                 _ => break,
             }
@@ -1618,25 +1489,46 @@ impl Parser {
             }
             Token::Nouveau => {
                 self.avancer();
-                let classe = match self.avancer() {
-                    Token::Identifiant(n) => n,
-                    t => {
-                        return Err(Erreur::syntaxique(
-                            self.position_actuelle(),
-                            &format!("Attendu nom de classe après 'nouveau', obtenu: {}", t),
-                        ))
+                let mut classe = self.lire_identifiant("Attendu nom de classe après 'nouveau'")?;
+                while self.token_actuel() == &Token::Point {
+                    self.avancer();
+                    classe.push('.');
+                    classe.push_str(&self.lire_identifiant("Attendu nom après '.'")?);
+                }
+
+                self.sauter_paramètres_génériques()?;
+
+                if self.token_actuel() == &Token::AccoladeOuvrante {
+                    self.avancer();
+                    let mut arguments = Vec::new();
+                    while self.token_actuel() != &Token::AccoladeFermante {
+                        let _ = self.lire_identifiant("Attendu nom de champ")?;
+                        self.attendre(&Token::DeuxPoints, "Attendu ':' après nom de champ")?;
+                        arguments.push(self.parser_expression()?);
+                        if self.token_actuel() == &Token::Virgule {
+                            self.avancer();
+                        } else {
+                            break;
+                        }
                     }
-                };
+                    self.attendre(&Token::AccoladeFermante, "Attendu '}'")?;
+                    return Ok(ExprAST::Nouveau {
+                        classe,
+                        arguments,
+                        position,
+                    });
+                }
+
                 self.attendre(&Token::ParenthèseOuvrante, "Attendu '(' après 'nouveau'")?;
                 let mut arguments = Vec::new();
                 loop {
-                    self.sauter_nouvelles_lignes();
+                    self.sauter_trivia();
                     if self.token_actuel() == &Token::ParenthèseFermante {
                         self.avancer();
                         break;
                     }
                     arguments.push(self.parser_expression()?);
-                    self.sauter_nouvelles_lignes();
+                    self.sauter_trivia();
                     if self.token_actuel() == &Token::Virgule {
                         self.avancer();
                     }
@@ -1647,11 +1539,84 @@ impl Parser {
                     position,
                 })
             }
+            Token::EntierType | Token::DécimalType | Token::TexteType | Token::BooléenType => {
+                if self.token_suivant() == &Token::ParenthèseOuvrante {
+                    let type_cible = match self.avancer() {
+                        Token::EntierType => TypeAST::Entier,
+                        Token::DécimalType => TypeAST::Décimal,
+                        Token::TexteType => TypeAST::Texte,
+                        Token::BooléenType => TypeAST::Booléen,
+                        _ => unreachable!(),
+                    };
+
+                    self.attendre(
+                        &Token::ParenthèseOuvrante,
+                        "Attendu '(' après type pour conversion",
+                    )?;
+                    let expr = self.parser_expression()?;
+                    self.attendre(
+                        &Token::ParenthèseFermante,
+                        "Attendu ')' après expression de conversion",
+                    )?;
+
+                    Ok(ExprAST::Transtypage {
+                        expr: Box::new(expr),
+                        type_cible,
+                        position,
+                    })
+                } else {
+                    let nom = self.lire_identifiant("Attendu expression")?;
+                    Ok(ExprAST::Identifiant(nom, position))
+                }
+            }
+            Token::TableauType
+            | Token::ListeType
+            | Token::PileType
+            | Token::FileType
+            | Token::ListeChaînéeType
+            | Token::DictionnaireType
+            | Token::EnsembleType
+            | Token::TupleType
+            | Token::Pas
+            | Token::RienType => {
+                let nom = self.lire_identifiant("Attendu expression")?;
+                self.sauter_paramètres_génériques()?;
+                Ok(ExprAST::Identifiant(nom, position))
+            }
+            Token::DoublePoint | Token::Point => {
+                self.avancer();
+                if self.token_actuel() == &Token::Point {
+                    self.avancer();
+                }
+                Ok(ExprAST::LittéralNul(position))
+            }
+            Token::Fonction => {
+                self.avancer();
+                self.attendre(&Token::ParenthèseOuvrante, "Attendu '(' après 'fonction'")?;
+                let paramètres = self.parser_paramètres()?;
+                self.attendre(&Token::ParenthèseFermante, "Attendu ')' après paramètres")?;
+                let corps = if self.token_actuel() == &Token::Retourne {
+                    self.avancer();
+                    self.parser_expression()?
+                } else {
+                    self.sauter_nouvelles_lignes();
+                    let _ = self.parser_bloc()?;
+                    ExprAST::LittéralNul(position.clone())
+                };
+                if self.token_actuel() == &Token::Fin {
+                    self.avancer();
+                }
+                Ok(ExprAST::Lambda {
+                    paramètres,
+                    corps: Box::new(corps),
+                    position,
+                })
+            }
             Token::Identifiant(nom) => {
                 self.avancer();
                 if self.token_actuel() == &Token::DoubleFlèche {
                     self.avancer();
-                    let corps = self.parser_expression()?;
+                    let corps = self.parser_corps_lambda(&position)?;
                     let param = ParamètreAST {
                         nom,
                         type_ann: None,
@@ -1669,6 +1634,22 @@ impl Parser {
             }
             Token::ParenthèseOuvrante => {
                 self.avancer();
+                if self.token_actuel() == &Token::ParenthèseFermante {
+                    self.avancer();
+                    if self.token_actuel() == &Token::DoubleFlèche {
+                        self.avancer();
+                        let corps = self.parser_corps_lambda(&position)?;
+                        return Ok(ExprAST::Lambda {
+                            paramètres: Vec::new(),
+                            corps: Box::new(corps),
+                            position,
+                        });
+                    }
+                    return Ok(ExprAST::InitialisationTuple {
+                        éléments: Vec::new(),
+                        position,
+                    });
+                }
                 let premier = self.parser_expression()?;
 
                 if self.token_actuel() == &Token::Virgule {
@@ -1688,7 +1669,7 @@ impl Parser {
 
                     if self.token_actuel() == &Token::DoubleFlèche {
                         self.avancer();
-                        let corps = self.parser_expression()?;
+                        let corps = self.parser_corps_lambda(&position)?;
                         let paramètres: Vec<ParamètreAST> = éléments
                             .iter()
                             .map(|e| ParamètreAST {
@@ -1716,7 +1697,7 @@ impl Parser {
 
                     if self.token_actuel() == &Token::DoubleFlèche {
                         self.avancer();
-                        let corps = self.parser_expression()?;
+                        let corps = self.parser_corps_lambda(&position)?;
                         let param = ParamètreAST {
                             nom: match &premier {
                                 ExprAST::Identifiant(n, _) => n.clone(),
@@ -1794,10 +1775,72 @@ impl Parser {
                     })
                 }
             }
+            Token::AccoladeOuvrante => {
+                self.avancer();
+                self.sauter_nouvelles_lignes();
+                if self.token_actuel() == &Token::AccoladeFermante {
+                    self.avancer();
+                    return Ok(ExprAST::InitialisationDictionnaire {
+                        paires: Vec::new(),
+                        position,
+                    });
+                }
+
+                let premier = self.parser_expression()?;
+                if self.token_actuel() == &Token::DeuxPoints {
+                    self.avancer();
+                    let valeur = self.parser_expression()?;
+                    let mut paires = vec![(premier, valeur)];
+                    loop {
+                        self.sauter_nouvelles_lignes();
+                        if self.token_actuel() == &Token::AccoladeFermante {
+                            self.avancer();
+                            break;
+                        }
+                        if self.token_actuel() == &Token::Virgule {
+                            self.avancer();
+                        }
+                        self.sauter_nouvelles_lignes();
+                        if self.token_actuel() == &Token::AccoladeFermante {
+                            self.avancer();
+                            break;
+                        }
+                        let clé = self.parser_expression()?;
+                        self.attendre(&Token::DeuxPoints, "Attendu ':' dans dictionnaire")?;
+                        let val = self.parser_expression()?;
+                        paires.push((clé, val));
+                    }
+                    Ok(ExprAST::InitialisationDictionnaire { paires, position })
+                } else {
+                    let mut éléments = vec![premier];
+                    loop {
+                        self.sauter_nouvelles_lignes();
+                        if self.token_actuel() == &Token::AccoladeFermante {
+                            self.avancer();
+                            break;
+                        }
+                        if self.token_actuel() == &Token::Virgule {
+                            self.avancer();
+                        }
+                        self.sauter_nouvelles_lignes();
+                        if self.token_actuel() == &Token::AccoladeFermante {
+                            self.avancer();
+                            break;
+                        }
+                        éléments.push(self.parser_expression()?);
+                    }
+                    Ok(ExprAST::InitialisationTableau {
+                        éléments, position
+                    })
+                }
+            }
             Token::Si => {
                 self.avancer();
                 let condition = self.parser_expression()?;
                 self.sauter_nouvelles_lignes();
+                if self.token_actuel() == &Token::Alors {
+                    self.avancer();
+                }
                 let alors = self.parser_expression()?;
                 let sinon = if self.token_actuel() == &Token::Sinon {
                     self.avancer();
@@ -1805,6 +1848,9 @@ impl Parser {
                 } else {
                     None
                 };
+                if self.token_actuel() == &Token::Fin {
+                    self.avancer();
+                }
                 Ok(ExprAST::Conditionnelle {
                     condition: Box::new(condition),
                     alors: Box::new(alors),

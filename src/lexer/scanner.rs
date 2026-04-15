@@ -73,6 +73,7 @@ impl Scanner {
         mots_clés.insert("virtuelle", Token::Virtuelle);
         mots_clés.insert("surcharge", Token::Surcharge);
         mots_clés.insert("nouveau", Token::Nouveau);
+        mots_clés.insert("nouvelle", Token::Nouveau);
 
         mots_clés.insert("module", Token::Module);
         mots_clés.insert("importe", Token::Importe);
@@ -424,7 +425,14 @@ impl Scanner {
                 }
                 Some('-') => {
                     self.avancer();
-                    if self.correspond('>') {
+                    if self.correspond('-') {
+                        while let Some(c) = self.caractère_actuel() {
+                            if c == '\n' {
+                                break;
+                            }
+                            self.avancer();
+                        }
+                    } else if self.correspond('>') {
                         tokens.push(TokenAvecPosition::nouveau(Token::Flèche, position));
                     } else if self.correspond('=') {
                         tokens.push(TokenAvecPosition::nouveau(Token::MoinsAffecte, position));
@@ -444,7 +452,14 @@ impl Scanner {
                 }
                 Some('/') => {
                     self.avancer();
-                    if self.correspond('=') {
+                    if self.correspond('/') {
+                        while let Some(c) = self.caractère_actuel() {
+                            if c == '\n' {
+                                break;
+                            }
+                            self.avancer();
+                        }
+                    } else if self.correspond('=') {
                         tokens.push(TokenAvecPosition::nouveau(Token::SlashAffecte, position));
                     } else {
                         tokens.push(TokenAvecPosition::nouveau(Token::Slash, position));
