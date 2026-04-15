@@ -1,16 +1,16 @@
 // Bibliothèque de collections avancées de Galois
 
-fonction intervalle(début: entier, fin: entier): liste<entier>
-    résultat = []
-    pour i dans début..fin
+fonction intervalle(début: entier, borne_fin: entier): liste<entier>
+    soit résultat = []
+    pour i dans début..borne_fin
         résultat.ajouter(i)
     fin
     retourne résultat
 fin
 
-fonction zip(a: liste<texte>, b: liste<texte>): liste<tuple>
-    résultat = []
-    taille_min = min(a.taille, b.taille)
+fonction zip(a: liste<texte>, b: liste<texte>): liste<tuple(texte, texte)>
+    soit résultat = []
+    soit taille_min = si a.taille < b.taille alors a.taille sinon b.taille fin
     pour i dans 0..taille_min
         résultat.ajouter((a[i], b[i]))
     fin
@@ -18,7 +18,7 @@ fonction zip(a: liste<texte>, b: liste<texte>): liste<tuple>
 fin
 
 fonction chaîner(listes: liste<liste<entier>>): liste<entier>
-    résultat = []
+    soit résultat = []
     pour lst dans listes
         pour élément dans lst
             résultat.ajouter(élément)
@@ -28,21 +28,25 @@ fonction chaîner(listes: liste<liste<entier>>): liste<entier>
 fin
 
 fonction unique(lst: liste<entier>): liste<entier>
-    vu = nouvel ensemble<entier>()
-    résultat = []
+    soit résultat = []
     pour élément dans lst
-        si !vu.contient(élément) alors
-            vu.ajouter(élément)
+        mutable déjà_vu = faux
+        pour existant dans résultat
+            si existant == élément alors
+                déjà_vu = vrai
+            fin
+        fin
+        si !déjà_vu alors
             résultat.ajouter(élément)
         fin
     fin
     retourne résultat
 fin
 
-fonction regrouper_par(lst: liste<texte>, clé: fonction): dictionnaire<texte, liste<texte>>
-    résultat = nouveau dictionnaire<texte, liste<texte>>()
+fonction regrouper_par(lst: liste<texte>, clé: fonction(texte) -> texte): dictionnaire<texte, liste<texte>>
+    soit résultat: dictionnaire<texte, liste<texte>> = {}
     pour élément dans lst
-        k = clé(élément)
+        soit k = clé(élément)
         si résultat.contient(k) alors
             résultat.obtenir(k).ajouter(élément)
         sinon
@@ -52,21 +56,21 @@ fonction regrouper_par(lst: liste<texte>, clé: fonction): dictionnaire<texte, l
     retourne résultat
 fin
 
-fonction trier_par(lst: liste<décimal>, clé: fonction): liste<décimal>
-    copie = lst.copier()
+fonction trier_par(lst: liste<décimal>, clé: fonction(décimal) -> décimal): liste<décimal>
+    soit copie = lst
     copie.trier()
     retourne copie
 fin
 
-fonction partition(lst: liste<entier>, prédicat: fonction): tuple
-    vrais = []
-    faux = []
+fonction partition(lst: liste<entier>, prédicat: fonction(entier) -> booléen): tuple(liste<entier>, liste<entier>)
+    soit vrais = []
+    soit liste_fausse = []
     pour élément dans lst
         si prédicat(élément) alors
             vrais.ajouter(élément)
         sinon
-            faux.ajouter(élément)
+            liste_fausse.ajouter(élément)
         fin
     fin
-    retourne (vrais, faux)
+    retourne (vrais, liste_fausse)
 fin

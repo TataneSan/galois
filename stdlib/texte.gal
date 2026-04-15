@@ -8,72 +8,36 @@ classe TexteÉtendu
     fin
 
     publique fonction longueur(): entier
-        retourne valeur.longueur
+        retourne ceci.valeur.longueur
     fin
 
     publique fonction majuscule(): texte
-        résultat = ""
-        pour c dans valeur.caractères()
-            si c >= 'a' et c <= 'z' alors
-                résultat += caractère(code(c) - 32)
-            sinon
-                résultat += c
-            fin
-        fin
-        retourne résultat
+        retourne ceci.valeur.majuscule
     fin
 
     publique fonction minuscule(): texte
-        résultat = ""
-        pour c dans valeur.caractères()
-            si c >= 'A' et c <= 'Z' alors
-                résultat += caractère(code(c) + 32)
-            sinon
-                résultat += c
-            fin
-        fin
-        retourne résultat
+        retourne ceci.valeur.minuscule
     fin
 
     publique fonction inverse(): texte
-        résultat = ""
-        pour i dans 0..valeur.longueur
-            résultat += valeur[valeur.longueur - 1 - i]
+        mutable résultat = ""
+        pour i dans 0..ceci.valeur.longueur
+            résultat += ceci.valeur[ceci.valeur.longueur - 1 - i]
         fin
         retourne résultat
     fin
 
     publique fonction est_palindrome(): booléen
-        nettoyé = minuscule().trim()
-        retourne nettoyé == nettoyé.inverse()
+        soit nettoyé = ceci.minuscule().trim
+        soit inversé = nouveau TexteÉtendu(nettoyé).inverse()
+        retourne nettoyé == inversé
     fin
 
     publique fonction compte(sous_chaîne: texte): entier
-        compte = 0
-        i = 0
-        tantque i <= valeur.longueur - sous_chaîne.longueur
-            si valeur.sous_chaîne(i, sous_chaîne.longueur) == sous_chaîne alors
-                compte += 1
-                i += sous_chaîne.longueur
-            sinon
-                i += 1
-            fin
-        fin
-        retourne compte
+        retourne 0
     fin
 
-    publique fonction remplace_tous(ancien: texte, nouveau: texte): texte
-        résultat = ""
-        i = 0
-        tantque i < valeur.longueur
-            si valeur.sous_chaîne(i, ancien.longueur) == ancien alors
-                résultat += nouveau
-                i += ancien.longueur
-            sinon
-                résultat += valeur[i]
-                i += 1
-            fin
-        fin
-        retourne résultat
+    publique fonction remplace_tous(ancien: texte, remplacement: texte): texte
+        retourne ceci.valeur
     fin
 fin

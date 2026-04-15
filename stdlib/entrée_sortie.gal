@@ -9,19 +9,19 @@ fonction lire_ligne(): texte
 fin
 
 fonction lire_entier(): entier
-    texte = lire()
-    retourne texte comme entier
+    soit ligne = lire()
+    retourne ligne comme entier
 fin
 
 fonction lire_décimal(): décimal
-    texte = lire()
-    retourne texte comme décimal
+    soit ligne = lire()
+    retourne ligne comme décimal
 fin
 
 fonction formater(modèle: texte, args: liste<texte>): texte
-    résultat = ""
-    i = 0
-    arg_index = 0
+    mutable résultat = ""
+    mutable i = 0
+    mutable arg_index = 0
     tantque i < modèle.longueur
         si modèle[i] == '{' et i + 1 < modèle.longueur et modèle[i + 1] == '}' alors
             si arg_index < args.taille alors
