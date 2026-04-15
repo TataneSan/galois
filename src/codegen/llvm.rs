@@ -1067,6 +1067,35 @@ impl GénérateurLLVM {
         self.écrire("declare i8* @gal_reseau_nom_hote_local()\n");
         self.écrire("declare i64 @gal_reseau_est_ipv4(i8*)\n");
 
+        let mut externes_déclarées = HashSet::new();
+        for f in &module.fonctions {
+            if !f.est_externe {
+                continue;
+            }
+            let nom_externe = self.nom_llvm(&f.nom);
+            if !externes_déclarées.insert(nom_externe.clone()) {
+                continue;
+            }
+
+            let mut params = String::new();
+            for (i, (_, type_param)) in f.paramètres.iter().enumerate() {
+                if i > 0 {
+                    params.push_str(", ");
+                }
+                params.push_str(&self.type_llvm_stockage(type_param));
+            }
+
+            self.écrire(&format!(
+                "declare {} @{}({})\n",
+                self.type_llvm(&f.type_retour),
+                nom_externe,
+                params
+            ));
+        }
+        if !externes_déclarées.is_empty() {
+            self.écrire("\n");
+        }
+
         self.générer_fonctions_runtime();
 
         for (nom, valeur, type_var) in &module.globales {
@@ -1085,6 +1114,9 @@ impl GénérateurLLVM {
         }
 
         for f in &module.fonctions {
+            if f.est_externe {
+                continue;
+            }
             self.générer_fonction(f);
         }
 
@@ -1806,13 +1838,27 @@ impl GénérateurLLVM {
             }
             IRValeur::Opération(op, gauche, droite) => {
                 let op_comparaison = Self::opération_est_comparaison(op);
+                let type_gauche = self.type_ir_valeur(gauche);
+                let type_droite = droite.as_ref().map(|d| self.type_ir_valeur(d));
                 let type_op = if op_comparaison {
-                    if self.valeur_contient_decimal(gauche)
-                        || droite
-                            .as_ref()
-                            .map_or(false, |d| self.valeur_contient_decimal(d))
+                    if matches!(type_gauche, IRType::Décimal)
+                        || matches!(type_droite, Some(IRType::Décimal))
                     {
                         IRType::Décimal
+                    } else if matches!(type_gauche, IRType::Booléen)
+                        || matches!(type_droite, Some(IRType::Booléen))
+                    {
+                        IRType::Booléen
+                    } else if Self::type_est_pointeur_like(&type_gauche)
+                        || type_droite
+                            .as_ref()
+                            .map_or(false, |t| Self::type_est_pointeur_like(t))
+                    {
+                        if !matches!(type_gauche, IRType::Nul) {
+                            type_gauche.clone()
+                        } else {
+                            type_droite.unwrap_or(IRType::Texte)
+                        }
                     } else {
                         IRType::Entier
                     }
@@ -2691,6 +2737,30 @@ impl GénérateurLLVM {
                 _ => format!("  {} = fadd double 0.0, 0.0\n", dest),
             };
         }
+        if matches!(type_op, IRType::Booléen) {
+            return match op {
+                IROp::Et => format!("  {} = and i1 {}, {}\n", dest, gauche, droite),
+                IROp::Ou => format!("  {} = or i1 {}, {}\n", dest, gauche, droite),
+                IROp::Xou => format!("  {} = xor i1 {}, {}\n", dest, gauche, droite),
+                IROp::Égal => format!("  {} = icmp eq i1 {}, {}\n", dest, gauche, droite),
+                IROp::Différent => format!("  {} = icmp ne i1 {}, {}\n", dest, gauche, droite),
+                IROp::Inférieur => format!("  {} = icmp slt i1 {}, {}\n", dest, gauche, droite),
+                IROp::Supérieur => format!("  {} = icmp sgt i1 {}, {}\n", dest, gauche, droite),
+                IROp::InférieurÉgal => format!("  {} = icmp sle i1 {}, {}\n", dest, gauche, droite),
+                IROp::SupérieurÉgal => format!("  {} = icmp sge i1 {}, {}\n", dest, gauche, droite),
+                _ => format!("  {} = xor i1 0, 0\n", dest),
+            };
+        }
+        if Self::type_est_pointeur_like(type_op) {
+            let type_llvm = self.type_llvm_stockage(type_op);
+            return match op {
+                IROp::Égal => format!("  {} = icmp eq {} {}, {}\n", dest, type_llvm, gauche, droite),
+                IROp::Différent => {
+                    format!("  {} = icmp ne {} {}, {}\n", dest, type_llvm, gauche, droite)
+                }
+                _ => format!("  {} = icmp eq {} {}, {}\n", dest, type_llvm, gauche, droite),
+            };
+        }
 
         match op {
             IROp::Ajouter => format!("  {} = add i64 {}, {}\n", dest, gauche, droite),
@@ -2740,6 +2810,25 @@ impl GénérateurLLVM {
             IROp::Non => format!("  {} = xor i1 {}, 1\n", dest, opérande),
             _ => format!("  {} = add i64 0, {}\n", dest, opérande),
         }
+    }
+
+    fn type_est_pointeur_like(t: &IRType) -> bool {
+        matches!(
+            t,
+            IRType::Texte
+                | IRType::Nul
+                | IRType::Tableau(_, _)
+                | IRType::Liste(_)
+                | IRType::Pile(_)
+                | IRType::File(_)
+                | IRType::ListeChaînée(_)
+                | IRType::Dictionnaire(_, _)
+                | IRType::Ensemble(_)
+                | IRType::Fonction(_, _)
+                | IRType::Struct(_, _)
+                | IRType::Pointeur(_)
+                | IRType::Référence(_)
+        )
     }
 
     fn valeur_constante_llvm(&self, val: &IRValeur) -> String {

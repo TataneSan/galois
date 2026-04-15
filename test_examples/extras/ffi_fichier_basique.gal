@@ -1,0 +1,10 @@
+externe fonction fopen(chemin: texte, mode: texte): pointeur_vide
+externe fonction fclose(fichier: pointeur_vide): c_int
+
+soit f = fopen("/dev/null", "r")
+
+si f == nul alors
+    afficher(faux)
+sinon
+    afficher(fclose(f) == 0)
+fin

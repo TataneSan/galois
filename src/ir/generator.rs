@@ -1122,6 +1122,38 @@ impl GénérateurIR {
                         module.fonctions.push(fonction);
                     }
                 }
+                InstrAST::Externe {
+                    nom,
+                    paramètres,
+                    type_retour,
+                    ..
+                } => {
+                    let paramètres_ir = paramètres
+                        .iter()
+                        .map(|p| {
+                            let type_src = if let Some(t) = &p.type_ann {
+                                self.convertir_type_ast(t)
+                            } else {
+                                Type::Inconnu
+                            };
+                            (p.nom.clone(), self.convertir_type_ir(&type_src))
+                        })
+                        .collect();
+
+                    let type_retour_ir = if let Some(rt) = type_retour {
+                        self.convertir_type_ir(&self.convertir_type_ast(rt))
+                    } else {
+                        IRType::Vide
+                    };
+
+                    module.fonctions.push(IRFonction {
+                        nom: nom.clone(),
+                        paramètres: paramètres_ir,
+                        type_retour: type_retour_ir,
+                        blocs: Vec::new(),
+                        est_externe: true,
+                    });
+                }
                 InstrAST::Classe(décl) => {
                     module.structures.push(IRStruct {
                         nom: décl.nom.clone(),
@@ -1429,10 +1461,8 @@ impl GénérateurIR {
             TypeAST::Classe(nom) => Type::Classe(nom.clone(), None),
             TypeAST::Interface(nom) => Type::Interface(nom.clone()),
             TypeAST::Paramétré(nom, _) => Type::Classe(nom.clone(), None),
-            TypeAST::Pointeur(inner) => {
-                Type::Classe(format!("pointeur_{}", self.convertir_type_ast(inner)), None)
-            }
-            TypeAST::PointeurVide => Type::Classe("pointeur_vide".to_string(), None),
+            TypeAST::Pointeur(inner) => Type::Pointeur(Box::new(self.convertir_type_ast(inner))),
+            TypeAST::PointeurVide => Type::PointeurVide,
             TypeAST::CInt => Type::Entier,
             TypeAST::CLong => Type::Entier,
             TypeAST::CDouble => Type::Décimal,
