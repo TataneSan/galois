@@ -20,7 +20,7 @@ clang --version   # Clang 10+
 ### 1. Cloner le dépôt
 
 ```bash
-git clone https://github.com/votre-org/galois.git
+git clone https://github.com/TataneSan/galois.git
 cd galois
 ```
 
