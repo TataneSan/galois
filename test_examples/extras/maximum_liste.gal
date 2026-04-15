@@ -1,0 +1,12 @@
+fonction maximum_de(t: liste<entier>): entier
+    mutable meilleur = t[0]
+    pour x dans t faire
+        si x > meilleur alors
+            meilleur = x
+        fin
+    fin
+    retourne meilleur
+fin
+
+soit valeurs = [3, 9, 1, 7, 5]
+afficher(maximum_de(valeurs))

@@ -1,0 +1,8 @@
+soit f: file<entier> = nouvelle file<entier>()
+f.enfiler(1)
+f.enfiler(2)
+f.enfiler(3)
+
+afficher(f.défiler())
+afficher(f.tête())
+afficher(f.défiler())

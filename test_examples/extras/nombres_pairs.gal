@@ -1,0 +1,11 @@
+fonction compter_pairs(n: entier): entier
+    mutable total = 0
+    pour i de 1 à n faire
+        si i % 2 == 0 alors
+            total = total + 1
+        fin
+    fin
+    retourne total
+fin
+
+afficher(compter_pairs(10))

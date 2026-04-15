@@ -1,0 +1,48 @@
+fonction bool_texte(v: booléen): texte
+    si v alors
+        retourne "vrai"
+    fin
+    retourne "faux"
+fin
+
+soit p: pile<entier> = nouveau pile<entier>()
+p.empiler(1)
+p.empiler(2)
+p.empiler(3)
+
+afficher(p.dépiler())
+afficher(p.sommet())
+afficher(bool_texte(p.est_vide))
+
+soit f: file<entier> = nouvelle file<entier>()
+f.enfiler(1)
+f.enfiler(2)
+f.enfiler(3)
+
+afficher(f.défiler())
+afficher(f.tête())
+afficher(bool_texte(f.est_vide))
+
+soit lc: liste_chaînée<entier> = nouveau liste_chaînée<entier>()
+lc.ajouter_début(2)
+lc.ajouter_fin(4)
+lc.insérer(1, 3)
+
+afficher(lc.obtenir(0))
+afficher(lc.obtenir(1))
+afficher(lc.obtenir(2))
+afficher(lc.taille)
+
+soit s: ensemble<entier> = nouveau ensemble()
+s.ajouter(3)
+s.ajouter(5)
+
+afficher(bool_texte(s.contient(3)))
+afficher(s.taille)
+
+soit âges: dictionnaire<texte, entier> = ["Alice": 30, "Bob": 25]
+âges["Claire"] = 28
+
+afficher(âges["Alice"])
+afficher(bool_texte(âges.contient("Claire")))
+afficher(âges.taille)

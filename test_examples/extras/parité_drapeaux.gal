@@ -1,0 +1,9 @@
+fonction drapeau(n: entier): entier
+    si n % 2 == 0 alors
+        retourne 2
+    fin
+    retourne 1
+fin
+
+afficher(drapeau(2))
+afficher(drapeau(3))

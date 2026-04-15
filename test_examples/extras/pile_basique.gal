@@ -1,0 +1,8 @@
+soit p: pile<entier> = nouveau pile<entier>()
+p.empiler(10)
+p.empiler(20)
+p.empiler(30)
+
+afficher(p.dépiler())
+afficher(p.sommet())
+afficher(p.dépiler())

@@ -1,0 +1,6 @@
+soit notes: dictionnaire<texte, entier> = ["maths": 15, "français": 18]
+notes["histoire"] = 12
+
+afficher(notes.taille)
+afficher(notes["maths"])
+afficher(notes["histoire"])

@@ -1,0 +1,33 @@
+fonction factorielle(n: entier): entier
+    si n < 2 alors
+        retourne 1
+    fin
+    retourne n * factorielle(n - 1)
+fin
+
+fonction fibonacci(n: entier): entier
+    si n <= 1 alors
+        retourne n
+    fin
+    retourne fibonacci(n - 1) + fibonacci(n - 2)
+fin
+
+fonction est_premier(n: entier): booléen
+    si n < 2 alors
+        retourne faux
+    fin
+
+    pour i de 2 à maths.racine_carrée(n) faire
+        si n % i == 0 alors
+            retourne faux
+        fin
+    fin
+
+    retourne vrai
+fin
+
+afficher(factorielle(5))
+afficher(fibonacci(10))
+afficher(maths.pgcd(48, 18))
+afficher(maths.ppcm(12, 18))
+afficher(est_premier(29))

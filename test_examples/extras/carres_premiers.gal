@@ -1,0 +1,11 @@
+fonction somme_carrés_premiers(n: entier): entier
+    mutable total = 0
+    pour i de 1 à n faire
+        si i % 2 == 1 alors
+            total = total + i * i
+        fin
+    fin
+    retourne total
+fin
+
+afficher(somme_carrés_premiers(5))

@@ -1,0 +1,16 @@
+fonction étiquette(n: entier): texte
+    si n % 15 == 0 alors
+        retourne "FizzBuzz"
+    fin
+    si n % 3 == 0 alors
+        retourne "Fizz"
+    fin
+    si n % 5 == 0 alors
+        retourne "Buzz"
+    fin
+    retourne n comme texte
+fin
+
+pour i de 1 à 15 faire
+    afficher(étiquette(i))
+fin

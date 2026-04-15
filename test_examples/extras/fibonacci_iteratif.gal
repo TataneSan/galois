@@ -1,0 +1,18 @@
+fonction fibonacci_itératif(n: entier): entier
+    si n <= 1 alors
+        retourne n
+    fin
+
+    mutable a = 0
+    mutable b = 1
+    mutable i = 2
+    tantque i <= n faire
+        soit prochain = a + b
+        a = b
+        b = prochain
+        i = i + 1
+    fin
+    retourne b
+fin
+
+afficher(fibonacci_itératif(7))

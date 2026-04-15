@@ -1,0 +1,10 @@
+fonction somme_carrés(n: entier): entier
+    mutable total = 0
+    pour i de 1 à n faire
+        total += i * i
+    fin
+    retourne total
+fin
+
+afficher(somme_carrés(5))
+afficher(somme_carrés(10))

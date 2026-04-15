@@ -1,0 +1,8 @@
+mutable n = 5
+tantque n > 0 faire
+    si n == 1 alors
+        afficher("go")
+    fin
+    afficher(n)
+    n -= 1
+fin

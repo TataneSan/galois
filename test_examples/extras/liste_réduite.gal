@@ -1,0 +1,4 @@
+soit nombres = [1, 2, 3, 4]
+soit somme = nombres.réduire(0, (acc, x) => acc + x)
+
+afficher(somme)

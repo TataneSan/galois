@@ -1,0 +1,16 @@
+classe Paire
+    publique a: entier
+    publique b: entier
+
+    constructeur(a: entier, b: entier)
+        ceci.a = a
+        ceci.b = b
+    fin
+
+    publique fonction somme(): entier
+        retourne ceci.a + ceci.b
+    fin
+fin
+
+soit p = nouveau Paire(4, 7)
+afficher(p.somme())

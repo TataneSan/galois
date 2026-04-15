@@ -1,0 +1,11 @@
+fonction compter_deux_loops(): entier
+    mutable total = 0
+    pour i de 1 à 3 faire
+        pour j de 1 à 2 faire
+            total = total + 1
+        fin
+    fin
+    retourne total
+fin
+
+afficher(compter_deux_loops())

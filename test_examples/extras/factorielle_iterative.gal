@@ -1,0 +1,9 @@
+fonction factorielle_itérative(n: entier): entier
+    mutable résultat = 1
+    pour i de 2 à n faire
+        résultat = résultat * i
+    fin
+    retourne résultat
+fin
+
+afficher(factorielle_itérative(6))

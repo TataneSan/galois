@@ -1,0 +1,11 @@
+fonction bool_texte(v: booléen): texte
+    si v alors
+        retourne "vrai"
+    fin
+    retourne "faux"
+fin
+
+afficher(bool_texte(maths.temps_ms() >= 0))
+afficher(bool_texte(systeme.pid() > 0))
+afficher(bool_texte(reseau.est_ipv4("127.0.0.1") == 1))
+afficher(bool_texte(reseau.est_ipv4("256.0.0.1") == 0))

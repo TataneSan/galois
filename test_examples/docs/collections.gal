@@ -1,0 +1,22 @@
+fonction bool_texte(v: booléen): texte
+    si v alors
+        retourne "vrai"
+    fin
+    retourne "faux"
+fin
+
+soit nombres = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+soit pairs = nombres.filtrer(x => x % 2 == 0)
+soit doubles = pairs.transformer(x => x * 2)
+soit somme = doubles.réduire(0, (acc, x) => acc + x)
+soit présents = nombres.contient(7)
+
+soit mélangés = [3, 1, 4, 1, 5]
+mélangés.trier()
+
+afficher(pairs.taille)
+afficher(somme)
+afficher(bool_texte(présents))
+afficher(mélangés[0])
+afficher(mélangés[4])

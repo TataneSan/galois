@@ -1,0 +1,9 @@
+fonction somme_intervalle(début: entier, borne_fin: entier): entier
+    mutable total = 0
+    pour i de début à borne_fin faire
+        total = total + i
+    fin
+    retourne total
+fin
+
+afficher(somme_intervalle(1, 5))

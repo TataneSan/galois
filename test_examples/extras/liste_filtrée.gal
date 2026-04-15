@@ -1,0 +1,7 @@
+soit nombres = [-3, -1, 0, 2, 4, 5]
+soit positifs = nombres.filtrer(x => x > 0)
+
+afficher(positifs.taille)
+afficher(positifs[0])
+afficher(positifs[1])
+afficher(positifs[2])

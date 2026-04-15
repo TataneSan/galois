@@ -1,0 +1,5 @@
+fonction triangle(n: entier): entier
+    retourne n * (n + 1) / 2
+fin
+
+afficher(triangle(5))
