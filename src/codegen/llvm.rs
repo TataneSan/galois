@@ -6,7 +6,7 @@ pub struct GénérateurLLVM {
     sortie: Vec<u8>,
     compteur_reg: usize,
     compteur_label: usize,
-    chaînes: Vec<(String, String)>,
+    chaînes: Vec<(String, String, usize)>,
     compteur_chaînes: usize,
     signatures_fonctions: HashMap<String, (Vec<IRType>, IRType)>,
     champs_structs: HashMap<String, HashMap<String, (usize, IRType)>>,
@@ -15,6 +15,7 @@ pub struct GénérateurLLVM {
     ids_classes: HashMap<String, i64>,
     dispatch_requis: Vec<(String, bool, String, Vec<IRType>, IRType)>,
     dispatch_index: HashSet<String>,
+    types_variables: HashMap<String, IRType>,
 }
 
 impl GénérateurLLVM {
@@ -32,6 +33,7 @@ impl GénérateurLLVM {
             ids_classes: HashMap::new(),
             dispatch_requis: Vec::new(),
             dispatch_index: HashSet::new(),
+            types_variables: HashMap::new(),
         }
     }
 
@@ -106,10 +108,53 @@ impl GénérateurLLVM {
                 .get(nom)
                 .map(|(_, t)| t.clone())
                 .unwrap_or(IRType::Entier),
+            IRValeur::Opération(op, gauche, droite) => {
+                if Self::opération_est_comparaison(op) {
+                    IRType::Booléen
+                } else if self.valeur_contient_decimal(gauche)
+                    || droite
+                        .as_ref()
+                        .map_or(false, |d| self.valeur_contient_decimal(d))
+                {
+                    IRType::Décimal
+                } else {
+                    IRType::Entier
+                }
+            }
             IRValeur::AppelMéthode { type_retour, .. } => type_retour.clone(),
             IRValeur::Membre { type_membre, .. } => type_membre.clone(),
             IRValeur::AccèsDictionnaire { type_valeur, .. } => type_valeur.clone(),
             _ => IRType::Entier,
+        }
+    }
+
+    fn opération_est_comparaison(op: &IROp) -> bool {
+        matches!(
+            op,
+            IROp::Égal
+                | IROp::Différent
+                | IROp::Inférieur
+                | IROp::Supérieur
+                | IROp::InférieurÉgal
+                | IROp::SupérieurÉgal
+        )
+    }
+
+    fn valeur_contient_decimal(&self, val: &IRValeur) -> bool {
+        match val {
+            IRValeur::Décimal(_) => true,
+            IRValeur::Transtypage(_, t) => matches!(t, IRType::Décimal),
+            IRValeur::Référence(_) | IRValeur::Appel(_, _) | IRValeur::AppelMéthode { .. }
+            | IRValeur::Membre { .. } | IRValeur::AccèsDictionnaire { .. } => {
+                matches!(self.type_ir_valeur(val), IRType::Décimal)
+            }
+            IRValeur::Opération(_, gauche, droite) => {
+                self.valeur_contient_decimal(gauche)
+                    || droite
+                        .as_ref()
+                        .map_or(false, |d| self.valeur_contient_decimal(d))
+            }
+            _ => false,
         }
     }
 
@@ -133,6 +178,7 @@ impl GénérateurLLVM {
         self.ids_classes.clear();
         self.dispatch_requis.clear();
         self.dispatch_index.clear();
+        self.types_variables.clear();
 
         self.signatures_fonctions.insert(
             "gal_concat_texte".to_string(),
@@ -190,6 +236,9 @@ impl GénérateurLLVM {
         self.écrire("declare i64 @atoi(i8*)\n");
         self.écrire("declare double @atof(i8*)\n");
         self.écrire("declare i32 @sprintf(i8*, i8*, ...)\n");
+        self.écrire("declare double @gal_aleatoire()\n");
+        self.écrire("declare i64 @gal_aleatoire_entier(i64, i64)\n");
+        self.écrire("declare void @gal_aleatoire_graine(i64)\n");
         self.écrire("declare double @sqrt(double)\n");
         self.écrire("declare double @sin(double)\n");
         self.écrire("declare double @cos(double)\n");
@@ -250,8 +299,7 @@ impl GénérateurLLVM {
             self.écrire("}\n\n");
         }
 
-        for (nom, contenu) in &self.chaînes {
-            let len = contenu.len() + 1;
+        for (nom, contenu, len) in &self.chaînes {
             let déclaration = format!(
                 "@{} = private unnamed_addr constant [{} x i8] c\"{}\\00\"\n",
                 nom, len, contenu
@@ -314,6 +362,18 @@ impl GénérateurLLVM {
         let type_ret = self.type_llvm(&f.type_retour);
         let nom_llvm = self.nom_llvm(&f.nom);
 
+        self.types_variables.clear();
+        for (nom, type_param) in &f.paramètres {
+            self.types_variables.insert(nom.clone(), type_param.clone());
+        }
+        for bloc in &f.blocs {
+            for instr in &bloc.instructions {
+                if let IRInstruction::Allocation { nom, type_var } = instr {
+                    self.types_variables.insert(nom.clone(), type_var.clone());
+                }
+            }
+        }
+
         self.écrire(&format!("define {} @{}(", type_ret, nom_llvm));
 
         for (i, (nom, type_param)) in f.paramètres.iter().enumerate() {
@@ -340,6 +400,23 @@ impl GénérateurLLVM {
             })
             .collect();
 
+        let mut allocas_variables: Vec<String> = Vec::new();
+        let mut déjà_allouées: HashSet<String> = HashSet::new();
+        for bloc in &f.blocs {
+            for instr in &bloc.instructions {
+                if let IRInstruction::Allocation { nom, type_var } = instr {
+                    if déjà_allouées.insert(nom.clone()) {
+                        let type_stock = self.type_llvm_stockage(type_var);
+                        allocas_variables.push(format!(
+                            "  {} = alloca {}\n",
+                            self.nom_var_llvm(nom),
+                            type_stock
+                        ));
+                    }
+                }
+            }
+        }
+
         if f.blocs.is_empty() {
             for a in &param_allocas {
                 self.écrire(a);
@@ -358,6 +435,9 @@ impl GénérateurLLVM {
                 self.écrire(&format!("{}:\n", bloc.nom));
                 if i == 0 {
                     for a in &param_allocas {
+                        self.écrire(a);
+                    }
+                    for a in &allocas_variables {
                         self.écrire(a);
                     }
                 }
@@ -400,12 +480,7 @@ impl GénérateurLLVM {
     fn générer_instruction(&mut self, instr: &IRInstruction, type_retour: &IRType) {
         match instr {
             IRInstruction::Allocation { nom, type_var } => {
-                let type_stock = self.type_llvm_stockage(type_var);
-                self.écrire(&format!(
-                    "  {} = alloca {}\n",
-                    self.nom_var_llvm(nom),
-                    type_stock
-                ));
+                let _ = (nom, type_var);
             }
             IRInstruction::Affecter {
                 destination,
@@ -555,7 +630,7 @@ impl GénérateurLLVM {
                 bloc_alors,
                 bloc_sinon,
             } => {
-                let (reg, code) = self.générer_valeur(condition);
+                let (reg, code) = self.générer_valeur_pour_type(condition, &IRType::Booléen);
                 if !code.is_empty() {
                     self.écrire(&code);
                 }
@@ -645,6 +720,12 @@ impl GénérateurLLVM {
         type_attendu: &IRType,
     ) -> (String, String) {
         match val {
+            IRValeur::Entier(v) if matches!(type_attendu, IRType::Décimal) => {
+                (format!("{:.1}", *v as f64), String::new())
+            }
+            IRValeur::Décimal(v) if matches!(type_attendu, IRType::Entier) => {
+                ((*v as i64).to_string(), String::new())
+            }
             IRValeur::Appel(nom, args) => self.générer_appel_typé(nom, args, type_attendu),
             IRValeur::InitialisationDictionnaire {
                 paires,
@@ -711,7 +792,12 @@ impl GénérateurLLVM {
             ),
             IRValeur::Référence(nom) => {
                 let reg = self.reg_suivant();
-                let type_stock = self.type_llvm_stockage(type_attendu);
+                let type_réel = self
+                    .types_variables
+                    .get(nom)
+                    .cloned()
+                    .unwrap_or_else(|| type_attendu.clone());
+                let type_stock = self.type_llvm_stockage(&type_réel);
                 let code = format!(
                     "  {} = load {}, {}* {}\n",
                     reg,
@@ -719,11 +805,89 @@ impl GénérateurLLVM {
                     type_stock,
                     self.nom_var_llvm(nom)
                 );
-                (reg, code)
+                match (&type_réel, type_attendu) {
+                    (IRType::Entier, IRType::Décimal) => {
+                        let out = self.reg_suivant();
+                        (
+                            out.clone(),
+                            format!("{}  {} = sitofp i64 {} to double\n", code, out, reg),
+                        )
+                    }
+                    (IRType::Décimal, IRType::Entier) => {
+                        let out = self.reg_suivant();
+                        (
+                            out.clone(),
+                            format!("{}  {} = fptosi double {} to i64\n", code, out, reg),
+                        )
+                    }
+                    (IRType::Booléen, IRType::Entier) => {
+                        let out = self.reg_suivant();
+                        (
+                            out.clone(),
+                            format!("{}  {} = zext i1 {} to i64\n", code, out, reg),
+                        )
+                    }
+                    (IRType::Entier, IRType::Booléen) => {
+                        let out = self.reg_suivant();
+                        (
+                            out.clone(),
+                            format!("{}  {} = icmp ne i64 {}, 0\n", code, out, reg),
+                        )
+                    }
+                    _ => (reg, code),
+                }
             }
             IRValeur::Membre { .. } => self.générer_valeur_membre_typé(val, type_attendu),
             IRValeur::Transtypage(source, type_cible) => {
                 self.générer_transtypage_typé(source, type_cible)
+            }
+            IRValeur::Opération(op, gauche, droite) => {
+                let op_comparaison = Self::opération_est_comparaison(op);
+                let type_op = if op_comparaison {
+                    if self.valeur_contient_decimal(gauche)
+                        || droite
+                            .as_ref()
+                            .map_or(false, |d| self.valeur_contient_decimal(d))
+                    {
+                        IRType::Décimal
+                    } else {
+                        IRType::Entier
+                    }
+                } else if matches!(type_attendu, IRType::Décimal)
+                    || self.valeur_contient_decimal(gauche)
+                    || droite
+                        .as_ref()
+                        .map_or(false, |d| self.valeur_contient_decimal(d))
+                {
+                    IRType::Décimal
+                } else {
+                    IRType::Entier
+                };
+
+                match droite {
+                    Some(droite_val) => {
+                        let (g_reg, g_code) = self.générer_valeur_pour_type(gauche, &type_op);
+                        let (d_reg, d_code) = self.générer_valeur_pour_type(droite_val, &type_op);
+                        let mut code = String::new();
+                        code.push_str(&g_code);
+                        code.push_str(&d_code);
+                        let reg = self.reg_suivant();
+                        code.push_str(&self.opération_llvm_typée(op, &reg, &g_reg, &d_reg, &type_op));
+                        (reg, code)
+                    }
+                    None => {
+                        let type_unaire = if matches!(op, IROp::Non) {
+                            IRType::Booléen
+                        } else {
+                            type_op
+                        };
+                        let (o_reg, o_code) = self.générer_valeur_pour_type(gauche, &type_unaire);
+                        let mut code = o_code;
+                        let reg = self.reg_suivant();
+                        code.push_str(&self.opération_unaire_llvm_typée(op, &reg, &o_reg, &type_unaire));
+                        (reg, code)
+                    }
+                }
             }
             _ => self.générer_valeur(val),
         }
@@ -1339,13 +1503,21 @@ impl GénérateurLLVM {
     fn générer_valeur(&mut self, val: &IRValeur) -> (String, String) {
         match val {
             IRValeur::Entier(v) => (v.to_string(), String::new()),
-            IRValeur::Décimal(v) => (v.to_string(), String::new()),
+            IRValeur::Décimal(v) => {
+                let repr = if v.fract() == 0.0 {
+                    format!("{:.1}", v)
+                } else {
+                    v.to_string()
+                };
+                (repr, String::new())
+            }
             IRValeur::Booléen(v) => ((if *v { 1 } else { 0 }).to_string(), String::new()),
             IRValeur::Texte(v) => {
                 let nom_chaîne = format!(".str_{}", self.compteur_chaînes);
                 self.compteur_chaînes += 1;
                 let contenu_llvm = self.échapper_chaîne_llvm(v);
-                self.chaînes.push((nom_chaîne.clone(), contenu_llvm));
+                self.chaînes
+                    .push((nom_chaîne.clone(), contenu_llvm, v.len() + 1));
                 let reg = self.reg_suivant();
                 let code = format!(
                     "  {} = getelementptr [{} x i8], [{} x i8]* @{}, i64 0, i64 0\n",
@@ -1474,6 +1646,34 @@ impl GénérateurLLVM {
     }
 
     fn opération_llvm(&self, op: &IROp, dest: &str, gauche: &str, droite: &str) -> String {
+        self.opération_llvm_typée(op, dest, gauche, droite, &IRType::Entier)
+    }
+
+    fn opération_llvm_typée(
+        &self,
+        op: &IROp,
+        dest: &str,
+        gauche: &str,
+        droite: &str,
+        type_op: &IRType,
+    ) -> String {
+        if matches!(type_op, IRType::Décimal) {
+            return match op {
+                IROp::Ajouter => format!("  {} = fadd double {}, {}\n", dest, gauche, droite),
+                IROp::Soustraire => format!("  {} = fsub double {}, {}\n", dest, gauche, droite),
+                IROp::Multiplier => format!("  {} = fmul double {}, {}\n", dest, gauche, droite),
+                IROp::Diviser => format!("  {} = fdiv double {}, {}\n", dest, gauche, droite),
+                IROp::Modulo => format!("  {} = frem double {}, {}\n", dest, gauche, droite),
+                IROp::Égal => format!("  {} = fcmp oeq double {}, {}\n", dest, gauche, droite),
+                IROp::Différent => format!("  {} = fcmp one double {}, {}\n", dest, gauche, droite),
+                IROp::Inférieur => format!("  {} = fcmp olt double {}, {}\n", dest, gauche, droite),
+                IROp::Supérieur => format!("  {} = fcmp ogt double {}, {}\n", dest, gauche, droite),
+                IROp::InférieurÉgal => format!("  {} = fcmp ole double {}, {}\n", dest, gauche, droite),
+                IROp::SupérieurÉgal => format!("  {} = fcmp oge double {}, {}\n", dest, gauche, droite),
+                _ => format!("  {} = fadd double 0.0, 0.0\n", dest),
+            };
+        }
+
         match op {
             IROp::Ajouter => format!("  {} = add i64 {}, {}\n", dest, gauche, droite),
             IROp::Soustraire => format!("  {} = sub i64 {}, {}\n", dest, gauche, droite),
@@ -1494,6 +1694,29 @@ impl GénérateurLLVM {
     }
 
     fn opération_unaire_llvm(&self, op: &IROp, dest: &str, opérande: &str) -> String {
+        self.opération_unaire_llvm_typée(op, dest, opérande, &IRType::Entier)
+    }
+
+    fn opération_unaire_llvm_typée(
+        &self,
+        op: &IROp,
+        dest: &str,
+        opérande: &str,
+        type_op: &IRType,
+    ) -> String {
+        if matches!(type_op, IRType::Décimal) {
+            return match op {
+                IROp::Soustraire => format!("  {} = fsub double 0.0, {}\n", dest, opérande),
+                _ => format!("  {} = fadd double 0.0, {}\n", dest, opérande),
+            };
+        }
+        if matches!(type_op, IRType::Booléen) {
+            return match op {
+                IROp::Non => format!("  {} = xor i1 {}, 1\n", dest, opérande),
+                _ => format!("  {} = add i1 0, {}\n", dest, opérande),
+            };
+        }
+
         match op {
             IROp::Soustraire => format!("  {} = sub i64 0, {}\n", dest, opérande),
             IROp::Non => format!("  {} = xor i1 {}, 1\n", dest, opérande),
@@ -1504,7 +1727,13 @@ impl GénérateurLLVM {
     fn valeur_constante_llvm(&self, val: &IRValeur) -> String {
         match val {
             IRValeur::Entier(v) => v.to_string(),
-            IRValeur::Décimal(v) => v.to_string(),
+            IRValeur::Décimal(v) => {
+                if v.fract() == 0.0 {
+                    format!("{:.1}", v)
+                } else {
+                    v.to_string()
+                }
+            }
             IRValeur::Booléen(v) => (if *v { 1 } else { 0 }).to_string(),
             IRValeur::Nul => "null".to_string(),
             _ => "0".to_string(),
@@ -1533,18 +1762,16 @@ impl GénérateurLLVM {
 
     fn échapper_chaîne_llvm(&self, s: &str) -> String {
         let mut résultat = String::new();
-        for c in s.chars() {
-            match c {
-                '\n' => résultat.push_str("\\0A"),
-                '\t' => résultat.push_str("\\09"),
-                '\r' => résultat.push_str("\\0D"),
-                '\\' => résultat.push_str("\\5C"),
-                '"' => résultat.push_str("\\22"),
-                '\0' => résultat.push_str("\\00"),
-                c if c as u32 > 127 => {
-                    résultat.push_str(&format!("\\{:02X}", c as u32));
-                }
-                c => résultat.push(c),
+        for b in s.as_bytes() {
+            match *b {
+                b'\n' => résultat.push_str("\\0A"),
+                b'\t' => résultat.push_str("\\09"),
+                b'\r' => résultat.push_str("\\0D"),
+                b'\\' => résultat.push_str("\\5C"),
+                b'"' => résultat.push_str("\\22"),
+                0 => résultat.push_str("\\00"),
+                0x20..=0x7E => résultat.push(*b as char),
+                _ => résultat.push_str(&format!("\\{:02X}", b)),
             }
         }
         résultat

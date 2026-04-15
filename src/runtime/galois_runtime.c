@@ -694,6 +694,19 @@ gal_entier gal_aléatoire_entier(gal_entier min, gal_entier max) {
     return min + rand() % (max - min + 1);
 }
 
+// Alias ASCII pour les appels sans accents.
+void gal_aleatoire_graine(gal_entier graine) {
+    gal_aléatoire_graine(graine);
+}
+
+gal_décimal gal_aleatoire() {
+    return gal_aléatoire();
+}
+
+gal_entier gal_aleatoire_entier(gal_entier min, gal_entier max) {
+    return gal_aléatoire_entier(min, max);
+}
+
 // ===== Fonctions utilitaires =====
 
 gal_entier gal_pgcd(gal_entier a, gal_entier b) {

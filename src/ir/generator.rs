@@ -119,6 +119,17 @@ impl GénérateurIR {
                 }
                 ExprAST::AccèsMembre { objet, membre, .. } => {
                     if let Some(type_obj) = self.type_statique_expression(objet) {
+                        if let Type::Module(nom_module) = &type_obj {
+                            if let Some(sym) = self.table.chercher(nom_module) {
+                                if let GenreSymbole::Module { symboles } = &sym.genre {
+                                    if let Some(GenreSymbole::Fonction { type_retour, .. }) =
+                                        symboles.get(membre)
+                                    {
+                                        return IRType::from(type_retour);
+                                    }
+                                }
+                            }
+                        }
                         if let Some((_, type_retour, _, _, _)) =
                             self.signature_méthode_depuis_type(&type_obj, membre)
                         {
@@ -190,10 +201,10 @@ impl GénérateurIR {
             return Some(t.clone());
         }
         self.table.chercher(nom).and_then(|symbole| {
-            if let GenreSymbole::Variable { type_sym, .. } = &symbole.genre {
-                Some(type_sym.clone())
-            } else {
-                None
+            match &symbole.genre {
+                GenreSymbole::Variable { type_sym, .. } => Some(type_sym.clone()),
+                GenreSymbole::Module { .. } => Some(Type::Module(nom.to_string())),
+                _ => None,
             }
         })
     }
@@ -206,6 +217,35 @@ impl GénérateurIR {
             ExprAST::LittéralBooléen(_, _) => Some(Type::Booléen),
             ExprAST::LittéralNul(_) => Some(Type::Nul),
             ExprAST::Identifiant(nom, _) => self.type_statique_identifiant(nom),
+            ExprAST::AppelFonction { appelé, .. } => match appelé.as_ref() {
+                ExprAST::Identifiant(nom, _) => self.table.chercher(nom).and_then(|symbole| {
+                    if let GenreSymbole::Fonction { type_retour, .. } = &symbole.genre {
+                        Some(type_retour.clone())
+                    } else {
+                        None
+                    }
+                }),
+                ExprAST::AccèsMembre { objet, membre, .. } => {
+                    let type_obj = self.type_statique_expression(objet)?;
+                    match &type_obj {
+                        Type::Module(nom_module) => self.table.chercher(nom_module).and_then(|sym| {
+                            if let GenreSymbole::Module { symboles } = &sym.genre {
+                                if let Some(GenreSymbole::Fonction { type_retour, .. }) =
+                                    symboles.get(membre)
+                                {
+                                    Some(type_retour.clone())
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        }),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            },
             ExprAST::Nouveau { classe, .. } => Some(Type::Classe(classe.clone(), None)),
             ExprAST::InitialisationDictionnaire { paires, .. } => {
                 if let Some((k, v)) = paires.first() {
@@ -253,6 +293,15 @@ impl GénérateurIR {
         match self.type_statique_expression(expr)? {
             Type::Dictionnaire(k, v) => Some((*k, *v)),
             _ => None,
+        }
+    }
+
+    fn nom_fonction_native(&self, nom: &str) -> String {
+        match nom {
+            "aleatoire" => "gal_aleatoire".to_string(),
+            "aleatoire_entier" => "gal_aleatoire_entier".to_string(),
+            "aleatoire_graine" => "gal_aleatoire_graine".to_string(),
+            _ => nom.to_string(),
         }
     }
 
@@ -902,115 +951,12 @@ impl GénérateurIR {
     }
 
     fn générer_bloc(&mut self, bloc: &BlocAST) -> Vec<IRBloc> {
-        let mut instructions = Vec::new();
-        let mut blocs_supplémentaires = Vec::new();
+        let mut blocs = Vec::new();
+        let mut nom_bloc_courant = "entree".to_string();
+        let mut instructions_courantes = Vec::new();
 
         for instr in &bloc.instructions {
             match instr {
-                InstrAST::Déclaration {
-                    nom,
-                    type_ann,
-                    valeur,
-                    ..
-                } => {
-                    let type_ir = self.type_pour_déclaration(nom, type_ann);
-                    let type_local = if let Some(t) = type_ann {
-                        Some(self.convertir_type_ast(t))
-                    } else {
-                        valeur.as_ref().and_then(|v| {
-                            self.type_statique_expression(v).or_else(|| {
-                                self.classe_dynamique_depuis_expr(v)
-                                    .map(|c| Type::Classe(c, None))
-                            })
-                        })
-                    };
-                    if let Some(tl) = type_local {
-                        self.types_locaux.insert(nom.clone(), tl);
-                    }
-                    instructions.push(IRInstruction::Allocation {
-                        nom: nom.clone(),
-                        type_var: type_ir.clone(),
-                    });
-                    if let Some(v) = valeur {
-                        if let Some(classe_dyn) = self.classe_dynamique_depuis_expr(v) {
-                            self.classes_dynamiques.insert(nom.clone(), classe_dyn);
-                        } else {
-                            self.classes_dynamiques.remove(nom);
-                        }
-                        let val = self.générer_expression(v);
-                        instructions.push(IRInstruction::Affecter {
-                            destination: nom.clone(),
-                            valeur: val,
-                            type_var: type_ir,
-                        });
-                    } else {
-                        self.classes_dynamiques.remove(nom);
-                    }
-                }
-                InstrAST::Affectation { cible, valeur, .. } => {
-                    let classe_dyn_valeur = self.classe_dynamique_depuis_expr(valeur);
-                    let val = self.générer_expression(valeur);
-                    match cible {
-                        ExprAST::Identifiant(nom, _) => {
-                            if let Some(classe_dyn) = classe_dyn_valeur {
-                                self.classes_dynamiques.insert(nom.clone(), classe_dyn);
-                            } else {
-                                self.classes_dynamiques.remove(nom);
-                            }
-                            let type_ir = self.chercher_type_var(nom);
-                            instructions.push(IRInstruction::Affecter {
-                                destination: nom.clone(),
-                                valeur: val,
-                                type_var: type_ir,
-                            });
-                        }
-                        ExprAST::AccèsMembre { objet, membre, .. } => {
-                            if let Some(dest_membre) = self.valeur_accès_membre(objet, membre) {
-                                instructions.push(IRInstruction::Stockage {
-                                    destination: dest_membre,
-                                    valeur: val,
-                                });
-                            }
-                        }
-                        ExprAST::AccèsIndice { objet, indice, .. } => {
-                            instructions.push(IRInstruction::Stockage {
-                                destination: self.valeur_accès_indice(objet, indice),
-                                valeur: val,
-                            });
-                        }
-                        _ => {}
-                    }
-                }
-                InstrAST::Expression(expr) => {
-                    let est_afficher = matches!(expr, ExprAST::AppelFonction { appelé, .. } if matches!(appelé.as_ref(), ExprAST::Identifiant(n, _) if n == "afficher"));
-                    if est_afficher {
-                        if let ExprAST::AppelFonction { arguments, .. } = expr {
-                            let args: Vec<IRValeur> = arguments
-                                .iter()
-                                .map(|a| self.générer_expression(a))
-                                .collect();
-                            instructions.push(IRInstruction::AppelFonction {
-                                destination: None,
-                                fonction: "afficher".to_string(),
-                                arguments: args,
-                                type_retour: IRType::Vide,
-                            });
-                        }
-                    } else {
-                        let val = self.générer_expression(expr);
-                        let temp = self.temp_suivant();
-                        let type_ir = self.type_pour_expression(expr);
-                        instructions.push(IRInstruction::Affecter {
-                            destination: temp,
-                            valeur: val,
-                            type_var: type_ir,
-                        });
-                    }
-                }
-                InstrAST::Retourne { valeur, .. } => {
-                    let val = valeur.as_ref().map(|v| self.générer_expression(v));
-                    instructions.push(IRInstruction::Retourner(val));
-                }
                 InstrAST::Si {
                     condition,
                     bloc_alors,
@@ -1023,56 +969,50 @@ impl GénérateurIR {
                     let bloc_sinon_nom = self.bloc_suivant("si_sinon");
                     let bloc_suite_nom = self.bloc_suivant("si_suite");
 
-                    instructions.push(IRInstruction::BranchementConditionnel {
+                    instructions_courantes.push(IRInstruction::BranchementConditionnel {
                         condition: cond,
                         bloc_alors: bloc_alors_nom.clone(),
                         bloc_sinon: bloc_sinon_nom.clone(),
                     });
-
-                    let mut instrs_alors = Vec::new();
-                    for i in &bloc_alors.instructions {
-                        self.générer_instruction_avec_blocs(
-                            i,
-                            &mut instrs_alors,
-                            &mut blocs_supplémentaires,
-                        );
-                    }
-                    let alors_termine_par_retour = instrs_alors
-                        .last()
-                        .map_or(false, |i| matches!(i, IRInstruction::Retourner(_)));
-                    if !alors_termine_par_retour {
-                        instrs_alors.push(IRInstruction::Saut(bloc_suite_nom.clone()));
-                    }
-                    blocs_supplémentaires.push(IRBloc {
-                        nom: bloc_alors_nom,
-                        instructions: instrs_alors,
+                    blocs.push(IRBloc {
+                        nom: nom_bloc_courant.clone(),
+                        instructions: std::mem::take(&mut instructions_courantes),
                     });
 
-                    let mut instrs_sinon = Vec::new();
-                    if let Some(bloc) = bloc_sinon {
-                        for i in &bloc.instructions {
-                            self.générer_instruction_avec_blocs(
-                                i,
-                                &mut instrs_sinon,
-                                &mut blocs_supplémentaires,
-                            );
+                    let mut blocs_alors = self.générer_bloc(bloc_alors);
+                    if let Some(premier) = blocs_alors.first_mut() {
+                        premier.nom = bloc_alors_nom;
+                    }
+                    if let Some(dernier) = blocs_alors.last_mut() {
+                        if !Self::bloc_a_terminateur(&dernier.instructions) {
+                            dernier
+                                .instructions
+                                .push(IRInstruction::Saut(bloc_suite_nom.clone()));
                         }
                     }
-                    let sinon_termine_par_retour = instrs_sinon
-                        .last()
-                        .map_or(false, |i| matches!(i, IRInstruction::Retourner(_)));
-                    if !sinon_termine_par_retour {
-                        instrs_sinon.push(IRInstruction::Saut(bloc_suite_nom.clone()));
-                    }
-                    blocs_supplémentaires.push(IRBloc {
-                        nom: bloc_sinon_nom,
-                        instructions: instrs_sinon,
-                    });
+                    blocs.extend(blocs_alors);
 
-                    blocs_supplémentaires.push(IRBloc {
-                        nom: bloc_suite_nom,
-                        instructions: Vec::new(),
-                    });
+                    let mut blocs_sinon = if let Some(bloc) = bloc_sinon {
+                        self.générer_bloc(bloc)
+                    } else {
+                        vec![IRBloc {
+                            nom: bloc_sinon_nom.clone(),
+                            instructions: Vec::new(),
+                        }]
+                    };
+                    if let Some(premier) = blocs_sinon.first_mut() {
+                        premier.nom = bloc_sinon_nom;
+                    }
+                    if let Some(dernier) = blocs_sinon.last_mut() {
+                        if !Self::bloc_a_terminateur(&dernier.instructions) {
+                            dernier
+                                .instructions
+                                .push(IRInstruction::Saut(bloc_suite_nom.clone()));
+                        }
+                    }
+                    blocs.extend(blocs_sinon);
+
+                    nom_bloc_courant = bloc_suite_nom;
                 }
                 InstrAST::TantQue {
                     condition, bloc, ..
@@ -1081,37 +1021,36 @@ impl GénérateurIR {
                     let corps_bloc = self.bloc_suivant("tantque_corps");
                     let suite_bloc = self.bloc_suivant("tantque_suite");
 
-                    instructions.push(IRInstruction::Saut(cond_bloc.clone()));
+                    instructions_courantes.push(IRInstruction::Saut(cond_bloc.clone()));
+                    blocs.push(IRBloc {
+                        nom: nom_bloc_courant.clone(),
+                        instructions: std::mem::take(&mut instructions_courantes),
+                    });
 
                     let cond = self.générer_expression(condition);
-                    let cond_instrs = vec![IRInstruction::BranchementConditionnel {
-                        condition: cond,
-                        bloc_alors: corps_bloc.clone(),
-                        bloc_sinon: suite_bloc.clone(),
-                    }];
+                    blocs.push(IRBloc {
+                        nom: cond_bloc.clone(),
+                        instructions: vec![IRInstruction::BranchementConditionnel {
+                            condition: cond,
+                            bloc_alors: corps_bloc.clone(),
+                            bloc_sinon: suite_bloc.clone(),
+                        }],
+                    });
 
-                    let mut corps_instrs = Vec::new();
-                    for i in &bloc.instructions {
-                        self.générer_instruction_avec_blocs(
-                            i,
-                            &mut corps_instrs,
-                            &mut blocs_supplémentaires,
-                        );
+                    let mut blocs_corps = self.générer_bloc(bloc);
+                    if let Some(premier) = blocs_corps.first_mut() {
+                        premier.nom = corps_bloc;
                     }
-                    corps_instrs.push(IRInstruction::Saut(cond_bloc.clone()));
+                    if let Some(dernier) = blocs_corps.last_mut() {
+                        if !Self::bloc_a_terminateur(&dernier.instructions) {
+                            dernier
+                                .instructions
+                                .push(IRInstruction::Saut(cond_bloc.clone()));
+                        }
+                    }
+                    blocs.extend(blocs_corps);
 
-                    blocs_supplémentaires.push(IRBloc {
-                        nom: cond_bloc,
-                        instructions: cond_instrs,
-                    });
-                    blocs_supplémentaires.push(IRBloc {
-                        nom: corps_bloc,
-                        instructions: corps_instrs,
-                    });
-                    blocs_supplémentaires.push(IRBloc {
-                        nom: suite_bloc,
-                        instructions: Vec::new(),
-                    });
+                    nom_bloc_courant = suite_bloc;
                 }
                 InstrAST::PourCompteur {
                     variable,
@@ -1121,169 +1060,134 @@ impl GénérateurIR {
                     bloc,
                     ..
                 } => {
-                    self.générer_pour_compteur(
-                        variable,
-                        début,
-                        fin,
-                        pas,
-                        bloc,
-                        &mut instructions,
-                        &mut blocs_supplémentaires,
-                    );
+                    let fin_var = self.temp_suivant();
+                    let pas_var = self.temp_suivant();
+
+                    instructions_courantes.push(IRInstruction::Allocation {
+                        nom: variable.to_string(),
+                        type_var: IRType::Entier,
+                    });
+                    instructions_courantes.push(IRInstruction::Affecter {
+                        destination: variable.to_string(),
+                        valeur: self.générer_expression(début),
+                        type_var: IRType::Entier,
+                    });
+                    instructions_courantes.push(IRInstruction::Allocation {
+                        nom: fin_var.clone(),
+                        type_var: IRType::Entier,
+                    });
+                    instructions_courantes.push(IRInstruction::Affecter {
+                        destination: fin_var.clone(),
+                        valeur: self.générer_expression(fin),
+                        type_var: IRType::Entier,
+                    });
+                    instructions_courantes.push(IRInstruction::Allocation {
+                        nom: pas_var.clone(),
+                        type_var: IRType::Entier,
+                    });
+                    instructions_courantes.push(IRInstruction::Affecter {
+                        destination: pas_var.clone(),
+                        valeur: pas
+                            .as_ref()
+                            .map(|expr| self.générer_expression(expr))
+                            .unwrap_or(IRValeur::Entier(1)),
+                        type_var: IRType::Entier,
+                    });
+
+                    let cond_direction_bloc = self.bloc_suivant("pour_cond_direction");
+                    let cond_pos_bloc = self.bloc_suivant("pour_cond_pos");
+                    let cond_neg_bloc = self.bloc_suivant("pour_cond_neg");
+                    let corps_bloc = self.bloc_suivant("pour_corps");
+                    let suite_bloc = self.bloc_suivant("pour_suite");
+
+                    instructions_courantes.push(IRInstruction::Saut(cond_direction_bloc.clone()));
+                    blocs.push(IRBloc {
+                        nom: nom_bloc_courant.clone(),
+                        instructions: std::mem::take(&mut instructions_courantes),
+                    });
+
+                    blocs.push(IRBloc {
+                        nom: cond_direction_bloc.clone(),
+                        instructions: vec![IRInstruction::BranchementConditionnel {
+                            condition: IRValeur::Opération(
+                                IROp::Inférieur,
+                                Box::new(IRValeur::Référence(pas_var.clone())),
+                                Some(Box::new(IRValeur::Entier(0))),
+                            ),
+                            bloc_alors: cond_neg_bloc.clone(),
+                            bloc_sinon: cond_pos_bloc.clone(),
+                        }],
+                    });
+                    blocs.push(IRBloc {
+                        nom: cond_pos_bloc,
+                        instructions: vec![IRInstruction::BranchementConditionnel {
+                            condition: IRValeur::Opération(
+                                IROp::InférieurÉgal,
+                                Box::new(IRValeur::Référence(variable.to_string())),
+                                Some(Box::new(IRValeur::Référence(fin_var.clone()))),
+                            ),
+                            bloc_alors: corps_bloc.clone(),
+                            bloc_sinon: suite_bloc.clone(),
+                        }],
+                    });
+                    blocs.push(IRBloc {
+                        nom: cond_neg_bloc,
+                        instructions: vec![IRInstruction::BranchementConditionnel {
+                            condition: IRValeur::Opération(
+                                IROp::SupérieurÉgal,
+                                Box::new(IRValeur::Référence(variable.to_string())),
+                                Some(Box::new(IRValeur::Référence(fin_var.clone()))),
+                            ),
+                            bloc_alors: corps_bloc.clone(),
+                            bloc_sinon: suite_bloc.clone(),
+                        }],
+                    });
+
+                    let mut blocs_corps = self.générer_bloc(bloc);
+                    if let Some(premier) = blocs_corps.first_mut() {
+                        premier.nom = corps_bloc;
+                    }
+                    if let Some(dernier) = blocs_corps.last_mut() {
+                        if !Self::bloc_a_terminateur(&dernier.instructions) {
+                            dernier.instructions.push(IRInstruction::Affecter {
+                                destination: variable.to_string(),
+                                valeur: IRValeur::Opération(
+                                    IROp::Ajouter,
+                                    Box::new(IRValeur::Référence(variable.to_string())),
+                                    Some(Box::new(IRValeur::Référence(pas_var))),
+                                ),
+                                type_var: IRType::Entier,
+                            });
+                            dernier
+                                .instructions
+                                .push(IRInstruction::Saut(cond_direction_bloc.clone()));
+                        }
+                    }
+                    blocs.extend(blocs_corps);
+
+                    nom_bloc_courant = suite_bloc;
                 }
                 InstrAST::Interrompre(_) | InstrAST::Continuer(_) => {}
-                _ => {}
+                _ => instructions_courantes.extend(self.générer_instructions_bloc(instr)),
             }
         }
 
-        let mut résultat = vec![IRBloc {
-            nom: "entree".to_string(),
-            instructions,
-        }];
-        résultat.append(&mut blocs_supplémentaires);
-        résultat
+        blocs.push(IRBloc {
+            nom: nom_bloc_courant,
+            instructions: instructions_courantes,
+        });
+        blocs
     }
 
-    fn générer_instruction_avec_blocs(
-        &mut self,
-        instr: &InstrAST,
-        instructions: &mut Vec<IRInstruction>,
-        blocs_supplémentaires: &mut Vec<IRBloc>,
-    ) {
-        match instr {
-            InstrAST::Si { .. } | InstrAST::TantQue { .. } | InstrAST::PourCompteur { .. } => {
-                let bloc_ast = BlocAST {
-                    instructions: vec![instr.clone()],
-                    position: crate::error::Position::nouvelle(1, 1, ""),
-                };
-                let blocs = self.générer_bloc(&bloc_ast);
-                if let Some(first) = blocs.first() {
-                    instructions.extend(first.instructions.clone());
-                }
-                for b in blocs.iter().skip(1) {
-                    blocs_supplémentaires.push(b.clone());
-                }
-            }
-            _ => {
-                instructions.extend(self.générer_instructions_bloc(instr));
-            }
-        }
-    }
-
-    fn générer_pour_compteur(
-        &mut self,
-        variable: &str,
-        début: &ExprAST,
-        fin: &ExprAST,
-        pas: &Option<ExprAST>,
-        bloc: &BlocAST,
-        instructions: &mut Vec<IRInstruction>,
-        blocs_supplémentaires: &mut Vec<IRBloc>,
-    ) {
-        let fin_var = self.temp_suivant();
-        let pas_var = self.temp_suivant();
-
-        instructions.push(IRInstruction::Allocation {
-            nom: variable.to_string(),
-            type_var: IRType::Entier,
-        });
-        instructions.push(IRInstruction::Affecter {
-            destination: variable.to_string(),
-            valeur: self.générer_expression(début),
-            type_var: IRType::Entier,
-        });
-        instructions.push(IRInstruction::Allocation {
-            nom: fin_var.clone(),
-            type_var: IRType::Entier,
-        });
-        instructions.push(IRInstruction::Affecter {
-            destination: fin_var.clone(),
-            valeur: self.générer_expression(fin),
-            type_var: IRType::Entier,
-        });
-        instructions.push(IRInstruction::Allocation {
-            nom: pas_var.clone(),
-            type_var: IRType::Entier,
-        });
-        instructions.push(IRInstruction::Affecter {
-            destination: pas_var.clone(),
-            valeur: pas
-                .as_ref()
-                .map(|expr| self.générer_expression(expr))
-                .unwrap_or(IRValeur::Entier(1)),
-            type_var: IRType::Entier,
-        });
-
-        let cond_direction_bloc = self.bloc_suivant("pour_cond_direction");
-        let cond_pos_bloc = self.bloc_suivant("pour_cond_pos");
-        let cond_neg_bloc = self.bloc_suivant("pour_cond_neg");
-        let corps_bloc = self.bloc_suivant("pour_corps");
-        let suite_bloc = self.bloc_suivant("pour_suite");
-
-        instructions.push(IRInstruction::Saut(cond_direction_bloc.clone()));
-
-        blocs_supplémentaires.push(IRBloc {
-            nom: cond_direction_bloc.clone(),
-            instructions: vec![IRInstruction::BranchementConditionnel {
-                condition: IRValeur::Opération(
-                    IROp::Inférieur,
-                    Box::new(IRValeur::Référence(pas_var.clone())),
-                    Some(Box::new(IRValeur::Entier(0))),
-                ),
-                bloc_alors: cond_neg_bloc.clone(),
-                bloc_sinon: cond_pos_bloc.clone(),
-            }],
-        });
-
-        blocs_supplémentaires.push(IRBloc {
-            nom: cond_pos_bloc,
-            instructions: vec![IRInstruction::BranchementConditionnel {
-                condition: IRValeur::Opération(
-                    IROp::InférieurÉgal,
-                    Box::new(IRValeur::Référence(variable.to_string())),
-                    Some(Box::new(IRValeur::Référence(fin_var.clone()))),
-                ),
-                bloc_alors: corps_bloc.clone(),
-                bloc_sinon: suite_bloc.clone(),
-            }],
-        });
-
-        blocs_supplémentaires.push(IRBloc {
-            nom: cond_neg_bloc,
-            instructions: vec![IRInstruction::BranchementConditionnel {
-                condition: IRValeur::Opération(
-                    IROp::SupérieurÉgal,
-                    Box::new(IRValeur::Référence(variable.to_string())),
-                    Some(Box::new(IRValeur::Référence(fin_var.clone()))),
-                ),
-                bloc_alors: corps_bloc.clone(),
-                bloc_sinon: suite_bloc.clone(),
-            }],
-        });
-
-        let mut corps_instrs = Vec::new();
-        for i in &bloc.instructions {
-            self.générer_instruction_avec_blocs(i, &mut corps_instrs, blocs_supplémentaires);
-        }
-        corps_instrs.push(IRInstruction::Affecter {
-            destination: variable.to_string(),
-            valeur: IRValeur::Opération(
-                IROp::Ajouter,
-                Box::new(IRValeur::Référence(variable.to_string())),
-                Some(Box::new(IRValeur::Référence(pas_var))),
-            ),
-            type_var: IRType::Entier,
-        });
-        corps_instrs.push(IRInstruction::Saut(cond_direction_bloc));
-        blocs_supplémentaires.push(IRBloc {
-            nom: corps_bloc,
-            instructions: corps_instrs,
-        });
-
-        blocs_supplémentaires.push(IRBloc {
-            nom: suite_bloc,
-            instructions: Vec::new(),
-        });
+    fn bloc_a_terminateur(instructions: &[IRInstruction]) -> bool {
+        instructions.last().map_or(false, |instr| {
+            matches!(
+                instr,
+                IRInstruction::Retourner(_)
+                    | IRInstruction::Saut(_)
+                    | IRInstruction::BranchementConditionnel { .. }
+            )
+        })
     }
 
     fn générer_instructions_bloc(&mut self, instr: &InstrAST) -> Vec<IRInstruction> {
@@ -1295,7 +1199,6 @@ impl GénérateurIR {
                 valeur,
                 ..
             } => {
-                let type_ir = self.type_pour_déclaration(nom, type_ann);
                 let type_local = if let Some(t) = type_ann {
                     Some(self.convertir_type_ast(t))
                 } else {
@@ -1305,6 +1208,11 @@ impl GénérateurIR {
                                 .map(|c| Type::Classe(c, None))
                         })
                     })
+                };
+                let type_ir = if let Some(tl) = &type_local {
+                    IRType::from(tl)
+                } else {
+                    self.type_pour_déclaration(nom, type_ann)
                 };
                 if let Some(tl) = type_local {
                     self.types_locaux.insert(nom.clone(), tl);
@@ -1478,7 +1386,7 @@ impl GénérateurIR {
                         .iter()
                         .map(|a| self.générer_expression(a))
                         .collect();
-                    IRValeur::Appel(n.clone(), args)
+                    IRValeur::Appel(self.nom_fonction_native(n), args)
                 }
                 ExprAST::Base(_) => {
                     let parent = self.classe_courante.as_ref().and_then(|classe| {
@@ -1508,6 +1416,10 @@ impl GénérateurIR {
                         .collect();
 
                     if let Some(type_obj) = self.type_statique_expression(objet) {
+                        if matches!(&type_obj, Type::Module(_)) {
+                            return IRValeur::Appel(self.nom_fonction_native(membre), args_ir);
+                        }
+
                         if let Some((types_args, type_retour, dynamique, base, est_interface)) =
                             self.signature_méthode_depuis_type(&type_obj, membre)
                         {
@@ -1537,11 +1449,7 @@ impl GénérateurIR {
                                 IRValeur::Appel(nom_fn, args)
                             }
                         } else {
-                            IRValeur::Appel(membre.clone(), {
-                                let mut args = vec![objet_ir];
-                                args.extend(args_ir);
-                                args
-                            })
+                            IRValeur::Appel(self.nom_fonction_native(membre), args_ir)
                         }
                     } else {
                         let classe_obj = self.classe_pour_expression(objet);
@@ -1550,7 +1458,7 @@ impl GénérateurIR {
                                 self.classe_impl_méthode(&classe, membre).unwrap_or(classe);
                             format!("{}_{}", classe_impl, membre)
                         } else {
-                            membre.clone()
+                            self.nom_fonction_native(membre)
                         };
 
                         let mut args: Vec<IRValeur> = vec![objet_ir];
