@@ -168,14 +168,24 @@ impl Parser {
                 } else {
                     None
                 };
+
+                // Une méthode abstraite peut être déclarée sans corps (référence)
+                // ou avec un corps (tests de validation). Dans ce dernier cas,
+                // on le consomme pour garder le parseur synchronisé.
+                let mut corps = BlocAST {
+                    instructions: Vec::new(),
+                    position: position_fn.clone(),
+                };
+                self.sauter_nouvelles_lignes();
+                if self.token_actuel() == &Token::Indentation {
+                    corps = self.parser_bloc()?;
+                }
+
                 DéclarationFonctionAST {
                     nom,
                     paramètres,
                     type_retour,
-                    corps: BlocAST {
-                        instructions: Vec::new(),
-                        position: position_fn.clone(),
-                    },
+                    corps,
                     est_récursive: false,
                     est_async: false,
                     position: position_fn,
