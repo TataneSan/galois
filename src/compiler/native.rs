@@ -4,6 +4,8 @@ use std::process::Command;
 
 use crate::error::{Erreur, Position, Resultat};
 
+const RUNTIME_C_SOURCE: &str = include_str!("../runtime/galois_runtime.c");
+
 pub struct OptionsCompilation {
     pub fichier_entrée: PathBuf,
     pub fichier_sortie: Option<PathBuf>,
@@ -104,22 +106,22 @@ impl CompilateurNatif {
     }
 
     fn compiler_runtime(&self) -> Resultat<PathBuf> {
-        let fichier_runtime_c = Path::new("src/runtime/galois_runtime.c");
+        let fichier_runtime_c = self.répertoire_travail.join("galois_runtime.c");
         let fichier_objet = self.répertoire_travail.join("galois_runtime.o");
 
-        if !fichier_runtime_c.exists() {
-            return Err(Erreur::runtime(
+        fs::write(&fichier_runtime_c, RUNTIME_C_SOURCE).map_err(|e| {
+            Erreur::runtime(
                 Position::nouvelle(1, 1, ""),
-                "Fichier runtime C introuvable",
-            ));
-        }
+                &format!("Impossible de préparer le runtime C: {}", e),
+            )
+        })?;
 
         let clang = self.trouver_compilateur()?;
 
         let mut cmd = Command::new(&clang);
         cmd.arg("-c");
         cmd.arg("-o").arg(&fichier_objet);
-        cmd.arg(fichier_runtime_c);
+        cmd.arg(&fichier_runtime_c);
         cmd.arg("-lm");
         cmd.arg("-Wall");
 
