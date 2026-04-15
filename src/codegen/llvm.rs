@@ -93,6 +93,34 @@ impl GénérateurLLVM {
         .to_string()
     }
 
+    fn type_ir_valeur(&self, val: &IRValeur) -> IRType {
+        match val {
+            IRValeur::Entier(_) => IRType::Entier,
+            IRValeur::Décimal(_) => IRType::Décimal,
+            IRValeur::Booléen(_) => IRType::Booléen,
+            IRValeur::Texte(_) => IRType::Texte,
+            IRValeur::Nul => IRType::Nul,
+            IRValeur::Appel(nom, _) => self
+                .signatures_fonctions
+                .get(nom)
+                .map(|(_, t)| t.clone())
+                .unwrap_or(IRType::Entier),
+            IRValeur::AppelMéthode { type_retour, .. } => type_retour.clone(),
+            IRValeur::Membre { type_membre, .. } => type_membre.clone(),
+            IRValeur::AccèsDictionnaire { type_valeur, .. } => type_valeur.clone(),
+            _ => IRType::Entier,
+        }
+    }
+
+    fn fonction_runtime_affichage(&self, t: &IRType) -> (&'static str, &'static str) {
+        match t {
+            IRType::Décimal => ("gal_afficher_decimal", "double"),
+            IRType::Booléen => ("gal_afficher_bool", "i1"),
+            IRType::Texte => ("gal_afficher_texte", "i8*"),
+            _ => ("gal_afficher_entier", "i64"),
+        }
+    }
+
     pub fn générer(&mut self, module: &IRModule) -> Vec<u8> {
         self.sortie.clear();
         self.chaînes.clear();
@@ -528,13 +556,15 @@ impl GénérateurLLVM {
             } => {
                 if fonction == "afficher" {
                     if let Some(arg) = arguments.first() {
-                        let (arg_reg, arg_code) = self.générer_valeur(arg);
+                        let type_arg = self.type_ir_valeur(arg);
+                        let (arg_reg, arg_code) = self.générer_valeur_pour_type(arg, &type_arg);
                         if !arg_code.is_empty() {
                             self.écrire(&arg_code);
                         }
+                        let (fn_aff, type_aff) = self.fonction_runtime_affichage(&type_arg);
                         self.écrire(&format!(
-                            "  call void @gal_afficher_entier(i64 {})\n",
-                            arg_reg
+                            "  call void @{}({} {})\n",
+                            fn_aff, type_aff, arg_reg
                         ));
                     }
                     return;
@@ -684,13 +714,15 @@ impl GénérateurLLVM {
 
         if nom == "afficher" {
             if let Some(premier) = args.first() {
-                let (arg_reg, arg_code) = self.générer_valeur(premier);
+                let type_arg = self.type_ir_valeur(premier);
+                let (arg_reg, arg_code) = self.générer_valeur_pour_type(premier, &type_arg);
                 if !arg_code.is_empty() {
                     code.push_str(&arg_code);
                 }
+                let (fn_aff, type_aff) = self.fonction_runtime_affichage(&type_arg);
                 code.push_str(&format!(
-                    "  call void @gal_afficher_entier(i64 {})\n",
-                    arg_reg
+                    "  call void @{}({} {})\n",
+                    fn_aff, type_aff, arg_reg
                 ));
             }
             return ("0".to_string(), code);
