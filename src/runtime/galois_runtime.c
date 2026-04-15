@@ -274,6 +274,47 @@ gal_texte* gal_texte_concaténer(gal_texte* a, gal_texte* b) {
     return résultat;
 }
 
+static char* gal_dupliquer_chaine(const char* s) {
+    if (!s) s = "";
+    size_t len = strlen(s);
+    char* out = (char*)malloc(len + 1);
+    if (!out) return NULL;
+    memcpy(out, s, len);
+    out[len] = '\0';
+    return out;
+}
+
+char* gal_concat_texte(const char* a, const char* b) {
+    if (!a) a = "";
+    if (!b) b = "";
+    size_t la = strlen(a);
+    size_t lb = strlen(b);
+    char* out = (char*)malloc(la + lb + 1);
+    if (!out) return NULL;
+    memcpy(out, a, la);
+    memcpy(out + la, b, lb);
+    out[la + lb] = '\0';
+    return out;
+}
+
+char* gal_entier_vers_texte(int64_t v) {
+    char tampon[64];
+    int n = snprintf(tampon, sizeof(tampon), "%ld", (long)v);
+    if (n < 0) return gal_dupliquer_chaine("0");
+    return gal_dupliquer_chaine(tampon);
+}
+
+char* gal_decimal_vers_texte(double v) {
+    char tampon[128];
+    int n = snprintf(tampon, sizeof(tampon), "%.15g", v);
+    if (n < 0) return gal_dupliquer_chaine("0");
+    return gal_dupliquer_chaine(tampon);
+}
+
+char* gal_bool_vers_texte(_Bool v) {
+    return gal_dupliquer_chaine(v ? "vrai" : "faux");
+}
+
 // ===== Opérations sur les listes =====
 
 gal_liste* gal_liste_nouveau(int64_t taille_élément) {

@@ -72,7 +72,39 @@ impl GénérateurIR {
             ExprAST::LittéralBooléen(_, _) => IRType::Booléen,
             ExprAST::LittéralNul(_) => IRType::Nul,
             ExprAST::Identifiant(nom, _) => self.chercher_type_var(nom),
-            ExprAST::Binaire { .. } => IRType::Entier,
+            ExprAST::Binaire {
+                op, gauche, droite, ..
+            } => match op {
+                OpBinaire::Égal
+                | OpBinaire::Différent
+                | OpBinaire::Inférieur
+                | OpBinaire::Supérieur
+                | OpBinaire::InférieurÉgal
+                | OpBinaire::SupérieurÉgal
+                | OpBinaire::Et
+                | OpBinaire::Ou => IRType::Booléen,
+                OpBinaire::Plus => {
+                    let tg = self.type_pour_expression(gauche);
+                    let td = self.type_pour_expression(droite);
+                    if matches!(tg, IRType::Texte) || matches!(td, IRType::Texte) {
+                        IRType::Texte
+                    } else if matches!(tg, IRType::Décimal) || matches!(td, IRType::Décimal) {
+                        IRType::Décimal
+                    } else {
+                        IRType::Entier
+                    }
+                }
+                OpBinaire::Pipe => self.type_pour_expression(droite),
+                _ => {
+                    let tg = self.type_pour_expression(gauche);
+                    let td = self.type_pour_expression(droite);
+                    if matches!(tg, IRType::Décimal) || matches!(td, IRType::Décimal) {
+                        IRType::Décimal
+                    } else {
+                        IRType::Entier
+                    }
+                }
+            },
             ExprAST::AppelFonction { appelé, .. } => match appelé.as_ref() {
                 ExprAST::Identifiant(n, _) => {
                     if let Some(symbole) = self.table.chercher(n) {
@@ -135,7 +167,21 @@ impl GénérateurIR {
                     IRType::Dictionnaire(Box::new(IRType::Entier), Box::new(IRType::Entier))
                 }
             }
+            ExprAST::Transtypage { type_cible, .. } | ExprAST::As { type_cible, .. } => {
+                self.convertir_type_ir(&self.convertir_type_ast(type_cible))
+            }
             _ => IRType::Entier,
+        }
+    }
+
+    fn convertir_vers_texte_ir(&mut self, valeur: IRValeur, type_source: &IRType) -> IRValeur {
+        match type_source {
+            IRType::Texte => valeur,
+            IRType::Entier => IRValeur::Appel("gal_entier_vers_texte".to_string(), vec![valeur]),
+            IRType::Décimal => IRValeur::Appel("gal_decimal_vers_texte".to_string(), vec![valeur]),
+            IRType::Booléen => IRValeur::Appel("gal_bool_vers_texte".to_string(), vec![valeur]),
+            IRType::Nul => IRValeur::Texte("nul".to_string()),
+            _ => valeur,
         }
     }
 
@@ -1207,6 +1253,17 @@ impl GénérateurIR {
             } => {
                 let g = self.générer_expression(gauche);
                 let d = self.générer_expression(droite);
+
+                if matches!(op, OpBinaire::Plus) {
+                    let tg = self.type_pour_expression(gauche);
+                    let td = self.type_pour_expression(droite);
+                    if matches!(tg, IRType::Texte) || matches!(td, IRType::Texte) {
+                        let gtxt = self.convertir_vers_texte_ir(g, &tg);
+                        let dtxt = self.convertir_vers_texte_ir(d, &td);
+                        return IRValeur::Appel("gal_concat_texte".to_string(), vec![gtxt, dtxt]);
+                    }
+                }
+
                 let ir_op = match op {
                     OpBinaire::Plus => IROp::Ajouter,
                     OpBinaire::Moins => IROp::Soustraire,
@@ -1405,7 +1462,21 @@ impl GénérateurIR {
                 }
             }
             ExprAST::InitialisationTuple { .. } => IRValeur::Nul,
-            ExprAST::Transtypage { .. } | ExprAST::As { .. } => IRValeur::Nul,
+            ExprAST::Transtypage {
+                expr, type_cible, ..
+            }
+            | ExprAST::As {
+                expr, type_cible, ..
+            } => {
+                let val = self.générer_expression(expr);
+                let type_src = self.type_pour_expression(expr);
+                let type_dst = self.convertir_type_ir(&self.convertir_type_ast(type_cible));
+                if matches!(type_dst, IRType::Texte) {
+                    self.convertir_vers_texte_ir(val, &type_src)
+                } else {
+                    IRValeur::Transtypage(Box::new(val), type_dst)
+                }
+            }
             ExprAST::Nouveau {
                 classe, arguments, ..
             } => {

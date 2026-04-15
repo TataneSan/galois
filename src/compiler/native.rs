@@ -59,7 +59,7 @@ impl CompilateurNatif {
     }
 
     fn compiler_vers_objet(&self, fichier_ll: &Path, fichier_objet: &Path) -> Resultat<()> {
-        let clang = self.trouver_compilateur()?;
+        let clang = self.trouver_compilateur_llvm()?;
 
         let mut cmd = Command::new(&clang);
         cmd.arg("-c");
@@ -85,6 +85,18 @@ impl CompilateurNatif {
             return Err(Erreur::runtime(
                 Position::nouvelle(1, 1, ""),
                 &format!("Erreur de compilation LLVM IR:\n{}", stderr),
+            ));
+        }
+
+        if !fichier_objet.exists() {
+            let stderr = String::from_utf8_lossy(&résultat.stderr);
+            return Err(Erreur::runtime(
+                Position::nouvelle(1, 1, ""),
+                &format!(
+                    "Le compilateur LLVM n'a pas produit le fichier objet attendu: {}\n{}",
+                    fichier_objet.display(),
+                    stderr
+                ),
             ));
         }
 
@@ -190,6 +202,18 @@ impl CompilateurNatif {
         Err(Erreur::runtime(
             Position::nouvelle(1, 1, ""),
             "Aucun compilateur C trouvé (clang, gcc, cc)",
+        ))
+    }
+
+    fn trouver_compilateur_llvm(&self) -> Resultat<String> {
+        for compilateur in &["clang", "clang-18", "clang-17", "clang-16", "clang-15"] {
+            if Command::new(compilateur).arg("--version").output().is_ok() {
+                return Ok(compilateur.to_string());
+            }
+        }
+        Err(Erreur::runtime(
+            Position::nouvelle(1, 1, ""),
+            "Aucun compilateur LLVM trouvé (clang requis pour compiler le code .ll)",
         ))
     }
 

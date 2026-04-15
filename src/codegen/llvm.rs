@@ -100,6 +100,7 @@ impl GénérateurLLVM {
             IRValeur::Booléen(_) => IRType::Booléen,
             IRValeur::Texte(_) => IRType::Texte,
             IRValeur::Nul => IRType::Nul,
+            IRValeur::Transtypage(_, type_cible) => type_cible.clone(),
             IRValeur::Appel(nom, _) => self
                 .signatures_fonctions
                 .get(nom)
@@ -132,6 +133,23 @@ impl GénérateurLLVM {
         self.ids_classes.clear();
         self.dispatch_requis.clear();
         self.dispatch_index.clear();
+
+        self.signatures_fonctions.insert(
+            "gal_concat_texte".to_string(),
+            (vec![IRType::Texte, IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_entier_vers_texte".to_string(),
+            (vec![IRType::Entier], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_decimal_vers_texte".to_string(),
+            (vec![IRType::Décimal], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_bool_vers_texte".to_string(),
+            (vec![IRType::Booléen], IRType::Texte),
+        );
 
         for f in &module.fonctions {
             self.signatures_fonctions.insert(
@@ -196,6 +214,10 @@ impl GénérateurLLVM {
         self.écrire("declare i64 @gal_dict_get_texte(i8*, i8*, i32*)\n");
         self.écrire("declare i64 @gal_dict_get_bool(i8*, i8, i32*)\n");
         self.écrire("declare i64 @gal_dict_get_nul(i8*, i32*)\n\n");
+        self.écrire("declare i8* @gal_concat_texte(i8*, i8*)\n");
+        self.écrire("declare i8* @gal_entier_vers_texte(i64)\n");
+        self.écrire("declare i8* @gal_decimal_vers_texte(double)\n");
+        self.écrire("declare i8* @gal_bool_vers_texte(i1)\n\n");
 
         self.générer_fonctions_runtime();
 
@@ -700,7 +722,73 @@ impl GénérateurLLVM {
                 (reg, code)
             }
             IRValeur::Membre { .. } => self.générer_valeur_membre_typé(val, type_attendu),
+            IRValeur::Transtypage(source, type_cible) => {
+                self.générer_transtypage_typé(source, type_cible)
+            }
             _ => self.générer_valeur(val),
+        }
+    }
+
+    fn générer_transtypage_typé(
+        &mut self,
+        source: &IRValeur,
+        type_cible: &IRType,
+    ) -> (String, String) {
+        let type_source = self.type_ir_valeur(source);
+        let (src_reg, src_code) = self.générer_valeur_pour_type(source, &type_source);
+        let mut code = src_code;
+
+        match (&type_source, type_cible) {
+            (IRType::Entier, IRType::Décimal) => {
+                let out = self.reg_suivant();
+                code.push_str(&format!("  {} = sitofp i64 {} to double\n", out, src_reg));
+                (out, code)
+            }
+            (IRType::Décimal, IRType::Entier) => {
+                let out = self.reg_suivant();
+                code.push_str(&format!("  {} = fptosi double {} to i64\n", out, src_reg));
+                (out, code)
+            }
+            (IRType::Booléen, IRType::Entier) => {
+                let out = self.reg_suivant();
+                code.push_str(&format!("  {} = zext i1 {} to i64\n", out, src_reg));
+                (out, code)
+            }
+            (IRType::Entier, IRType::Booléen) => {
+                let out = self.reg_suivant();
+                code.push_str(&format!("  {} = icmp ne i64 {}, 0\n", out, src_reg));
+                (out, code)
+            }
+            (IRType::Texte, IRType::Entier) => {
+                let out = self.reg_suivant();
+                code.push_str(&format!("  {} = call i64 @atoi(i8* {})\n", out, src_reg));
+                (out, code)
+            }
+            (IRType::Texte, IRType::Décimal) => {
+                let out = self.reg_suivant();
+                code.push_str(&format!("  {} = call double @atof(i8* {})\n", out, src_reg));
+                (out, code)
+            }
+            (_, IRType::Texte) => {
+                let fn_nom = match type_source {
+                    IRType::Entier => Some("gal_entier_vers_texte"),
+                    IRType::Décimal => Some("gal_decimal_vers_texte"),
+                    IRType::Booléen => Some("gal_bool_vers_texte"),
+                    _ => None,
+                };
+                if let Some(fn_nom) = fn_nom {
+                    let out = self.reg_suivant();
+                    let ty = self.type_llvm_stockage(&type_source);
+                    code.push_str(&format!(
+                        "  {} = call i8* @{}({} {})\n",
+                        out, fn_nom, ty, src_reg
+                    ));
+                    (out, code)
+                } else {
+                    (src_reg, code)
+                }
+            }
+            _ => (src_reg, code),
         }
     }
 
