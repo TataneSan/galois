@@ -672,6 +672,22 @@ int64_t gal_liste_somme_i64(gal_liste* l) {
     return somme;
 }
 
+void gal_afficher_liste_i64(gal_liste* l) {
+    if (!l) {
+        printf("[]\n");
+        return;
+    }
+    printf("[");
+    for (int64_t i = 0; i < l->taille; i++) {
+        int64_t v = gal_liste_obtenir_i64(l, i);
+        printf("%lld", (long long)v);
+        if (i + 1 < l->taille) {
+            printf(", ");
+        }
+    }
+    printf("]\n");
+}
+
 int8_t gal_liste_est_vide(gal_liste* l) {
     return (!l || l->taille == 0) ? 1 : 0;
 }

@@ -191,6 +191,9 @@ impl GénérateurLLVM {
             IRType::Décimal => ("gal_afficher_decimal", "double"),
             IRType::Booléen => ("gal_afficher_bool", "i1"),
             IRType::Texte => ("gal_afficher_texte", "i8*"),
+            IRType::Liste(élément) if matches!(élément.as_ref(), IRType::Entier) => {
+                ("gal_afficher_liste_i64", "i8*")
+            }
             _ => ("gal_afficher_entier", "i64"),
         }
     }
@@ -949,6 +952,7 @@ impl GénérateurLLVM {
         self.écrire("declare void @gal_liste_ajouter(i8*, i8*)\n");
         self.écrire("declare i8* @gal_liste_obtenir(i8*, i64)\n");
         self.écrire("declare i64 @gal_liste_taille(i8*)\n");
+        self.écrire("declare void @gal_afficher_liste_i64(i8*)\n");
         self.écrire("declare i1 @gal_liste_est_vide(i8*)\n");
         self.écrire("declare i8* @gal_liste_filtrer_i64(i8*, i64, i64, i64)\n");
         self.écrire("declare i8* @gal_liste_transformer_i64(i8*, i64, i64)\n");
@@ -1504,9 +1508,35 @@ impl GénérateurLLVM {
                             self.écrire(&arg_code);
                         }
                         let (fn_aff, type_aff) = self.fonction_runtime_affichage(&type_arg);
+                        let type_src = self.type_llvm_stockage(&type_arg);
+                        let arg_aff = if type_aff == "i64" && type_src != "i64" {
+                            if type_src.ends_with('*') {
+                                let cast = self.reg_suivant();
+                                self.écrire(&format!(
+                                    "  {} = ptrtoint {} {} to i64\n",
+                                    cast, type_src, arg_reg
+                                ));
+                                cast
+                            } else if type_src == "double" {
+                                let cast = self.reg_suivant();
+                                self.écrire(&format!(
+                                    "  {} = fptosi double {} to i64\n",
+                                    cast, arg_reg
+                                ));
+                                cast
+                            } else if type_src == "i1" {
+                                let cast = self.reg_suivant();
+                                self.écrire(&format!("  {} = zext i1 {} to i64\n", cast, arg_reg));
+                                cast
+                            } else {
+                                "0".to_string()
+                            }
+                        } else {
+                            arg_reg
+                        };
                         self.écrire(&format!(
                             "  call void @{}({} {})\n",
-                            fn_aff, type_aff, arg_reg
+                            fn_aff, type_aff, arg_aff
                         ));
                     }
                     return;

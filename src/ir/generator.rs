@@ -1598,6 +1598,32 @@ impl GénérateurIR {
                 } => {
                     let fin_var = self.temp_suivant();
                     let pas_var = self.temp_suivant();
+                    let début_type = self.type_pour_expression(début);
+                    let fin_type = self.type_pour_expression(fin);
+                    let début_valeur_brute = self.générer_expression(début);
+                    let fin_valeur_brute = self.générer_expression(fin);
+                    let début_valeur = if matches!(début_type, IRType::Entier) {
+                        début_valeur_brute
+                    } else {
+                        IRValeur::Transtypage(Box::new(début_valeur_brute), IRType::Entier)
+                    };
+                    let fin_valeur = if matches!(fin_type, IRType::Entier) {
+                        fin_valeur_brute
+                    } else {
+                        IRValeur::Transtypage(Box::new(fin_valeur_brute), IRType::Entier)
+                    };
+                    let pas_valeur = pas
+                        .as_ref()
+                        .map(|expr| {
+                            let t = self.type_pour_expression(expr);
+                            let v = self.générer_expression(expr);
+                            if matches!(t, IRType::Entier) {
+                                v
+                            } else {
+                                IRValeur::Transtypage(Box::new(v), IRType::Entier)
+                            }
+                        })
+                        .unwrap_or(IRValeur::Entier(1));
 
                     instructions_courantes.push(IRInstruction::Allocation {
                         nom: variable.to_string(),
@@ -1605,7 +1631,7 @@ impl GénérateurIR {
                     });
                     instructions_courantes.push(IRInstruction::Affecter {
                         destination: variable.to_string(),
-                        valeur: self.générer_expression(début),
+                        valeur: début_valeur,
                         type_var: IRType::Entier,
                     });
                     instructions_courantes.push(IRInstruction::Allocation {
@@ -1614,7 +1640,7 @@ impl GénérateurIR {
                     });
                     instructions_courantes.push(IRInstruction::Affecter {
                         destination: fin_var.clone(),
-                        valeur: self.générer_expression(fin),
+                        valeur: fin_valeur,
                         type_var: IRType::Entier,
                     });
                     instructions_courantes.push(IRInstruction::Allocation {
@@ -1623,10 +1649,7 @@ impl GénérateurIR {
                     });
                     instructions_courantes.push(IRInstruction::Affecter {
                         destination: pas_var.clone(),
-                        valeur: pas
-                            .as_ref()
-                            .map(|expr| self.générer_expression(expr))
-                            .unwrap_or(IRValeur::Entier(1)),
+                        valeur: pas_valeur,
                         type_var: IRType::Entier,
                     });
 
