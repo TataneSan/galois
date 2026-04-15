@@ -174,6 +174,35 @@ impl GénérateurIR {
                                 IRType::Entier
                             }
                         }
+                        Type::Texte => match membre.as_str() {
+                            "longueur" | "taille" => IRType::Entier,
+                            "est_vide" => IRType::Booléen,
+                            "caractères" => IRType::Liste(Box::new(IRType::Texte)),
+                            "entier" => IRType::Entier,
+                            "décimal" => IRType::Décimal,
+                            _ => IRType::Texte,
+                        },
+                        Type::Liste(t)
+                        | Type::Tableau(t, _)
+                        | Type::Pile(t)
+                        | Type::File(t)
+                        | Type::ListeChaînée(t) => match membre.as_str() {
+                            "taille" | "longueur" => IRType::Entier,
+                            "est_vide" => IRType::Booléen,
+                            "premier" | "dernier" | "tête" | "queue" => IRType::from(&*t),
+                            _ => IRType::Entier,
+                        },
+                        Type::Dictionnaire(k, v) => match membre.as_str() {
+                            "taille" | "longueur" => IRType::Entier,
+                            "est_vide" => IRType::Booléen,
+                            "clés" => IRType::Liste(Box::new(IRType::from(&*k))),
+                            "valeurs" => IRType::Liste(Box::new(IRType::from(&*v))),
+                            "paires" | "entrées" => IRType::Liste(Box::new(IRType::Tuple(vec![
+                                IRType::from(&*k),
+                                IRType::from(&*v),
+                            ]))),
+                            _ => IRType::Entier,
+                        },
                         _ => IRType::Entier,
                     }
                 } else {
@@ -274,6 +303,33 @@ impl GénérateurIR {
                                 None
                             }
                         }
+                        Type::Texte => match membre.as_str() {
+                            "longueur" | "taille" | "entier" => Some(Type::Entier),
+                            "décimal" => Some(Type::Décimal),
+                            "est_vide" => Some(Type::Booléen),
+                            "caractères" => Some(Type::Liste(Box::new(Type::Texte))),
+                            _ => Some(Type::Texte),
+                        },
+                        Type::Liste(t)
+                        | Type::Tableau(t, _)
+                        | Type::Pile(t)
+                        | Type::File(t)
+                        | Type::ListeChaînée(t) => match membre.as_str() {
+                            "taille" | "longueur" => Some(Type::Entier),
+                            "est_vide" => Some(Type::Booléen),
+                            "premier" | "dernier" | "tête" | "queue" => Some(*t.clone()),
+                            _ => None,
+                        },
+                        Type::Dictionnaire(k, v) => match membre.as_str() {
+                            "taille" | "longueur" => Some(Type::Entier),
+                            "est_vide" => Some(Type::Booléen),
+                            "clés" => Some(Type::Liste(Box::new(*k.clone()))),
+                            "valeurs" => Some(Type::Liste(Box::new(*v.clone()))),
+                            "paires" | "entrées" => {
+                                Some(Type::Liste(Box::new(Type::Tuple(vec![*k.clone(), *v.clone()]))))
+                            }
+                            _ => None,
+                        },
                         _ => None,
                     }
                 }
@@ -298,7 +354,15 @@ impl GénérateurIR {
                     _ => None,
                 }
             }
-            ExprAST::Nouveau { classe, .. } => Some(Type::Classe(classe.clone(), None)),
+            ExprAST::Nouveau { classe, .. } => match classe.as_str() {
+                "pile" => Some(Type::Pile(Box::new(Type::Entier))),
+                "file" => Some(Type::File(Box::new(Type::Entier))),
+                "liste_chaînée" | "liste_chainee" => {
+                    Some(Type::ListeChaînée(Box::new(Type::Entier)))
+                }
+                "ensemble" => Some(Type::Ensemble(Box::new(Type::Entier))),
+                _ => Some(Type::Classe(classe.clone(), None)),
+            },
             ExprAST::Conditionnelle { alors, sinon, .. } => {
                 self.type_statique_expression(alors).or_else(|| {
                     sinon
@@ -363,7 +427,221 @@ impl GénérateurIR {
             "ajouter" => "gal_liste_ajouter".to_string(),
             "obtenir" => "gal_liste_obtenir".to_string(),
             "taille" | "longueur" => "gal_liste_taille".to_string(),
+            "sin" => "gal_sin".to_string(),
+            "cos" => "gal_cos".to_string(),
+            "tan" => "gal_tan".to_string(),
+            "log" => "gal_log".to_string(),
+            "exp" => "gal_exp".to_string(),
+            "racine" => "gal_racine".to_string(),
+            "plafond" => "gal_plafond".to_string(),
+            "plancher" => "gal_plancher".to_string(),
+            "absolu" => "gal_absolu".to_string(),
+            "min" => "gal_min".to_string(),
+            "max" => "gal_max".to_string(),
+            "empiler" => "gal_pile_empiler_i64".to_string(),
+            "dépiler" | "depiler" => "gal_pile_depiler_i64".to_string(),
+            "sommet" => "gal_pile_sommet_i64".to_string(),
+            "enfiler" => "gal_file_enfiler_i64".to_string(),
+            "défiler" | "defiler" => "gal_file_defiler_i64".to_string(),
             _ => nom.to_string(),
+        }
+    }
+
+    fn nom_fonction_méthode_collection(&self, type_obj: &Type, membre: &str) -> Option<String> {
+        match type_obj {
+            Type::Dictionnaire(_, _) => match membre {
+                "taille" | "longueur" => Some("gal_dictionnaire_taille".to_string()),
+                _ => None,
+            },
+            Type::Pile(_) => match membre {
+                "empiler" => Some("gal_pile_empiler_i64".to_string()),
+                "dépiler" | "depiler" => Some("gal_pile_depiler_i64".to_string()),
+                "sommet" => Some("gal_pile_sommet_i64".to_string()),
+                _ => None,
+            },
+            Type::File(_) => match membre {
+                "enfiler" => Some("gal_file_enfiler_i64".to_string()),
+                "défiler" | "defiler" => Some("gal_file_defiler_i64".to_string()),
+                _ => None,
+            },
+            Type::Liste(t) | Type::Tableau(t, _) | Type::ListeChaînée(t) => {
+                if matches!(**t, Type::Entier) {
+                    match membre {
+                        "ajouter" => Some("gal_liste_ajouter_i64".to_string()),
+                        "obtenir" => Some("gal_liste_obtenir_i64".to_string()),
+                        "contient" => Some("gal_liste_contient_i64".to_string()),
+                        "taille" | "longueur" => Some("gal_liste_taille".to_string()),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            }
+            Type::Ensemble(t) => {
+                if matches!(**t, Type::Entier) {
+                    match membre {
+                        "ajouter" => Some("gal_ensemble_ajouter_i64".to_string()),
+                        "contient" => Some("gal_ensemble_contient_i64".to_string()),
+                        "taille" | "longueur" => Some("gal_ensemble_taille".to_string()),
+                        "est_vide" => Some("gal_ensemble_est_vide".to_string()),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn ident_est_param_lambda(expr: &ExprAST, param: &str) -> bool {
+        matches!(expr, ExprAST::Identifiant(nom, _) if nom == param)
+    }
+
+    fn extraire_lambda_prédicat_i64(&self, expr: &ExprAST) -> Option<(i64, i64, i64)> {
+        let (param, corps) = match expr {
+            ExprAST::Lambda {
+                paramètres, corps, ..
+            } if paramètres.len() == 1 => (paramètres[0].nom.as_str(), corps.as_ref()),
+            _ => return None,
+        };
+
+        match corps {
+            ExprAST::Binaire {
+                op: OpBinaire::Égal,
+                gauche,
+                droite,
+                ..
+            } => {
+                if let (
+                    ExprAST::Binaire {
+                        op: OpBinaire::Pourcentage,
+                        gauche: g_mod,
+                        droite: d_mod,
+                        ..
+                    },
+                    ExprAST::LittéralEntier(reste, _),
+                ) = (gauche.as_ref(), droite.as_ref())
+                {
+                    if Self::ident_est_param_lambda(g_mod, param) {
+                        if let ExprAST::LittéralEntier(diviseur, _) = d_mod.as_ref() {
+                            return Some((1, *diviseur, *reste));
+                        }
+                    }
+                }
+            }
+            ExprAST::Binaire {
+                op,
+                gauche,
+                droite,
+                ..
+            } => {
+                if Self::ident_est_param_lambda(gauche, param) {
+                    if let ExprAST::LittéralEntier(seuil, _) = droite.as_ref() {
+                        let code_op = match op {
+                            OpBinaire::Supérieur => 2,
+                            OpBinaire::SupérieurÉgal => 3,
+                            OpBinaire::Inférieur => 4,
+                            OpBinaire::InférieurÉgal => 5,
+                            OpBinaire::Égal => 6,
+                            OpBinaire::Différent => 7,
+                            _ => return None,
+                        };
+                        return Some((code_op, *seuil, 0));
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        None
+    }
+
+    fn extraire_lambda_transformation_i64(&self, expr: &ExprAST) -> Option<(i64, i64)> {
+        let (param, corps) = match expr {
+            ExprAST::Lambda {
+                paramètres, corps, ..
+            } if paramètres.len() == 1 => (paramètres[0].nom.as_str(), corps.as_ref()),
+            _ => return None,
+        };
+
+        if let ExprAST::Binaire {
+            op,
+            gauche,
+            droite,
+            ..
+        } = corps
+        {
+            if Self::ident_est_param_lambda(gauche, param) {
+                if let ExprAST::LittéralEntier(c, _) = droite.as_ref() {
+                    let code_op = match op {
+                        OpBinaire::Étoile => 1,
+                        OpBinaire::Plus => 2,
+                        OpBinaire::Moins => 3,
+                        OpBinaire::Slash => 4,
+                        _ => return None,
+                    };
+                    return Some((code_op, *c));
+                }
+            }
+
+            if Self::ident_est_param_lambda(droite, param) {
+                if let ExprAST::LittéralEntier(c, _) = gauche.as_ref() {
+                    let code_op = match op {
+                        OpBinaire::Étoile => 1,
+                        OpBinaire::Plus => 2,
+                        _ => return None,
+                    };
+                    return Some((code_op, *c));
+                }
+            }
+        }
+
+        None
+    }
+
+    fn générer_appel_module_liste(&mut self, membre: &str, arguments: &[ExprAST]) -> Option<IRValeur> {
+        match membre {
+            "somme" if arguments.len() == 1 => Some(IRValeur::Appel(
+                "gal_liste_somme_i64".to_string(),
+                vec![self.générer_expression(&arguments[0])],
+            )),
+            "réduire" if arguments.len() == 3 => {
+                let init = self.générer_expression(&arguments[1]);
+                let somme = IRValeur::Appel(
+                    "gal_liste_somme_i64".to_string(),
+                    vec![self.générer_expression(&arguments[0])],
+                );
+                Some(IRValeur::Opération(
+                    IROp::Ajouter,
+                    Box::new(somme),
+                    Some(Box::new(init)),
+                ))
+            }
+            "filtrer" if arguments.len() == 2 => {
+                let (op, a, b) = self.extraire_lambda_prédicat_i64(&arguments[1])?;
+                Some(IRValeur::Appel(
+                    "gal_liste_filtrer_i64".to_string(),
+                    vec![
+                        self.générer_expression(&arguments[0]),
+                        IRValeur::Entier(op),
+                        IRValeur::Entier(a),
+                        IRValeur::Entier(b),
+                    ],
+                ))
+            }
+            "transformer" if arguments.len() == 2 => {
+                let (op, a) = self.extraire_lambda_transformation_i64(&arguments[1])?;
+                Some(IRValeur::Appel(
+                    "gal_liste_transformer_i64".to_string(),
+                    vec![
+                        self.générer_expression(&arguments[0]),
+                        IRValeur::Entier(op),
+                        IRValeur::Entier(a),
+                    ],
+                ))
+            }
+            _ => None,
         }
     }
 
@@ -1447,6 +1725,11 @@ impl GénérateurIR {
                 appelé, arguments, ..
             } => match appelé.as_ref() {
                 ExprAST::Identifiant(n, _) => {
+                    if matches!(n.as_str(), "filtrer" | "transformer" | "somme" | "réduire") {
+                        if let Some(appel_spécial) = self.générer_appel_module_liste(n, arguments) {
+                            return appel_spécial;
+                        }
+                    }
                     let args: Vec<IRValeur> = arguments
                         .iter()
                         .map(|a| self.générer_expression(a))
@@ -1481,8 +1764,34 @@ impl GénérateurIR {
                         .collect();
 
                     if let Some(type_obj) = self.type_statique_expression(objet) {
-                        if matches!(&type_obj, Type::Module(_)) {
+                        if let Type::Module(nom_module) = &type_obj {
+                            if nom_module == "liste" {
+                                if let Some(appel_spécial) =
+                                    self.générer_appel_module_liste(membre, arguments)
+                                {
+                                    return appel_spécial;
+                                }
+                            }
                             return IRValeur::Appel(self.nom_fonction_native(membre), args_ir);
+                        } else if matches!(type_obj, Type::Liste(_))
+                            && matches!(membre.as_str(), "filtrer" | "transformer" | "somme" | "réduire")
+                        {
+                            let mut args_avec_objet = Vec::with_capacity(arguments.len() + 1);
+                            args_avec_objet.push(objet.as_ref().clone());
+                            args_avec_objet.extend(arguments.iter().cloned());
+                            if let Some(appel_spécial) =
+                                self.générer_appel_module_liste(membre, &args_avec_objet)
+                            {
+                                return appel_spécial;
+                            }
+                        }
+
+                        if let Some(nom_fn) =
+                            self.nom_fonction_méthode_collection(&type_obj, membre)
+                        {
+                            let mut args: Vec<IRValeur> = vec![objet_ir];
+                            args.extend(args_ir);
+                            return IRValeur::Appel(nom_fn, args);
                         }
 
                         if let Some((types_args, type_retour, dynamique, base, est_interface)) =
@@ -1596,7 +1905,61 @@ impl GénérateurIR {
                 if let Some(v) = self.valeur_accès_membre(objet, membre) {
                     v
                 } else {
-                    IRValeur::Nul
+                    let obj = self.générer_expression(objet);
+                    if let Some(type_obj) = self.type_statique_expression(objet) {
+                        match type_obj {
+                            Type::Texte => match membre.as_str() {
+                                "longueur" | "taille" => {
+                                    IRValeur::Appel("strlen".to_string(), vec![obj])
+                                }
+                                "est_vide" => IRValeur::Opération(
+                                    IROp::Égal,
+                                    Box::new(IRValeur::Appel("strlen".to_string(), vec![obj])),
+                                    Some(Box::new(IRValeur::Entier(0))),
+                                ),
+                                "majuscule" | "minuscule" | "trim" | "trim_début" | "trim_fin" => {
+                                    obj
+                                }
+                                _ => IRValeur::Nul,
+                            },
+                            Type::Liste(_)
+                            | Type::Tableau(_, _)
+                            | Type::Pile(_)
+                            | Type::File(_)
+                            | Type::ListeChaînée(_) => match membre.as_str() {
+                                "taille" | "longueur" => {
+                                    IRValeur::Appel("gal_liste_taille".to_string(), vec![obj])
+                                }
+                                "est_vide" => IRValeur::Opération(
+                                    IROp::Égal,
+                                    Box::new(IRValeur::Appel(
+                                        "gal_liste_taille".to_string(),
+                                        vec![obj],
+                                    )),
+                                    Some(Box::new(IRValeur::Entier(0))),
+                                ),
+                                _ => IRValeur::Nul,
+                            },
+                            Type::Dictionnaire(_, _) => match membre.as_str() {
+                                "taille" | "longueur" => IRValeur::Appel(
+                                    "gal_dictionnaire_taille".to_string(),
+                                    vec![obj],
+                                ),
+                                "est_vide" => IRValeur::Opération(
+                                    IROp::Égal,
+                                    Box::new(IRValeur::Appel(
+                                        "gal_dictionnaire_taille".to_string(),
+                                        vec![obj],
+                                    )),
+                                    Some(Box::new(IRValeur::Entier(0))),
+                                ),
+                                _ => IRValeur::Nul,
+                            },
+                            _ => IRValeur::Nul,
+                        }
+                    } else {
+                        IRValeur::Nul
+                    }
                 }
             }
 
@@ -1655,7 +2018,17 @@ impl GénérateurIR {
             }
 
             ExprAST::InitialisationTableau { éléments, .. } => {
-                IRValeur::AllouerTableau(IRType::Vide, éléments.len())
+                let type_élément = éléments
+                    .first()
+                    .map(|e| self.type_pour_expression(e))
+                    .unwrap_or(IRType::Entier);
+                IRValeur::InitialisationListe {
+                    éléments: éléments
+                        .iter()
+                        .map(|e| self.générer_expression(e))
+                        .collect(),
+                    type_élément,
+                }
             }
 
             ExprAST::InitialisationDictionnaire { paires, .. } => {
@@ -1695,6 +2068,18 @@ impl GénérateurIR {
             ExprAST::Nouveau {
                 classe, arguments, ..
             } => {
+                if classe == "pile" {
+                    return IRValeur::Appel("gal_pile_nouveau".to_string(), vec![IRValeur::Entier(8)]);
+                }
+                if classe == "file" {
+                    return IRValeur::Appel("gal_file_nouveau".to_string(), vec![IRValeur::Entier(8)]);
+                }
+                if classe == "liste_chaînée" || classe == "liste_chainee" {
+                    return IRValeur::Appel("gal_liste_nouveau".to_string(), vec![IRValeur::Entier(8)]);
+                }
+                if classe == "ensemble" {
+                    return IRValeur::Appel("gal_ensemble_nouveau".to_string(), vec![]);
+                }
                 let args: Vec<IRValeur> = arguments
                     .iter()
                     .map(|a| self.générer_expression(a))

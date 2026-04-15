@@ -85,16 +85,28 @@ impl Vérificateur {
         table.définir(
             "filtrer",
             GenreSymbole::Fonction {
-                paramètres: vec![("l".to_string(), Type::Inconnu), ("f".to_string(), Type::Inconnu)],
-                type_retour: Type::Inconnu,
+                paramètres: vec![
+                    ("l".to_string(), Type::Liste(Box::new(Type::Entier))),
+                    (
+                        "f".to_string(),
+                        Type::Fonction(vec![Type::Entier], Box::new(Type::Booléen)),
+                    ),
+                ],
+                type_retour: Type::Liste(Box::new(Type::Entier)),
                 est_async: false,
             },
         );
         table.définir(
             "transformer",
             GenreSymbole::Fonction {
-                paramètres: vec![("l".to_string(), Type::Inconnu), ("f".to_string(), Type::Inconnu)],
-                type_retour: Type::Inconnu,
+                paramètres: vec![
+                    ("l".to_string(), Type::Liste(Box::new(Type::Entier))),
+                    (
+                        "f".to_string(),
+                        Type::Fonction(vec![Type::Entier], Box::new(Type::Entier)),
+                    ),
+                ],
+                type_retour: Type::Liste(Box::new(Type::Entier)),
                 est_async: false,
             },
         );
@@ -109,8 +121,8 @@ impl Vérificateur {
         table.définir(
             "somme",
             GenreSymbole::Fonction {
-                paramètres: vec![("l".to_string(), Type::Inconnu)],
-                type_retour: Type::Inconnu,
+                paramètres: vec![("l".to_string(), Type::Liste(Box::new(Type::Entier)))],
+                type_retour: Type::Entier,
                 est_async: false,
             },
         );
@@ -297,6 +309,94 @@ impl Vérificateur {
                 est_async: false,
             },
         );
+        symboles_maths.insert(
+            "sin".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "cos".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "tan".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "log".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "exp".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "racine".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "plafond".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "plancher".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "absolu".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "min".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("a".to_string(), Type::Décimal), ("b".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "max".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("a".to_string(), Type::Décimal), ("b".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
         
         table.définir("maths", GenreSymbole::Module { symboles: symboles_maths.clone() });
         table.définir("Maths", GenreSymbole::Module { symboles: symboles_maths });
@@ -306,24 +406,36 @@ impl Vérificateur {
         symboles_liste.insert(
             "filtrer".to_string(),
             GenreSymbole::Fonction {
-                paramètres: vec![("l".to_string(), Type::Inconnu), ("f".to_string(), Type::Inconnu)],
-                type_retour: Type::Inconnu,
+                paramètres: vec![
+                    ("l".to_string(), Type::Liste(Box::new(Type::Entier))),
+                    (
+                        "f".to_string(),
+                        Type::Fonction(vec![Type::Entier], Box::new(Type::Booléen)),
+                    ),
+                ],
+                type_retour: Type::Liste(Box::new(Type::Entier)),
                 est_async: false,
             },
         );
         symboles_liste.insert(
             "transformer".to_string(),
             GenreSymbole::Fonction {
-                paramètres: vec![("l".to_string(), Type::Inconnu), ("f".to_string(), Type::Inconnu)],
-                type_retour: Type::Inconnu,
+                paramètres: vec![
+                    ("l".to_string(), Type::Liste(Box::new(Type::Entier))),
+                    (
+                        "f".to_string(),
+                        Type::Fonction(vec![Type::Entier], Box::new(Type::Entier)),
+                    ),
+                ],
+                type_retour: Type::Liste(Box::new(Type::Entier)),
                 est_async: false,
             },
         );
         symboles_liste.insert(
             "somme".to_string(),
             GenreSymbole::Fonction {
-                paramètres: vec![("l".to_string(), Type::Inconnu)],
-                type_retour: Type::Inconnu,
+                paramètres: vec![("l".to_string(), Type::Liste(Box::new(Type::Entier)))],
+                type_retour: Type::Entier,
                 est_async: false,
             },
         );
@@ -545,6 +657,8 @@ impl Vérificateur {
         match (source, cible) {
             (Type::Nul, Type::Classe(_, _)) | (Type::Nul, Type::Interface(_)) => true,
             (Type::Entier, Type::Décimal) => true,
+            (Type::Liste(src), Type::Tableau(dst, _))
+            | (Type::Liste(src), Type::Ensemble(dst)) => self.type_compatible(src, dst),
             (Type::Classe(src, _), Type::Classe(dst, _)) => self.classe_hérite_de(src, dst),
             (Type::Classe(src, _), Type::Interface(dst)) => {
                 self.classe_implémente_interface(src, dst)
@@ -1778,6 +1892,9 @@ impl Vérificateur {
                                 return Ok(type_retour);
                             }
                         }
+                        if matches!(appelé.as_ref(), ExprAST::AccèsMembre { .. }) && arguments.is_empty() {
+                            return Ok(type_appelé);
+                        }
                         self.erreur(position.clone(), "L'appelé doit être une fonction");
                         Type::Inconnu
                     }
@@ -2117,6 +2234,19 @@ impl Vérificateur {
                 arguments,
                 position,
             } => {
+                if classe == "pile" {
+                    return Ok(Type::Pile(Box::new(Type::Entier)));
+                }
+                if classe == "file" {
+                    return Ok(Type::File(Box::new(Type::Entier)));
+                }
+                if classe == "liste_chaînée" || classe == "liste_chainee" {
+                    return Ok(Type::ListeChaînée(Box::new(Type::Entier)));
+                }
+                if classe == "ensemble" {
+                    return Ok(Type::Ensemble(Box::new(Type::Entier)));
+                }
+
                 let arguments_types: Vec<Type> = arguments
                     .iter()
                     .map(|arg| self.vérifier_expression(arg))
@@ -2331,8 +2461,18 @@ impl Vérificateur {
         match membre {
             "longueur" | "taille" => Type::Entier,
             "majuscule" | "minuscule" | "trim" | "trim_début" | "trim_fin" => Type::Texte,
-            "contient" | "commence_par" | "finit_par" | "est_vide" => Type::Booléen,
-            "sous_chaîne" | "remplacer" | "répéter" | "répéter_texte" => Type::Texte,
+            "est_vide" => Type::Booléen,
+            "contient" | "commence_par" | "finit_par" => {
+                Type::Fonction(vec![Type::Texte], Box::new(Type::Booléen))
+            }
+            "sous_chaîne" => {
+                Type::Fonction(vec![Type::Entier, Type::Entier], Box::new(Type::Texte))
+            }
+            "remplacer" => {
+                Type::Fonction(vec![Type::Texte, Type::Texte], Box::new(Type::Texte))
+            }
+            "répéter" => Type::Fonction(vec![Type::Entier], Box::new(Type::Texte)),
+            "répéter_texte" => Type::Fonction(vec![Type::Texte], Box::new(Type::Texte)),
             "split" | "séparer" | "diviser" => Type::Fonction(vec![Type::Texte], Box::new(Type::Liste(Box::new(Type::Texte)))),
             "caractères" => Type::Liste(Box::new(Type::Texte)),
             "entier" => Type::Fonction(vec![], Box::new(Type::Entier)),
@@ -2414,7 +2554,8 @@ impl Vérificateur {
     ) -> Type {
         match membre {
             "taille" | "longueur" => Type::Entier,
-            "est_vide" | "contient" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Booléen)),
+            "est_vide" => Type::Booléen,
+            "contient" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Booléen)),
             "indice" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Entier)),
             "premier" | "dernier" => type_élément.clone(),
             "copier" => Type::Fonction(vec![], Box::new(Type::Tableau(Box::new(type_élément.clone()), None))),
@@ -2439,7 +2580,8 @@ impl Vérificateur {
     ) -> Type {
         match membre {
             "taille" | "longueur" => Type::Entier,
-            "est_vide" | "contient" => Type::Fonction(vec![type_clé.clone()], Box::new(Type::Booléen)),
+            "est_vide" => Type::Booléen,
+            "contient" => Type::Fonction(vec![type_clé.clone()], Box::new(Type::Booléen)),
             "obtenir" => Type::Fonction(vec![type_clé.clone()], Box::new(type_valeur.clone())),
             "définir" => Type::Fonction(vec![type_clé.clone(), type_valeur.clone()], Box::new(Type::Rien)),
             "supprimer" => Type::Fonction(vec![type_clé.clone()], Box::new(Type::Rien)),
@@ -2468,8 +2610,10 @@ impl Vérificateur {
     ) -> Type {
         match membre {
             "taille" | "longueur" => Type::Entier,
-            "est_vide" | "contient" => Type::Booléen,
-            "ajouter" | "supprimer" => Type::Booléen,
+            "est_vide" => Type::Booléen,
+            "contient" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Booléen)),
+            "ajouter" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Rien)),
+            "supprimer" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Booléen)),
             "union" => Type::Fonction(
                 vec![Type::Ensemble(Box::new(type_élément.clone()))],
                 Box::new(Type::Ensemble(Box::new(type_élément.clone()))),
@@ -2482,8 +2626,8 @@ impl Vérificateur {
                 vec![Type::Ensemble(Box::new(type_élément.clone()))],
                 Box::new(Type::Booléen),
             ),
-            "vers_liste" => Type::Liste(Box::new(type_élément.clone())),
-            "vider" => Type::Rien,
+            "vers_liste" => Type::Fonction(vec![], Box::new(Type::Liste(Box::new(type_élément.clone())))),
+            "vider" => Type::Fonction(vec![], Box::new(Type::Rien)),
             _ => {
                 self.erreur(
                     position.clone(),
@@ -2503,10 +2647,10 @@ impl Vérificateur {
         match membre {
             "taille" | "longueur" => Type::Entier,
             "est_vide" => Type::Booléen,
-            "empiler" => Type::Rien,
-            "dépiler" => type_élément.clone(),
-            "sommet" => type_élément.clone(),
-            "vider" => Type::Rien,
+            "empiler" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Rien)),
+            "dépiler" | "depiler" => Type::Fonction(vec![], Box::new(type_élément.clone())),
+            "sommet" => Type::Fonction(vec![], Box::new(type_élément.clone())),
+            "vider" => Type::Fonction(vec![], Box::new(Type::Rien)),
             _ => {
                 self.erreur(
                     position.clone(),
@@ -2526,11 +2670,11 @@ impl Vérificateur {
         match membre {
             "taille" | "longueur" => Type::Entier,
             "est_vide" => Type::Booléen,
-            "enfiler" => Type::Rien,
-            "défiler" => type_élément.clone(),
-            "tête" | "premier" => type_élément.clone(),
-            "queue" | "dernier" => type_élément.clone(),
-            "vider" => Type::Rien,
+            "enfiler" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Rien)),
+            "défiler" | "defiler" => Type::Fonction(vec![], Box::new(type_élément.clone())),
+            "tête" | "premier" => Type::Fonction(vec![], Box::new(type_élément.clone())),
+            "queue" | "dernier" => Type::Fonction(vec![], Box::new(type_élément.clone())),
+            "vider" => Type::Fonction(vec![], Box::new(Type::Rien)),
             _ => {
                 self.erreur(
                     position.clone(),
@@ -2550,9 +2694,17 @@ impl Vérificateur {
         match membre {
             "taille" | "longueur" => Type::Entier,
             "est_vide" => Type::Booléen,
-            "ajouter_début" | "ajouter_fin" | "insérer" => Type::Rien,
-            "supprimer" => Type::Booléen,
-            "premier" | "dernier" => type_élément.clone(),
+            "ajouter" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Rien)),
+            "ajouter_début" | "ajouter_fin" => {
+                Type::Fonction(vec![type_élément.clone()], Box::new(Type::Rien))
+            }
+            "insérer" => Type::Fonction(
+                vec![Type::Entier, type_élément.clone()],
+                Box::new(Type::Rien),
+            ),
+            "obtenir" => Type::Fonction(vec![Type::Entier], Box::new(type_élément.clone())),
+            "supprimer" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Booléen)),
+            "premier" | "dernier" => Type::Fonction(vec![], Box::new(type_élément.clone())),
             "parcourir" => Type::Fonction(
                 vec![Type::Fonction(
                     vec![type_élément.clone()],
@@ -2560,7 +2712,7 @@ impl Vérificateur {
                 )],
                 Box::new(Type::Rien),
             ),
-            "inverser" | "vider" => Type::Rien,
+            "inverser" | "vider" => Type::Fonction(vec![], Box::new(Type::Rien)),
             _ => {
                 self.erreur(
                     position.clone(),

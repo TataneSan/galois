@@ -348,13 +348,113 @@ void gal_liste_ajouter(gal_liste* l, void* élément) {
     l->taille++;
 }
 
+void gal_liste_ajouter_i64(gal_liste* l, int64_t valeur) {
+    gal_liste_ajouter(l, &valeur);
+}
+
 void* gal_liste_obtenir(gal_liste* l, int64_t indice) {
     if (indice < 0 || indice >= l->taille) return NULL;
     return (char*)l->données + indice * l->taille_élément;
 }
 
+int64_t gal_liste_obtenir_i64(gal_liste* l, int64_t indice) {
+    void* ptr = gal_liste_obtenir(l, indice);
+    if (!ptr) return 0;
+    return *(int64_t*)ptr;
+}
+
 int64_t gal_liste_taille(gal_liste* l) {
     return l ? l->taille : 0;
+}
+
+int gal_liste_contient_i64(gal_liste* l, int64_t valeur) {
+    if (!l) return 0;
+    for (int64_t i = 0; i < l->taille; i++) {
+        int64_t courant = *(int64_t*)((char*)l->données + i * l->taille_élément);
+        if (courant == valeur) return 1;
+    }
+    return 0;
+}
+
+gal_liste* gal_ensemble_nouveau() {
+    return gal_liste_nouveau(8);
+}
+
+void gal_ensemble_ajouter_i64(gal_liste* e, int64_t valeur) {
+    if (gal_liste_contient_i64(e, valeur)) return;
+    gal_liste_ajouter_i64(e, valeur);
+}
+
+int gal_ensemble_contient_i64(gal_liste* e, int64_t valeur) {
+    return gal_liste_contient_i64(e, valeur);
+}
+
+int64_t gal_ensemble_taille(gal_liste* e) {
+    return gal_liste_taille(e);
+}
+
+int gal_ensemble_est_vide(gal_liste* e) {
+    return gal_ensemble_taille(e) == 0;
+}
+
+static int gal_liste_eval_pred_i64(int64_t x, int64_t op, int64_t a, int64_t b) {
+    switch (op) {
+        case 1:  return (a != 0) ? ((x % a) == b) : 0;  // x % a == b
+        case 2:  return x > a;
+        case 3:  return x >= a;
+        case 4:  return x < a;
+        case 5:  return x <= a;
+        case 6:  return x == a;
+        case 7:  return x != a;
+        default: return 0;
+    }
+}
+
+static int64_t gal_liste_eval_map_i64(int64_t x, int64_t op, int64_t a) {
+    switch (op) {
+        case 1:  return x * a;
+        case 2:  return x + a;
+        case 3:  return x - a;
+        case 4:  return (a != 0) ? (x / a) : 0;
+        default: return x;
+    }
+}
+
+gal_liste* gal_liste_filtrer_i64(gal_liste* l, int64_t op, int64_t a, int64_t b) {
+    gal_liste* out = gal_liste_nouveau(sizeof(int64_t));
+    if (!out || !l) return out;
+
+    for (int64_t i = 0; i < l->taille; i++) {
+        int64_t* v = (int64_t*)gal_liste_obtenir(l, i);
+        if (v && gal_liste_eval_pred_i64(*v, op, a, b)) {
+            gal_liste_ajouter(out, v);
+        }
+    }
+    return out;
+}
+
+gal_liste* gal_liste_transformer_i64(gal_liste* l, int64_t op, int64_t a) {
+    gal_liste* out = gal_liste_nouveau(sizeof(int64_t));
+    if (!out || !l) return out;
+
+    for (int64_t i = 0; i < l->taille; i++) {
+        int64_t* v = (int64_t*)gal_liste_obtenir(l, i);
+        if (v) {
+            int64_t r = gal_liste_eval_map_i64(*v, op, a);
+            gal_liste_ajouter(out, &r);
+        }
+    }
+    return out;
+}
+
+int64_t gal_liste_somme_i64(gal_liste* l) {
+    if (!l) return 0;
+    int64_t somme = 0;
+    for (int64_t i = 0; i < l->taille; i++) {
+        int64_t* v = (int64_t*)gal_liste_obtenir(l, i);
+        if (v) somme += *v;
+    }
+    return somme;
 }
 
 // ===== Opérations sur les dictionnaires =====
@@ -577,6 +677,10 @@ int gal_dictionnaire_contient(gal_dictionnaire* d, const char* clé) {
     return trouvé;
 }
 
+int64_t gal_dictionnaire_taille(gal_dictionnaire* d) {
+    return d ? d->taille : 0;
+}
+
 // ===== Opérations sur les piles =====
 
 gal_pile* gal_pile_nouveau(int64_t taille_élément) {
@@ -599,15 +703,35 @@ void gal_pile_empiler(gal_pile* p, void* élément) {
     p->taille++;
 }
 
+void gal_pile_empiler_i64(gal_pile* p, int64_t valeur) {
+    gal_pile_empiler(p, &valeur);
+}
+
 void* gal_pile_dépiler(gal_pile* p) {
     if (p->taille == 0) return NULL;
     p->taille--;
     return (char*)p->données + p->taille * p->taille_élément;
 }
 
+void* gal_pile_depiler(gal_pile* p) {
+    return gal_pile_dépiler(p);
+}
+
+int64_t gal_pile_depiler_i64(gal_pile* p) {
+    void* ptr = gal_pile_dépiler(p);
+    if (!ptr) return 0;
+    return *(int64_t*)ptr;
+}
+
 void* gal_pile_sommet(gal_pile* p) {
     if (p->taille == 0) return NULL;
     return (char*)p->données + (p->taille - 1) * p->taille_élément;
+}
+
+int64_t gal_pile_sommet_i64(gal_pile* p) {
+    void* ptr = gal_pile_sommet(p);
+    if (!ptr) return 0;
+    return *(int64_t*)ptr;
 }
 
 // ===== Opérations sur les files =====
@@ -647,12 +771,26 @@ void gal_file_enfiler(gal_file* f, void* élément) {
     f->taille++;
 }
 
+void gal_file_enfiler_i64(gal_file* f, int64_t valeur) {
+    gal_file_enfiler(f, &valeur);
+}
+
 void* gal_file_défiler(gal_file* f) {
     if (f->taille == 0) return NULL;
     void* ptr = (char*)f->données + (f->début % f->capacité) * f->taille_élément;
     f->début++;
     f->taille--;
     return ptr;
+}
+
+void* gal_file_defiler(gal_file* f) {
+    return gal_file_défiler(f);
+}
+
+int64_t gal_file_defiler_i64(gal_file* f) {
+    void* ptr = gal_file_défiler(f);
+    if (!ptr) return 0;
+    return *(int64_t*)ptr;
 }
 
 // ===== Fonctions mathématiques =====

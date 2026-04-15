@@ -113,6 +113,10 @@ pub enum IRValeur {
         type_clé: IRType,
         type_valeur: IRType,
     },
+    InitialisationListe {
+        éléments: Vec<IRValeur>,
+        type_élément: IRType,
+    },
     AppelMéthode {
         objet: Box<IRValeur>,
         base: String,
