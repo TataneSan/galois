@@ -60,6 +60,7 @@ impl From<&Type> for IRType {
             Type::CDouble => IRType::Décimal,
             Type::CChar => IRType::Entier,
             Type::Externe(_, _, ret) => IRType::from(ret.as_ref()),
+            Type::Module(_) => IRType::Vide,
         }
     }
 }

@@ -30,6 +30,7 @@ pub enum Type {
     CDouble,
     CChar,
     Externe(String, Vec<Type>, Box<Type>),
+    Module(String),
 }
 
 impl fmt::Display for Type {
@@ -104,13 +105,14 @@ impl fmt::Display for Type {
                 }
                 write!(f, ") -> {}", ret)
             }
+            Type::Module(nom) => write!(f, "module {}", nom),
         }
     }
 }
 
 impl Type {
     pub fn est_numérique(&self) -> bool {
-        matches!(self, Type::Entier | Type::Décimal)
+        matches!(self, Type::Entier | Type::Décimal | Type::Inconnu | Type::Variable(_))
     }
 
     pub fn est_primitif(&self) -> bool {

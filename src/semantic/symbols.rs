@@ -132,6 +132,15 @@ impl TableSymboles {
         self.portées.len() - 1
     }
 
+    pub fn extraire_portée_actuelle(&mut self) -> HashMap<String, GenreSymbole> {
+        self.portées
+            .last()
+            .unwrap()
+            .iter()
+            .map(|(nom, sym)| (nom.clone(), sym.genre.clone()))
+            .collect()
+    }
+
     pub fn variables_définies(&self) -> Vec<String> {
         let mut variables = Vec::new();
         for portée in &self.portées {

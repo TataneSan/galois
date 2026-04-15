@@ -766,7 +766,7 @@ impl GénérateurIR {
                         blocs_init.push(bloc);
                     }
                 }
-                InstrAST::Si { .. } | InstrAST::TantQue { .. } => {
+                InstrAST::Si { .. } | InstrAST::TantQue { .. } | InstrAST::PourCompteur { .. } => {
                     let bloc_ast = BlocAST {
                         instructions: vec![instr.clone()],
                         position: crate::error::Position::nouvelle(1, 1, ""),
@@ -1031,7 +1031,11 @@ impl GénérateurIR {
 
                     let mut instrs_alors = Vec::new();
                     for i in &bloc_alors.instructions {
-                        instrs_alors.extend(self.générer_instructions_bloc(i));
+                        self.générer_instruction_avec_blocs(
+                            i,
+                            &mut instrs_alors,
+                            &mut blocs_supplémentaires,
+                        );
                     }
                     let alors_termine_par_retour = instrs_alors
                         .last()
@@ -1047,7 +1051,11 @@ impl GénérateurIR {
                     let mut instrs_sinon = Vec::new();
                     if let Some(bloc) = bloc_sinon {
                         for i in &bloc.instructions {
-                            instrs_sinon.extend(self.générer_instructions_bloc(i));
+                            self.générer_instruction_avec_blocs(
+                                i,
+                                &mut instrs_sinon,
+                                &mut blocs_supplémentaires,
+                            );
                         }
                     }
                     let sinon_termine_par_retour = instrs_sinon
@@ -1084,7 +1092,11 @@ impl GénérateurIR {
 
                     let mut corps_instrs = Vec::new();
                     for i in &bloc.instructions {
-                        corps_instrs.extend(self.générer_instructions_bloc(i));
+                        self.générer_instruction_avec_blocs(
+                            i,
+                            &mut corps_instrs,
+                            &mut blocs_supplémentaires,
+                        );
                     }
                     corps_instrs.push(IRInstruction::Saut(cond_bloc.clone()));
 
@@ -1101,6 +1113,24 @@ impl GénérateurIR {
                         instructions: Vec::new(),
                     });
                 }
+                InstrAST::PourCompteur {
+                    variable,
+                    début,
+                    fin,
+                    pas,
+                    bloc,
+                    ..
+                } => {
+                    self.générer_pour_compteur(
+                        variable,
+                        début,
+                        fin,
+                        pas,
+                        bloc,
+                        &mut instructions,
+                        &mut blocs_supplémentaires,
+                    );
+                }
                 InstrAST::Interrompre(_) | InstrAST::Continuer(_) => {}
                 _ => {}
             }
@@ -1112,6 +1142,148 @@ impl GénérateurIR {
         }];
         résultat.append(&mut blocs_supplémentaires);
         résultat
+    }
+
+    fn générer_instruction_avec_blocs(
+        &mut self,
+        instr: &InstrAST,
+        instructions: &mut Vec<IRInstruction>,
+        blocs_supplémentaires: &mut Vec<IRBloc>,
+    ) {
+        match instr {
+            InstrAST::Si { .. } | InstrAST::TantQue { .. } | InstrAST::PourCompteur { .. } => {
+                let bloc_ast = BlocAST {
+                    instructions: vec![instr.clone()],
+                    position: crate::error::Position::nouvelle(1, 1, ""),
+                };
+                let blocs = self.générer_bloc(&bloc_ast);
+                if let Some(first) = blocs.first() {
+                    instructions.extend(first.instructions.clone());
+                }
+                for b in blocs.iter().skip(1) {
+                    blocs_supplémentaires.push(b.clone());
+                }
+            }
+            _ => {
+                instructions.extend(self.générer_instructions_bloc(instr));
+            }
+        }
+    }
+
+    fn générer_pour_compteur(
+        &mut self,
+        variable: &str,
+        début: &ExprAST,
+        fin: &ExprAST,
+        pas: &Option<ExprAST>,
+        bloc: &BlocAST,
+        instructions: &mut Vec<IRInstruction>,
+        blocs_supplémentaires: &mut Vec<IRBloc>,
+    ) {
+        let fin_var = self.temp_suivant();
+        let pas_var = self.temp_suivant();
+
+        instructions.push(IRInstruction::Allocation {
+            nom: variable.to_string(),
+            type_var: IRType::Entier,
+        });
+        instructions.push(IRInstruction::Affecter {
+            destination: variable.to_string(),
+            valeur: self.générer_expression(début),
+            type_var: IRType::Entier,
+        });
+        instructions.push(IRInstruction::Allocation {
+            nom: fin_var.clone(),
+            type_var: IRType::Entier,
+        });
+        instructions.push(IRInstruction::Affecter {
+            destination: fin_var.clone(),
+            valeur: self.générer_expression(fin),
+            type_var: IRType::Entier,
+        });
+        instructions.push(IRInstruction::Allocation {
+            nom: pas_var.clone(),
+            type_var: IRType::Entier,
+        });
+        instructions.push(IRInstruction::Affecter {
+            destination: pas_var.clone(),
+            valeur: pas
+                .as_ref()
+                .map(|expr| self.générer_expression(expr))
+                .unwrap_or(IRValeur::Entier(1)),
+            type_var: IRType::Entier,
+        });
+
+        let cond_direction_bloc = self.bloc_suivant("pour_cond_direction");
+        let cond_pos_bloc = self.bloc_suivant("pour_cond_pos");
+        let cond_neg_bloc = self.bloc_suivant("pour_cond_neg");
+        let corps_bloc = self.bloc_suivant("pour_corps");
+        let suite_bloc = self.bloc_suivant("pour_suite");
+
+        instructions.push(IRInstruction::Saut(cond_direction_bloc.clone()));
+
+        blocs_supplémentaires.push(IRBloc {
+            nom: cond_direction_bloc.clone(),
+            instructions: vec![IRInstruction::BranchementConditionnel {
+                condition: IRValeur::Opération(
+                    IROp::Inférieur,
+                    Box::new(IRValeur::Référence(pas_var.clone())),
+                    Some(Box::new(IRValeur::Entier(0))),
+                ),
+                bloc_alors: cond_neg_bloc.clone(),
+                bloc_sinon: cond_pos_bloc.clone(),
+            }],
+        });
+
+        blocs_supplémentaires.push(IRBloc {
+            nom: cond_pos_bloc,
+            instructions: vec![IRInstruction::BranchementConditionnel {
+                condition: IRValeur::Opération(
+                    IROp::InférieurÉgal,
+                    Box::new(IRValeur::Référence(variable.to_string())),
+                    Some(Box::new(IRValeur::Référence(fin_var.clone()))),
+                ),
+                bloc_alors: corps_bloc.clone(),
+                bloc_sinon: suite_bloc.clone(),
+            }],
+        });
+
+        blocs_supplémentaires.push(IRBloc {
+            nom: cond_neg_bloc,
+            instructions: vec![IRInstruction::BranchementConditionnel {
+                condition: IRValeur::Opération(
+                    IROp::SupérieurÉgal,
+                    Box::new(IRValeur::Référence(variable.to_string())),
+                    Some(Box::new(IRValeur::Référence(fin_var.clone()))),
+                ),
+                bloc_alors: corps_bloc.clone(),
+                bloc_sinon: suite_bloc.clone(),
+            }],
+        });
+
+        let mut corps_instrs = Vec::new();
+        for i in &bloc.instructions {
+            self.générer_instruction_avec_blocs(i, &mut corps_instrs, blocs_supplémentaires);
+        }
+        corps_instrs.push(IRInstruction::Affecter {
+            destination: variable.to_string(),
+            valeur: IRValeur::Opération(
+                IROp::Ajouter,
+                Box::new(IRValeur::Référence(variable.to_string())),
+                Some(Box::new(IRValeur::Référence(pas_var))),
+            ),
+            type_var: IRType::Entier,
+        });
+        corps_instrs.push(IRInstruction::Saut(cond_direction_bloc));
+        blocs_supplémentaires.push(IRBloc {
+            nom: corps_bloc,
+            instructions: corps_instrs,
+        });
+
+        blocs_supplémentaires.push(IRBloc {
+            nom: suite_bloc,
+            instructions: Vec::new(),
+        });
     }
 
     fn générer_instructions_bloc(&mut self, instr: &InstrAST) -> Vec<IRInstruction> {

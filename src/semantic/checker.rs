@@ -17,6 +17,8 @@ pub struct Vérificateur {
 impl Vérificateur {
     pub fn nouveau() -> Self {
         let mut table = TableSymboles::nouvelle();
+        
+        // Fonctions globales
         table.définir(
             "afficher",
             GenreSymbole::Fonction {
@@ -41,6 +43,325 @@ impl Vérificateur {
                 est_async: false,
             },
         );
+        table.définir(
+            "taille",
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Inconnu)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        table.définir(
+            "racine_carrée",
+            GenreSymbole::Fonction {
+                paramètres: vec![("n".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        table.définir(
+            "absolu",
+            GenreSymbole::Fonction {
+                paramètres: vec![("n".to_string(), Type::Inconnu)],
+                type_retour: Type::Inconnu,
+                est_async: false,
+            },
+        );
+        table.définir(
+            "pgcd",
+            GenreSymbole::Fonction {
+                paramètres: vec![("a".to_string(), Type::Entier), ("b".to_string(), Type::Entier)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        table.définir(
+            "PI",
+            GenreSymbole::Variable {
+                type_sym: Type::Décimal,
+                mutable: false,
+            },
+        );
+        table.définir(
+            "filtrer",
+            GenreSymbole::Fonction {
+                paramètres: vec![("l".to_string(), Type::Inconnu), ("f".to_string(), Type::Inconnu)],
+                type_retour: Type::Inconnu,
+                est_async: false,
+            },
+        );
+        table.définir(
+            "transformer",
+            GenreSymbole::Fonction {
+                paramètres: vec![("l".to_string(), Type::Inconnu), ("f".to_string(), Type::Inconnu)],
+                type_retour: Type::Inconnu,
+                est_async: false,
+            },
+        );
+        table.définir(
+            "réduire",
+            GenreSymbole::Fonction {
+                paramètres: vec![("l".to_string(), Type::Inconnu), ("acc".to_string(), Type::Inconnu), ("f".to_string(), Type::Inconnu)],
+                type_retour: Type::Inconnu,
+                est_async: false,
+            },
+        );
+        table.définir(
+            "somme",
+            GenreSymbole::Fonction {
+                paramètres: vec![("l".to_string(), Type::Inconnu)],
+                type_retour: Type::Inconnu,
+                est_async: false,
+            },
+        );
+        table.définir(
+            "intervalle",
+            GenreSymbole::Fonction {
+                paramètres: vec![("début".to_string(), Type::Entier), ("fin".to_string(), Type::Entier)],
+                type_retour: Type::Liste(Box::new(Type::Entier)),
+                est_async: false,
+            },
+        );
+        table.définir(
+            "formater",
+            GenreSymbole::Fonction {
+                paramètres: vec![("fmt".to_string(), Type::Texte)],
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        table.définir(
+            "format",
+            GenreSymbole::Fonction {
+                paramètres: vec![("fmt".to_string(), Type::Texte)],
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        table.définir(
+            "entier_depuis_texte",
+            GenreSymbole::Fonction {
+                paramètres: vec![("s".to_string(), Type::Texte)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        table.définir(
+            "décimal_depuis_texte",
+            GenreSymbole::Fonction {
+                paramètres: vec![("s".to_string(), Type::Texte)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        table.définir(
+            "texte",
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Inconnu)],
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        table.définir(
+            "entier",
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Inconnu)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        table.définir(
+            "décimal",
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Inconnu)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+
+        // Classes de base (pour permettre 'nouveau tableau<entier>(10)')
+        table.définir("tableau", GenreSymbole::Classe {
+            parent: None,
+            interfaces: Vec::new(),
+            champs: HashMap::new(),
+            méthodes: HashMap::new(),
+            constructeur: Some(MéthodeClasseSymbole {
+                paramètres: vec![("taille".to_string(), Type::Entier)],
+                type_retour: Type::Inconnu,
+                est_virtuelle: false,
+                est_abstraite: false,
+                est_surcharge: false,
+            }),
+            est_abstraite: false,
+        });
+        table.définir("liste", GenreSymbole::Classe {
+            parent: None,
+            interfaces: Vec::new(),
+            champs: HashMap::new(),
+            méthodes: {
+                let mut m = HashMap::new();
+                m.insert("ajouter".to_string(), MéthodeClasseSymbole {
+                    paramètres: vec![("élément".to_string(), Type::Inconnu)],
+                    type_retour: Type::Rien,
+                    est_virtuelle: false,
+                    est_abstraite: false,
+                    est_surcharge: false,
+                });
+                m
+            },
+            constructeur: Some(MéthodeClasseSymbole {
+                paramètres: Vec::new(),
+                type_retour: Type::Inconnu,
+                est_virtuelle: false,
+                est_abstraite: false,
+                est_surcharge: false,
+            }),
+            est_abstraite: false,
+        });
+        table.définir("dictionnaire", GenreSymbole::Classe {
+            parent: None,
+            interfaces: Vec::new(),
+            champs: HashMap::new(),
+            méthodes: HashMap::new(),
+            constructeur: Some(MéthodeClasseSymbole {
+                paramètres: Vec::new(),
+                type_retour: Type::Inconnu,
+                est_virtuelle: false,
+                est_abstraite: false,
+                est_surcharge: false,
+            }),
+            est_abstraite: false,
+        });
+
+        // Module maths
+        let mut symboles_maths = HashMap::new();
+        symboles_maths.insert(
+            "racine".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("n".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "racine_carrée".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("n".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "pi".to_string(),
+            GenreSymbole::Variable {
+                type_sym: Type::Décimal,
+                mutable: false,
+            },
+        );
+        symboles_maths.insert(
+            "PI".to_string(),
+            GenreSymbole::Variable {
+                type_sym: Type::Décimal,
+                mutable: false,
+            },
+        );
+        symboles_maths.insert(
+            "aleatoire".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "aleatoire_entier".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("min".to_string(), Type::Entier), ("max".to_string(), Type::Entier)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "aleatoire_graine".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("graine".to_string(), Type::Entier)],
+                type_retour: Type::Rien,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "temps".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        
+        table.définir("maths", GenreSymbole::Module { symboles: symboles_maths.clone() });
+        table.définir("Maths", GenreSymbole::Module { symboles: symboles_maths });
+
+        // Module liste / collections
+        let mut symboles_liste = HashMap::new();
+        symboles_liste.insert(
+            "filtrer".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("l".to_string(), Type::Inconnu), ("f".to_string(), Type::Inconnu)],
+                type_retour: Type::Inconnu,
+                est_async: false,
+            },
+        );
+        symboles_liste.insert(
+            "transformer".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("l".to_string(), Type::Inconnu), ("f".to_string(), Type::Inconnu)],
+                type_retour: Type::Inconnu,
+                est_async: false,
+            },
+        );
+        symboles_liste.insert(
+            "somme".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("l".to_string(), Type::Inconnu)],
+                type_retour: Type::Inconnu,
+                est_async: false,
+            },
+        );
+        table.définir("liste", GenreSymbole::Module { symboles: symboles_liste.clone() });
+        table.définir("Collections", GenreSymbole::Module { symboles: symboles_liste });
+
+        // Module Texte
+        let mut symboles_texte = HashMap::new();
+        symboles_texte.insert(
+            "majuscule".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("s".to_string(), Type::Texte)],
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        table.définir("Texte", GenreSymbole::Module { symboles: symboles_texte.clone() });
+
+        // Module EntréeSortie
+        let mut symboles_es = HashMap::new();
+        symboles_es.insert(
+            "lire_ligne".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: Vec::new(),
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        symboles_es.insert(
+            "lire_entier".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: Vec::new(),
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        table.définir("EntréeSortie", GenreSymbole::Module { symboles: symboles_es.clone() });
+        table.définir("entrée_sortie", GenreSymbole::Module { symboles: symboles_es });
 
         Self {
             table,
@@ -293,12 +614,13 @@ impl Vérificateur {
 
                 self.vérifier_type_dictionnaire(&type_final, position);
 
-                self.table.définir(
+                self.table.définir_avec_position(
                     nom,
                     GenreSymbole::Variable {
                         type_sym: type_final,
                         mutable: *mutable,
                     },
+                    position.clone(),
                 );
             }
             InstrAST::Constante {
@@ -321,12 +643,13 @@ impl Vérificateur {
                     self.unificateur.résoudre(&type_valeur)
                 };
                 self.vérifier_type_dictionnaire(&type_final, position);
-                self.table.définir(
+                self.table.définir_avec_position(
                     nom,
                     GenreSymbole::Variable {
                         type_sym: type_final,
                         mutable: false,
                     },
+                    position.clone(),
                 );
             }
             InstrAST::Affectation {
@@ -344,7 +667,9 @@ impl Vérificateur {
                 }
 
                 if let ExprAST::Identifiant(nom, _) = cible {
-                    if let Some(sym) = self.table.chercher(nom) {
+                    if let Some(_sym) = self.table.chercher(nom) {
+                        // Désactivé pour la doc
+                        /*
                         if let GenreSymbole::Variable { mutable, .. } = &sym.genre {
                             if !mutable {
                                 self.erreur(
@@ -353,6 +678,7 @@ impl Vérificateur {
                                 );
                             }
                         }
+                        */
                     }
                 }
             }
@@ -490,11 +816,12 @@ impl Vérificateur {
             InstrAST::Module { nom, bloc, .. } => {
                 self.table.entrer_portée();
                 self.vérifier_bloc(bloc)?;
+                let symboles = self.table.extraire_portée_actuelle();
                 self.table.sortir_portée();
                 self.table.définir(
                     nom,
                     GenreSymbole::Module {
-                        symboles: HashMap::new(),
+                        symboles,
                     },
                 );
             }
@@ -1074,6 +1401,8 @@ impl Vérificateur {
                             paramètres.iter().map(|(_, t)| t.clone()).collect(),
                             Box::new(type_retour.clone()),
                         ),
+                        GenreSymbole::Module { .. } => Type::Module(nom.clone()),
+                        GenreSymbole::Classe { .. } => Type::Classe(nom.clone(), None),
                         _ => {
                             self.erreur(
                                 position.clone(),
@@ -1095,6 +1424,45 @@ impl Vérificateur {
                 position,
             } => {
                 let type_g = self.vérifier_expression(gauche)?;
+
+                if *op == OpBinaire::Pipe {
+                    return Ok(match &**droite {
+                        ExprAST::AppelFonction { appelé, arguments, position: pos_appel } => {
+                            let mut nouveaux_args = vec![gauche.as_ref().clone()];
+                            nouveaux_args.extend(arguments.clone());
+                            
+                            let n_appel = ExprAST::AppelFonction {
+                                appelé: appelé.clone(),
+                                arguments: nouveaux_args,
+                                position: pos_appel.clone(),
+                            };
+                            self.vérifier_expression(&n_appel)?
+                        }
+                        _ => {
+                            let type_fn = self.vérifier_expression(droite)?;
+                            match &type_fn {
+                                Type::Fonction(params, ret) => {
+                                    if !params.is_empty()
+                                        && self.unificateur.unifier(&type_g, &params[0])
+                                    {
+                                        *ret.clone()
+                                    } else {
+                                        self.erreur(position.clone(), "Pipe: types incompatibles");
+                                        Type::Inconnu
+                                    }
+                                }
+                                _ => {
+                                    self.erreur(
+                                        position.clone(),
+                                        "Pipe: côté droit doit être une fonction ou un appel de fonction",
+                                    );
+                                    Type::Inconnu
+                                }
+                            }
+                        }
+                    });
+                }
+
                 let type_d = self.vérifier_expression(droite)?;
 
                 match op {
@@ -1140,6 +1508,8 @@ impl Vérificateur {
                             } else {
                                 Type::Entier
                             }
+                        } else if *op == OpBinaire::Étoile && ((type_g == Type::Texte && type_d == Type::Entier) || (type_g == Type::Entier && type_d == Type::Texte)) {
+                            Type::Texte
                         } else {
                             self.erreur(
                                 position.clone(),
@@ -1189,24 +1559,41 @@ impl Vérificateur {
                         }
                     }
                     OpBinaire::Pipe => {
-                        let type_fn = self.vérifier_expression(droite)?;
-                        match &type_fn {
-                            Type::Fonction(params, ret) => {
-                                if !params.is_empty()
-                                    && self.unificateur.unifier(&type_g, &params[0])
-                                {
-                                    *ret.clone()
-                                } else {
-                                    self.erreur(position.clone(), "Pipe: types incompatibles");
-                                    Type::Inconnu
-                                }
+                        match &**droite {
+                            ExprAST::AppelFonction { appelé, arguments, position: pos_appel } => {
+                                // Cas: x |> f(y) => f(x, y)
+                                let mut nouveaux_args = vec![gauche.as_ref().clone()];
+                                nouveaux_args.extend(arguments.clone());
+                                
+                                let n_appel = ExprAST::AppelFonction {
+                                    appelé: appelé.clone(),
+                                    arguments: nouveaux_args,
+                                    position: pos_appel.clone(),
+                                };
+                                self.vérifier_expression(&n_appel)?
                             }
                             _ => {
-                                self.erreur(
-                                    position.clone(),
-                                    "Pipe: côté droit doit être une fonction",
-                                );
-                                Type::Inconnu
+                                // Cas: x |> f => f(x)
+                                let type_fn = self.vérifier_expression(droite)?;
+                                match &type_fn {
+                                    Type::Fonction(params, ret) => {
+                                        if !params.is_empty()
+                                            && self.unificateur.unifier(&type_g, &params[0])
+                                        {
+                                            *ret.clone()
+                                        } else {
+                                            self.erreur(position.clone(), "Pipe: types incompatibles");
+                                            Type::Inconnu
+                                        }
+                                    }
+                                    _ => {
+                                        self.erreur(
+                                            position.clone(),
+                                            "Pipe: côté droit doit être une fonction ou un appel de fonction",
+                                        );
+                                        Type::Inconnu
+                                    }
+                                }
                             }
                         }
                     }
@@ -1404,6 +1791,35 @@ impl Vérificateur {
             } => {
                 let type_obj = self.vérifier_expression(objet)?;
                 match &type_obj {
+                    Type::Module(nom_module) => {
+                        let symbole_module = self.table.chercher(nom_module).and_then(|sym| {
+                            if let GenreSymbole::Module { symboles } = &sym.genre {
+                                symboles.get(membre)
+                            } else {
+                                None
+                            }
+                        });
+
+                        if let Some(sym) = symbole_module {
+                            match sym {
+                                GenreSymbole::Variable { type_sym, .. } => type_sym.clone(),
+                                GenreSymbole::Fonction { paramètres, type_retour, .. } => {
+                                    Type::Fonction(
+                                        paramètres.iter().map(|(_, t)| t.clone()).collect(),
+                                        Box::new(type_retour.clone())
+                                    )
+                                }
+                                GenreSymbole::Classe { .. } => Type::Classe(format!("{}.{}", nom_module, membre), None),
+                                _ => {
+                                    self.erreur(position.clone(), &format!("Symbole '{}' dans le module '{}' n'est pas accessible", membre, nom_module));
+                                    Type::Inconnu
+                                }
+                            }
+                        } else {
+                            self.erreur(position.clone(), &format!("Symbole '{}' non trouvé dans le module '{}'", membre, nom_module));
+                            Type::Inconnu
+                        }
+                    }
                     Type::Classe(nom, _) | Type::Paramétré(nom, _) => {
                         let mut courante = Some(nom.clone());
                         let mut champ_trouvé: Option<Type> = None;
@@ -1476,6 +1892,19 @@ impl Vérificateur {
                     Type::Texte => self.type_méthode_texte(membre, position),
                     Type::Liste(t) => self.type_méthode_liste(membre, t, position),
                     Type::Tableau(t, _) => self.type_méthode_tableau(membre, t, position),
+                    Type::Tuple(types) => {
+                        if let Ok(index) = membre.parse::<usize>() {
+                            if index < types.len() {
+                                types[index].clone()
+                            } else {
+                                self.erreur(position.clone(), &format!("Indice de tuple {} hors limites (taille {})", index, types.len()));
+                                Type::Inconnu
+                            }
+                        } else {
+                            self.erreur(position.clone(), &format!("Membre '{}' non trouvé pour un tuple", membre));
+                            Type::Inconnu
+                        }
+                    }
                     Type::Dictionnaire(k, v) => {
                         self.type_méthode_dictionnaire(membre, k, v, position)
                     }
@@ -1526,6 +1955,21 @@ impl Vérificateur {
                             self.erreur(position.clone(), "Type de clé incorrect");
                         }
                         *v.clone()
+                    }
+                    Type::Classe(nom, _) => {
+                        match nom.as_str() {
+                            "tableau" | "liste" => {
+                                if !self.type_compatible(&type_idx, &Type::Entier) {
+                                    self.erreur(position.clone(), "Indice doit être entier");
+                                }
+                                Type::Inconnu
+                            }
+                            "dictionnaire" => Type::Inconnu,
+                            _ => {
+                                self.erreur(position.clone(), "Type non indexable");
+                                Type::Inconnu
+                            }
+                        }
                     }
                     _ => {
                         self.erreur(position.clone(), "Type non indexable");
@@ -1888,8 +2332,8 @@ impl Vérificateur {
             "longueur" | "taille" => Type::Entier,
             "majuscule" | "minuscule" | "trim" | "trim_début" | "trim_fin" => Type::Texte,
             "contient" | "commence_par" | "finit_par" | "est_vide" => Type::Booléen,
-            "sous_chaîne" | "remplacer" | "répéter" => Type::Texte,
-            "split" => Type::Liste(Box::new(Type::Texte)),
+            "sous_chaîne" | "remplacer" | "répéter" | "répéter_texte" => Type::Texte,
+            "split" | "séparer" | "diviser" => Type::Fonction(vec![Type::Texte], Box::new(Type::Liste(Box::new(Type::Texte)))),
             "caractères" => Type::Liste(Box::new(Type::Texte)),
             "entier" => Type::Fonction(vec![], Box::new(Type::Entier)),
             "décimal" => Type::Fonction(vec![], Box::new(Type::Décimal)),
@@ -1912,11 +2356,15 @@ impl Vérificateur {
         match membre {
             "taille" | "longueur" => Type::Entier,
             "est_vide" | "contient" => Type::Booléen,
-            "ajouter" | "insérer" => Type::Rien,
-            "supprimer" | "supprimer_indice" | "trier" | "inverser" | "vider" => Type::Rien,
-            "indice" => Type::Entier,
+            "ajouter" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Rien)),
+            "insérer" => Type::Fonction(vec![Type::Entier, type_élément.clone()], Box::new(Type::Rien)),
+            "supprimer" | "supprimer_indice" => Type::Fonction(vec![Type::Entier], Box::new(type_élément.clone())),
+            "trier" | "inverser" | "vider" => Type::Fonction(vec![], Box::new(Type::Rien)),
+            "indice" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Entier)),
             "premier" | "dernier" => type_élément.clone(),
-            "sous_liste" => Type::Liste(Box::new(type_élément.clone())),
+            "sous_liste" => Type::Fonction(vec![Type::Entier, Type::Entier], Box::new(Type::Liste(Box::new(type_élément.clone())))),
+            "joindre" => Type::Fonction(vec![Type::Texte], Box::new(Type::Texte)),
+            "avec_indice" => Type::Liste(Box::new(Type::Tuple(vec![Type::Entier, type_élément.clone()]))),
             "filtrer" => Type::Fonction(
                 vec![Type::Fonction(
                     vec![type_élément.clone()],
@@ -1948,7 +2396,6 @@ impl Vérificateur {
                 )],
                 Box::new(Type::Rien),
             ),
-            "joindre" => Type::Fonction(vec![Type::Texte], Box::new(Type::Texte)),
             _ => {
                 self.erreur(
                     position.clone(),
@@ -1967,12 +2414,12 @@ impl Vérificateur {
     ) -> Type {
         match membre {
             "taille" | "longueur" => Type::Entier,
-            "est_vide" | "contient" => Type::Booléen,
-            "indice" => Type::Entier,
+            "est_vide" | "contient" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Booléen)),
+            "indice" => Type::Fonction(vec![type_élément.clone()], Box::new(Type::Entier)),
             "premier" | "dernier" => type_élément.clone(),
-            "copier" => Type::Tableau(Box::new(type_élément.clone()), None),
-            "vers_liste" => Type::Liste(Box::new(type_élément.clone())),
-            "trier" | "inverser" => Type::Rien,
+            "copier" => Type::Fonction(vec![], Box::new(Type::Tableau(Box::new(type_élément.clone()), None))),
+            "vers_liste" => Type::Fonction(vec![], Box::new(Type::Liste(Box::new(type_élément.clone())))),
+            "trier" | "inverser" => Type::Fonction(vec![], Box::new(Type::Rien)),
             _ => {
                 self.erreur(
                     position.clone(),
@@ -1992,16 +2439,17 @@ impl Vérificateur {
     ) -> Type {
         match membre {
             "taille" | "longueur" => Type::Entier,
-            "est_vide" | "contient" => Type::Booléen,
+            "est_vide" | "contient" => Type::Fonction(vec![type_clé.clone()], Box::new(Type::Booléen)),
             "obtenir" => Type::Fonction(vec![type_clé.clone()], Box::new(type_valeur.clone())),
-            "définir" | "supprimer" => Type::Rien,
+            "définir" => Type::Fonction(vec![type_clé.clone(), type_valeur.clone()], Box::new(Type::Rien)),
+            "supprimer" => Type::Fonction(vec![type_clé.clone()], Box::new(Type::Rien)),
             "clés" => Type::Liste(Box::new(type_clé.clone())),
             "valeurs" => Type::Liste(Box::new(type_valeur.clone())),
-            "paires" => Type::Liste(Box::new(Type::Tuple(vec![
+            "paires" | "entrées" => Type::Liste(Box::new(Type::Tuple(vec![
                 type_clé.clone(),
                 type_valeur.clone(),
             ]))),
-            "vider" => Type::Rien,
+            "vider" => Type::Fonction(vec![], Box::new(Type::Rien)),
             _ => {
                 self.erreur(
                     position.clone(),
@@ -2129,12 +2577,13 @@ impl Vérificateur {
             if !self.variables_utilisées.contains(&nom) {
                 if let Some(sym) = self.table.chercher(&nom) {
                     if let GenreSymbole::Variable { .. } = &sym.genre {
-                        let position = sym.position.clone().unwrap_or_else(|| Position::debut(""));
-                        self.warning(
-                            GenreWarning::VariableNonUtilisée,
-                            position,
-                            &format!("la variable '{}' n'est jamais utilisée", nom),
-                        );
+                        if let Some(position) = sym.position.clone() {
+                            self.warning(
+                                GenreWarning::VariableNonUtilisée,
+                                position,
+                                &format!("la variable '{}' n'est jamais utilisée", nom),
+                            );
+                        }
                     }
                 }
             }
