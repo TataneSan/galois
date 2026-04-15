@@ -63,9 +63,9 @@ impl GénérateurLLVM {
             IRType::Nul => "i8*".to_string(),
             IRType::Tableau(_, Some(n)) => format!("[{} x i64]", n),
             IRType::Tableau(_, None) => "{ i64, i64, i64* }".to_string(),
-            IRType::Liste(_) => "{ i64, i64, i8* }".to_string(),
-            IRType::Pile(_) => "{ i64, i64, i8* }".to_string(),
-            IRType::File(_) => "{ i64, i64, i8* }".to_string(),
+            IRType::Liste(_) => "i8*".to_string(),
+            IRType::Pile(_) => "i8*".to_string(),
+            IRType::File(_) => "i8*".to_string(),
             IRType::ListeChaînée(_) => "{ i8* }".to_string(),
             IRType::Dictionnaire(_, _) => "i8*".to_string(),
             IRType::Ensemble(_) => "{ i64, i8* }".to_string(),
@@ -103,6 +103,11 @@ impl GénérateurLLVM {
             IRValeur::Texte(_) => IRType::Texte,
             IRValeur::Nul => IRType::Nul,
             IRValeur::Transtypage(_, type_cible) => type_cible.clone(),
+            IRValeur::Référence(nom) => self
+                .types_variables
+                .get(nom)
+                .cloned()
+                .unwrap_or(IRType::Entier),
             IRValeur::Appel(nom, _) => self
                 .signatures_fonctions
                 .get(nom)
@@ -196,6 +201,47 @@ impl GénérateurLLVM {
             "gal_bool_vers_texte".to_string(),
             (vec![IRType::Booléen], IRType::Texte),
         );
+        self.signatures_fonctions.insert(
+            "gal_liste_nouveau".to_string(),
+            (vec![IRType::Entier], IRType::Liste(Box::new(IRType::Entier))),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_ajouter".to_string(),
+            (
+                vec![
+                    IRType::Liste(Box::new(IRType::Entier)),
+                    IRType::Struct(String::new(), vec![]),
+                ],
+                IRType::Vide,
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_obtenir".to_string(),
+            (
+                vec![IRType::Liste(Box::new(IRType::Entier)), IRType::Entier],
+                IRType::Struct(String::new(), vec![]),
+            ),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_taille".to_string(),
+            (vec![IRType::Liste(Box::new(IRType::Entier))], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_select_entier".to_string(),
+            (vec![IRType::Booléen, IRType::Entier, IRType::Entier], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_select_decimal".to_string(),
+            (vec![IRType::Booléen, IRType::Décimal, IRType::Décimal], IRType::Décimal),
+        );
+        self.signatures_fonctions.insert(
+            "gal_select_texte".to_string(),
+            (vec![IRType::Booléen, IRType::Texte, IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_select_bool".to_string(),
+            (vec![IRType::Booléen, IRType::Booléen, IRType::Booléen], IRType::Booléen),
+        );
 
         for f in &module.fonctions {
             self.signatures_fonctions.insert(
@@ -263,6 +309,10 @@ impl GénérateurLLVM {
         self.écrire("declare i64 @gal_dict_get_texte(i8*, i8*, i32*)\n");
         self.écrire("declare i64 @gal_dict_get_bool(i8*, i8, i32*)\n");
         self.écrire("declare i64 @gal_dict_get_nul(i8*, i32*)\n\n");
+        self.écrire("declare i8* @gal_liste_nouveau(i64)\n");
+        self.écrire("declare void @gal_liste_ajouter(i8*, i8*)\n");
+        self.écrire("declare i8* @gal_liste_obtenir(i8*, i64)\n");
+        self.écrire("declare i64 @gal_liste_taille(i8*)\n");
         self.écrire("declare i8* @gal_concat_texte(i8*, i8*)\n");
         self.écrire("declare i8* @gal_entier_vers_texte(i64)\n");
         self.écrire("declare i8* @gal_decimal_vers_texte(double)\n");
@@ -312,7 +362,8 @@ impl GénérateurLLVM {
     }
 
     fn générer_struct(&mut self, st: &IRStruct) {
-        self.écrire(&format!("%struct.{} = type {{ ", st.nom));
+        let nom_struct = self.nom_llvm(&st.nom);
+        self.écrire(&format!("%struct.{} = type {{ ", nom_struct));
         for (i, (_, type_champ)) in st.champs.iter().enumerate() {
             if i > 0 {
                 self.écrire(", ");
@@ -356,6 +407,26 @@ impl GénérateurLLVM {
         self.écrire("faux:\n");
         self.écrire("  call i32 @puts(i8* getelementptr ([6 x i8], [6 x i8]* @.fmt_bool_faux, i64 0, i64 0))\n");
         self.écrire("  ret void\n}\n\n");
+
+        self.écrire("define i64 @gal_select_entier(i1 %c, i64 %a, i64 %b) {\n");
+        self.écrire("entree:\n");
+        self.écrire("  %r = select i1 %c, i64 %a, i64 %b\n");
+        self.écrire("  ret i64 %r\n}\n\n");
+
+        self.écrire("define double @gal_select_decimal(i1 %c, double %a, double %b) {\n");
+        self.écrire("entree:\n");
+        self.écrire("  %r = select i1 %c, double %a, double %b\n");
+        self.écrire("  ret double %r\n}\n\n");
+
+        self.écrire("define i8* @gal_select_texte(i1 %c, i8* %a, i8* %b) {\n");
+        self.écrire("entree:\n");
+        self.écrire("  %r = select i1 %c, i8* %a, i8* %b\n");
+        self.écrire("  ret i8* %r\n}\n\n");
+
+        self.écrire("define i1 @gal_select_bool(i1 %c, i1 %a, i1 %b) {\n");
+        self.écrire("entree:\n");
+        self.écrire("  %r = select i1 %c, i1 %a, i1 %b\n");
+        self.écrire("  ret i1 %r\n}\n\n");
     }
 
     fn générer_fonction(&mut self, f: &IRFonction) {
@@ -368,8 +439,21 @@ impl GénérateurLLVM {
         }
         for bloc in &f.blocs {
             for instr in &bloc.instructions {
-                if let IRInstruction::Allocation { nom, type_var } = instr {
-                    self.types_variables.insert(nom.clone(), type_var.clone());
+                match instr {
+                    IRInstruction::Allocation { nom, type_var }
+                    | IRInstruction::Affecter {
+                        destination: nom,
+                        type_var,
+                        ..
+                    }
+                    | IRInstruction::Chargement {
+                        destination: nom,
+                        type_var,
+                        ..
+                    } => {
+                        self.types_variables.insert(nom.clone(), type_var.clone());
+                    }
+                    _ => {}
                 }
             }
         }
@@ -401,10 +485,26 @@ impl GénérateurLLVM {
             .collect();
 
         let mut allocas_variables: Vec<String> = Vec::new();
-        let mut déjà_allouées: HashSet<String> = HashSet::new();
+        let mut déjà_allouées: HashSet<String> =
+            f.paramètres.iter().map(|(nom, _)| nom.clone()).collect();
         for bloc in &f.blocs {
             for instr in &bloc.instructions {
-                if let IRInstruction::Allocation { nom, type_var } = instr {
+                let à_allouer = match instr {
+                    IRInstruction::Allocation { nom, type_var } => Some((nom, type_var)),
+                    IRInstruction::Affecter {
+                        destination,
+                        type_var,
+                        ..
+                    } => Some((destination, type_var)),
+                    IRInstruction::Chargement {
+                        destination,
+                        type_var,
+                        ..
+                    } => Some((destination, type_var)),
+                    _ => None,
+                };
+
+                if let Some((nom, type_var)) = à_allouer {
                     if déjà_allouées.insert(nom.clone()) {
                         let type_stock = self.type_llvm_stockage(type_var);
                         allocas_variables.push(format!(
@@ -727,6 +827,47 @@ impl GénérateurLLVM {
                 ((*v as i64).to_string(), String::new())
             }
             IRValeur::Appel(nom, args) => self.générer_appel_typé(nom, args, type_attendu),
+            IRValeur::AllouerTableau(_, _) => {
+                let reg = self.reg_suivant();
+                let code = format!("  {} = call i8* @gal_liste_nouveau(i64 8)\n", reg);
+                (reg, code)
+            }
+            IRValeur::Index(objet, indice) => {
+                let (obj_reg, obj_code) = self
+                    .générer_valeur_pour_type(objet, &IRType::Liste(Box::new(IRType::Entier)));
+                let (idx_reg, idx_code) = self.générer_valeur_pour_type(indice, &IRType::Entier);
+                let mut code = String::new();
+                code.push_str(&obj_code);
+                code.push_str(&idx_code);
+                let reg_ptr = self.reg_suivant();
+                code.push_str(&format!(
+                    "  {} = call i8* @gal_liste_obtenir(i8* {}, i64 {})\n",
+                    reg_ptr, obj_reg, idx_reg
+                ));
+
+                match type_attendu {
+                    IRType::Entier => {
+                        let out = self.reg_suivant();
+                        code.push_str(&format!("  {} = ptrtoint i8* {} to i64\n", out, reg_ptr));
+                        (out, code)
+                    }
+                    IRType::Booléen => {
+                        let bits = self.reg_suivant();
+                        let out = self.reg_suivant();
+                        code.push_str(&format!("  {} = ptrtoint i8* {} to i64\n", bits, reg_ptr));
+                        code.push_str(&format!("  {} = icmp ne i64 {}, 0\n", out, bits));
+                        (out, code)
+                    }
+                    IRType::Décimal => {
+                        let bits = self.reg_suivant();
+                        let out = self.reg_suivant();
+                        code.push_str(&format!("  {} = ptrtoint i8* {} to i64\n", bits, reg_ptr));
+                        code.push_str(&format!("  {} = sitofp i64 {} to double\n", out, bits));
+                        (out, code)
+                    }
+                    _ => (reg_ptr, code),
+                }
+            }
             IRValeur::InitialisationDictionnaire {
                 paires,
                 type_clé,
@@ -988,7 +1129,11 @@ impl GénérateurLLVM {
 
         let mut args_str = String::new();
         for (i, arg) in args.iter().enumerate() {
-            let type_arg = signature.0.get(i).cloned().unwrap_or(IRType::Entier);
+            let type_arg = signature
+                .0
+                .get(i)
+                .cloned()
+                .unwrap_or_else(|| self.type_ir_valeur(arg));
             let (arg_reg, arg_code) = self.générer_valeur_pour_type(arg, &type_arg);
             if !arg_code.is_empty() {
                 code.push_str(&arg_code);
@@ -1310,14 +1455,15 @@ impl GénérateurLLVM {
             self.générer_valeur_pour_type(objet, &IRType::Struct(classe.to_string(), Vec::new()));
         let reg_cast = self.reg_suivant();
         let reg_ptr = self.reg_suivant();
+        let nom_struct = self.nom_llvm(classe);
         let mut code = obj_code;
         code.push_str(&format!(
             "  {} = bitcast i8* {} to %struct.{}*\n",
-            reg_cast, obj_reg, classe
+            reg_cast, obj_reg, nom_struct
         ));
         code.push_str(&format!(
             "  {} = getelementptr %struct.{}, %struct.{}* {}, i32 0, i32 {}\n",
-            reg_ptr, classe, classe, reg_cast, index
+            reg_ptr, nom_struct, nom_struct, reg_cast, index
         ));
         Some((reg_ptr, code))
     }
@@ -1530,8 +1676,20 @@ impl GénérateurLLVM {
             }
             IRValeur::Nul => ("null".to_string(), String::new()),
             IRValeur::Référence(nom) => {
+                let type_var = self
+                    .types_variables
+                    .get(nom)
+                    .cloned()
+                    .unwrap_or(IRType::Entier);
+                let type_llvm = self.type_llvm_stockage(&type_var);
                 let reg = self.reg_suivant();
-                let code = format!("  {} = load i64, i64* {}\n", reg, self.nom_var_llvm(nom));
+                let code = format!(
+                    "  {} = load {}, {}* {}\n",
+                    reg,
+                    type_llvm,
+                    type_llvm,
+                    self.nom_var_llvm(nom)
+                );
                 (reg, code)
             }
             IRValeur::Opération(op, gauche, droite) => {
@@ -1611,15 +1769,16 @@ impl GénérateurLLVM {
                 let reg_obj = self.reg_suivant();
                 let reg_cast = self.reg_suivant();
                 let reg_id_ptr = self.reg_suivant();
+                let nom_struct = self.nom_llvm(nom);
 
                 let mut code = String::new();
                 code.push_str(&format!(
                     "  {} = getelementptr %struct.{}, %struct.{}* null, i32 1\n",
-                    reg_taille_ptr, nom, nom
+                    reg_taille_ptr, nom_struct, nom_struct
                 ));
                 code.push_str(&format!(
                     "  {} = ptrtoint %struct.{}* {} to i64\n",
-                    reg_taille, nom, reg_taille_ptr
+                    reg_taille, nom_struct, reg_taille_ptr
                 ));
                 code.push_str(&format!(
                     "  {} = call i8* @malloc(i64 {})\n",
@@ -1627,11 +1786,11 @@ impl GénérateurLLVM {
                 ));
                 code.push_str(&format!(
                     "  {} = bitcast i8* {} to %struct.{}*\n",
-                    reg_cast, reg_obj, nom
+                    reg_cast, reg_obj, nom_struct
                 ));
                 code.push_str(&format!(
                     "  {} = getelementptr %struct.{}, %struct.{}* {}, i32 0, i32 0\n",
-                    reg_id_ptr, nom, nom, reg_cast
+                    reg_id_ptr, nom_struct, nom_struct, reg_cast
                 ));
                 let id = self.ids_classes.get(nom).copied().unwrap_or(0);
                 code.push_str(&format!("  store i64 {}, i64* {}\n", id, reg_id_ptr));

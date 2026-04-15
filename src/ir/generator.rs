@@ -44,6 +44,9 @@ impl GénérateurIR {
     }
 
     fn chercher_type_var(&self, nom: &str) -> IRType {
+        if let Some(type_local) = self.types_locaux.get(nom) {
+            return IRType::from(type_local);
+        }
         if let Some(symbole) = self.table.chercher(nom) {
             match &symbole.genre {
                 GenreSymbole::Variable { type_sym, .. } => IRType::from(type_sym),
@@ -144,8 +147,17 @@ impl GénérateurIR {
                 _ => IRType::Entier,
             },
             ExprAST::AccèsIndice { objet, .. } => {
-                if let Some((_, type_valeur)) = self.type_dictionnaire_depuis_expression(objet) {
-                    IRType::from(&type_valeur)
+                if let Some(type_obj) = self.type_statique_expression(objet) {
+                    match type_obj {
+                        Type::Dictionnaire(_, valeur) => IRType::from(&*valeur),
+                        Type::Liste(élément)
+                        | Type::Tableau(élément, _)
+                        | Type::Pile(élément)
+                        | Type::File(élément)
+                        | Type::ListeChaînée(élément)
+                        | Type::Ensemble(élément) => IRType::from(&*élément),
+                        _ => IRType::Entier,
+                    }
                 } else {
                     IRType::Entier
                 }
@@ -166,6 +178,19 @@ impl GénérateurIR {
                     }
                 } else {
                     IRType::Entier
+                }
+            }
+            ExprAST::Conditionnelle { alors, sinon, .. } => {
+                let t_alors = self.type_pour_expression(alors);
+                if let Some(sinon) = sinon {
+                    let t_sinon = self.type_pour_expression(sinon);
+                    if matches!(t_alors, IRType::Décimal) || matches!(t_sinon, IRType::Décimal) {
+                        IRType::Décimal
+                    } else {
+                        t_alors
+                    }
+                } else {
+                    t_alors
                 }
             }
             ExprAST::InitialisationDictionnaire { paires, .. } => {
@@ -241,12 +266,46 @@ impl GénérateurIR {
                                 None
                             }
                         }),
+                        Type::Classe(classe, _) | Type::Paramétré(classe, _) => {
+                            if let Some((_, type_champ)) = self.type_champ_depuis_classe(classe, membre)
+                            {
+                                Some(type_champ)
+                            } else {
+                                None
+                            }
+                        }
                         _ => None,
                     }
                 }
                 _ => None,
             },
+            ExprAST::AccèsIndice { objet, indice, .. } => {
+                let type_obj = self.type_statique_expression(objet)?;
+                match type_obj {
+                    Type::Dictionnaire(_, valeur) => Some(*valeur),
+                    Type::Liste(élément)
+                    | Type::Tableau(élément, _)
+                    | Type::Pile(élément)
+                    | Type::File(élément)
+                    | Type::ListeChaînée(élément)
+                    | Type::Ensemble(élément) => Some(*élément),
+                    Type::Tuple(types) => match indice.as_ref() {
+                        ExprAST::LittéralEntier(i, _) if *i >= 0 => {
+                            types.get(*i as usize).cloned()
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                }
+            }
             ExprAST::Nouveau { classe, .. } => Some(Type::Classe(classe.clone(), None)),
+            ExprAST::Conditionnelle { alors, sinon, .. } => {
+                self.type_statique_expression(alors).or_else(|| {
+                    sinon
+                        .as_ref()
+                        .and_then(|expr| self.type_statique_expression(expr))
+                })
+            }
             ExprAST::InitialisationDictionnaire { paires, .. } => {
                 if let Some((k, v)) = paires.first() {
                     let tk = self.type_statique_expression(k).unwrap_or(Type::Inconnu);
@@ -301,6 +360,9 @@ impl GénérateurIR {
             "aleatoire" => "gal_aleatoire".to_string(),
             "aleatoire_entier" => "gal_aleatoire_entier".to_string(),
             "aleatoire_graine" => "gal_aleatoire_graine".to_string(),
+            "ajouter" => "gal_liste_ajouter".to_string(),
+            "obtenir" => "gal_liste_obtenir".to_string(),
+            "taille" | "longueur" => "gal_liste_taille".to_string(),
             _ => nom.to_string(),
         }
     }
@@ -454,7 +516,10 @@ impl GénérateurIR {
             ExprAST::Identifiant(nom, _) => self.classe_pour_identifiant(nom),
             ExprAST::Nouveau { classe, .. } => Some(classe.clone()),
             ExprAST::Ceci(_) => self.classe_courante.clone(),
-            _ => None,
+            _ => self.type_statique_expression(expr).and_then(|type_expr| match type_expr {
+                Type::Classe(n, _) | Type::Paramétré(n, _) => Some(n),
+                _ => None,
+            }),
         }
     }
 
@@ -1449,11 +1514,63 @@ impl GénérateurIR {
                                 IRValeur::Appel(nom_fn, args)
                             }
                         } else {
-                            IRValeur::Appel(self.nom_fonction_native(membre), args_ir)
+                            let classe_depuis_objet = match &objet_ir {
+                                IRValeur::Membre {
+                                    type_membre: IRType::Struct(classe, _),
+                                    ..
+                                } => Some(classe.clone()),
+                                IRValeur::Index(obj_indexé, _) => match obj_indexé.as_ref() {
+                                    IRValeur::Membre { type_membre, .. } => match type_membre {
+                                        IRType::Liste(élément) | IRType::Tableau(élément, _) => {
+                                            match élément.as_ref() {
+                                                IRType::Struct(classe, _) => Some(classe.clone()),
+                                                _ => None,
+                                            }
+                                        }
+                                        _ => None,
+                                    },
+                                    _ => None,
+                                },
+                                _ => None,
+                            };
+
+                            let nom_fn = if let Some(classe) = classe_depuis_objet
+                                .or_else(|| self.classe_pour_expression(objet))
+                            {
+                                let classe_impl =
+                                    self.classe_impl_méthode(&classe, membre).unwrap_or(classe);
+                                format!("{}_{}", classe_impl, membre)
+                            } else {
+                                self.nom_fonction_native(membre)
+                            };
+                            let mut args: Vec<IRValeur> = vec![objet_ir];
+                            args.extend(args_ir);
+                            IRValeur::Appel(nom_fn, args)
                         }
                     } else {
-                        let classe_obj = self.classe_pour_expression(objet);
-                        let nom_fn = if let Some(classe) = classe_obj {
+                        let classe_depuis_objet = match &objet_ir {
+                            IRValeur::Membre {
+                                type_membre: IRType::Struct(classe, _),
+                                ..
+                            } => Some(classe.clone()),
+                            IRValeur::Index(obj_indexé, _) => match obj_indexé.as_ref() {
+                                IRValeur::Membre { type_membre, .. } => match type_membre {
+                                    IRType::Liste(élément) | IRType::Tableau(élément, _) => {
+                                        match élément.as_ref() {
+                                            IRType::Struct(classe, _) => Some(classe.clone()),
+                                            _ => None,
+                                        }
+                                    }
+                                    _ => None,
+                                },
+                                _ => None,
+                            },
+                            _ => None,
+                        };
+
+                        let nom_fn = if let Some(classe) = classe_depuis_objet
+                            .or_else(|| self.classe_pour_expression(objet))
+                        {
                             let classe_impl =
                                 self.classe_impl_méthode(&classe, membre).unwrap_or(classe);
                             format!("{}_{}", classe_impl, membre)
@@ -1510,14 +1627,32 @@ impl GénérateurIR {
 
             ExprAST::Conditionnelle {
                 condition,
-                alors: _,
-                sinon: _,
+                alors,
+                sinon,
                 ..
-            } => IRValeur::Opération(
-                IROp::Égal,
-                Box::new(self.générer_expression(condition)),
-                Some(Box::new(IRValeur::Booléen(true))),
-            ),
+            } => {
+                let cond = self.générer_expression(condition);
+                let v_alors = self.générer_expression(alors);
+                let type_résultat = self.type_pour_expression(alors);
+                let v_sinon = sinon
+                    .as_ref()
+                    .map(|expr| self.générer_expression(expr))
+                    .unwrap_or_else(|| match type_résultat {
+                        IRType::Texte => IRValeur::Texte(String::new()),
+                        IRType::Décimal => IRValeur::Décimal(0.0),
+                        IRType::Booléen => IRValeur::Booléen(false),
+                        _ => IRValeur::Entier(0),
+                    });
+
+                let nom_fn = match type_résultat {
+                    IRType::Texte => "gal_select_texte",
+                    IRType::Décimal => "gal_select_decimal",
+                    IRType::Booléen => "gal_select_bool",
+                    _ => "gal_select_entier",
+                };
+
+                IRValeur::Appel(nom_fn.to_string(), vec![cond, v_alors, v_sinon])
+            }
 
             ExprAST::InitialisationTableau { éléments, .. } => {
                 IRValeur::AllouerTableau(IRType::Vide, éléments.len())
