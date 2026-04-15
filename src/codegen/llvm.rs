@@ -289,6 +289,14 @@ impl GénérateurLLVM {
             (vec![IRType::Liste(Box::new(IRType::Entier)), IRType::Entier], IRType::Booléen),
         );
         self.signatures_fonctions.insert(
+            "gal_liste_ajouter_ptr".to_string(),
+            (vec![IRType::Liste(Box::new(IRType::Entier)), IRType::Texte], IRType::Vide),
+        );
+        self.signatures_fonctions.insert(
+            "gal_liste_obtenir_ptr".to_string(),
+            (vec![IRType::Liste(Box::new(IRType::Entier)), IRType::Entier], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
             "gal_ensemble_nouveau".to_string(),
             (vec![], IRType::Ensemble(Box::new(IRType::Entier))),
         );
@@ -478,6 +486,8 @@ impl GénérateurLLVM {
         self.écrire("declare void @gal_liste_ajouter_i64(i8*, i64)\n");
         self.écrire("declare i64 @gal_liste_obtenir_i64(i8*, i64)\n");
         self.écrire("declare i1 @gal_liste_contient_i64(i8*, i64)\n");
+        self.écrire("declare void @gal_liste_ajouter_ptr(i8*, i8*)\n");
+        self.écrire("declare i8* @gal_liste_obtenir_ptr(i8*, i64)\n");
         self.écrire("declare i8* @gal_ensemble_nouveau()\n");
         self.écrire("declare void @gal_ensemble_ajouter_i64(i8*, i64)\n");
         self.écrire("declare i1 @gal_ensemble_contient_i64(i8*, i64)\n");
@@ -1062,33 +1072,44 @@ impl GénérateurLLVM {
                 let mut code = String::new();
                 code.push_str(&obj_code);
                 code.push_str(&idx_code);
-                let reg_ptr = self.reg_suivant();
-                code.push_str(&format!(
-                    "  {} = call i8* @gal_liste_obtenir(i8* {}, i64 {})\n",
-                    reg_ptr, obj_reg, idx_reg
-                ));
 
                 match type_attendu {
                     IRType::Entier => {
                         let out = self.reg_suivant();
-                        code.push_str(&format!("  {} = ptrtoint i8* {} to i64\n", out, reg_ptr));
+                        code.push_str(&format!(
+                            "  {} = call i64 @gal_liste_obtenir_i64(i8* {}, i64 {})\n",
+                            out, obj_reg, idx_reg
+                        ));
                         (out, code)
                     }
                     IRType::Booléen => {
                         let bits = self.reg_suivant();
                         let out = self.reg_suivant();
-                        code.push_str(&format!("  {} = ptrtoint i8* {} to i64\n", bits, reg_ptr));
+                        code.push_str(&format!(
+                            "  {} = call i64 @gal_liste_obtenir_i64(i8* {}, i64 {})\n",
+                            bits, obj_reg, idx_reg
+                        ));
                         code.push_str(&format!("  {} = icmp ne i64 {}, 0\n", out, bits));
                         (out, code)
                     }
                     IRType::Décimal => {
                         let bits = self.reg_suivant();
                         let out = self.reg_suivant();
-                        code.push_str(&format!("  {} = ptrtoint i8* {} to i64\n", bits, reg_ptr));
+                        code.push_str(&format!(
+                            "  {} = call i64 @gal_liste_obtenir_i64(i8* {}, i64 {})\n",
+                            bits, obj_reg, idx_reg
+                        ));
                         code.push_str(&format!("  {} = sitofp i64 {} to double\n", out, bits));
                         (out, code)
                     }
-                    _ => (reg_ptr, code),
+                    _ => {
+                        let out = self.reg_suivant();
+                        code.push_str(&format!(
+                            "  {} = call i8* @gal_liste_obtenir_ptr(i8* {}, i64 {})\n",
+                            out, obj_reg, idx_reg
+                        ));
+                        (out, code)
+                    }
                 }
             }
             IRValeur::InitialisationDictionnaire {

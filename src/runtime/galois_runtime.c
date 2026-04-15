@@ -352,6 +352,10 @@ void gal_liste_ajouter_i64(gal_liste* l, int64_t valeur) {
     gal_liste_ajouter(l, &valeur);
 }
 
+void gal_liste_ajouter_ptr(gal_liste* l, void* valeur) {
+    gal_liste_ajouter(l, &valeur);
+}
+
 void* gal_liste_obtenir(gal_liste* l, int64_t indice) {
     if (indice < 0 || indice >= l->taille) return NULL;
     return (char*)l->données + indice * l->taille_élément;
@@ -361,6 +365,12 @@ int64_t gal_liste_obtenir_i64(gal_liste* l, int64_t indice) {
     void* ptr = gal_liste_obtenir(l, indice);
     if (!ptr) return 0;
     return *(int64_t*)ptr;
+}
+
+void* gal_liste_obtenir_ptr(gal_liste* l, int64_t indice) {
+    void* ptr = gal_liste_obtenir(l, indice);
+    if (!ptr) return NULL;
+    return *(void**)ptr;
 }
 
 int64_t gal_liste_taille(gal_liste* l) {

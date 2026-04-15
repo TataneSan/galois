@@ -419,6 +419,50 @@ impl GénérateurIR {
         }
     }
 
+    fn type_depuis_ir_type(&self, t: &IRType) -> Type {
+        match t {
+            IRType::Entier => Type::Entier,
+            IRType::Décimal => Type::Décimal,
+            IRType::Texte => Type::Texte,
+            IRType::Booléen => Type::Booléen,
+            IRType::Nul => Type::Nul,
+            IRType::Tableau(inner, n) => {
+                Type::Tableau(Box::new(self.type_depuis_ir_type(inner)), *n)
+            }
+            IRType::Liste(inner) => Type::Liste(Box::new(self.type_depuis_ir_type(inner))),
+            IRType::Pile(inner) => Type::Pile(Box::new(self.type_depuis_ir_type(inner))),
+            IRType::File(inner) => Type::File(Box::new(self.type_depuis_ir_type(inner))),
+            IRType::ListeChaînée(inner) => {
+                Type::ListeChaînée(Box::new(self.type_depuis_ir_type(inner)))
+            }
+            IRType::Dictionnaire(k, v) => Type::Dictionnaire(
+                Box::new(self.type_depuis_ir_type(k)),
+                Box::new(self.type_depuis_ir_type(v)),
+            ),
+            IRType::Ensemble(inner) => Type::Ensemble(Box::new(self.type_depuis_ir_type(inner))),
+            IRType::Tuple(types) => {
+                Type::Tuple(types.iter().map(|ty| self.type_depuis_ir_type(ty)).collect())
+            }
+            IRType::Fonction(ret, params) => Type::Fonction(
+                params.iter().map(|ty| self.type_depuis_ir_type(ty)).collect(),
+                Box::new(self.type_depuis_ir_type(ret)),
+            ),
+            IRType::Struct(nom, _) => Type::Classe(nom.clone(), None),
+            IRType::Pointeur(inner) | IRType::Référence(inner) => {
+                Type::Pointeur(Box::new(self.type_depuis_ir_type(inner)))
+            }
+            IRType::Vide => Type::Rien,
+        }
+    }
+
+    fn type_depuis_valeur_ir(&self, valeur: &IRValeur) -> Option<Type> {
+        match valeur {
+            IRValeur::Membre { type_membre, .. } => Some(self.type_depuis_ir_type(type_membre)),
+            IRValeur::Référence(nom) => self.types_locaux.get(nom).cloned(),
+            _ => None,
+        }
+    }
+
     fn nom_fonction_native(&self, nom: &str) -> String {
         match nom {
             "aleatoire" => "gal_aleatoire".to_string(),
@@ -474,7 +518,12 @@ impl GénérateurIR {
                         _ => None,
                     }
                 } else {
-                    None
+                    match membre {
+                        "ajouter" => Some("gal_liste_ajouter_ptr".to_string()),
+                        "obtenir" => Some("gal_liste_obtenir_ptr".to_string()),
+                        "taille" | "longueur" => Some("gal_liste_taille".to_string()),
+                        _ => None,
+                    }
                 }
             }
             Type::Ensemble(t) => {
@@ -1171,6 +1220,19 @@ impl GénérateurIR {
                         blocs_suppl.push(b.clone());
                     }
                 }
+                InstrAST::Pour { .. } => {
+                    let bloc_ast = BlocAST {
+                        instructions: vec![instr.clone()],
+                        position: crate::error::Position::nouvelle(1, 1, ""),
+                    };
+                    let blocs = self.générer_bloc(&bloc_ast);
+                    if let Some(first) = blocs.first() {
+                        blocs_init.push(first.clone());
+                    }
+                    for b in blocs.iter().skip(1) {
+                        blocs_suppl.push(b.clone());
+                    }
+                }
                 _ => {}
             }
         }
@@ -1510,6 +1572,152 @@ impl GénérateurIR {
 
                     nom_bloc_courant = suite_bloc;
                 }
+                InstrAST::Pour {
+                    variable,
+                    itérable,
+                    bloc,
+                    ..
+                } => {
+                    let valeur_itérable = self.générer_expression(itérable);
+                    let type_itérable_ir = match &valeur_itérable {
+                        IRValeur::Membre { type_membre, .. } => type_membre.clone(),
+                        _ => self
+                            .type_statique_expression(itérable)
+                            .map(|t| IRType::from(&t))
+                            .unwrap_or(IRType::Liste(Box::new(IRType::Entier))),
+                    };
+                    let type_élément_ir = match &type_itérable_ir {
+                        IRType::Liste(t)
+                        | IRType::Tableau(t, _)
+                        | IRType::ListeChaînée(t)
+                        | IRType::Ensemble(t) => *t.clone(),
+                        IRType::Texte => IRType::Texte,
+                        _ => IRType::Entier,
+                    };
+                    let type_élément_src = match &type_élément_ir {
+                        IRType::Entier => Type::Entier,
+                        IRType::Décimal => Type::Décimal,
+                        IRType::Texte => Type::Texte,
+                        IRType::Booléen => Type::Booléen,
+                        IRType::Struct(nom, _) => Type::Classe(nom.clone(), None),
+                        _ => Type::Inconnu,
+                    };
+
+                    let var_itérable = self.temp_suivant();
+                    let var_index = self.temp_suivant();
+                    let var_taille = self.temp_suivant();
+
+                    instructions_courantes.push(IRInstruction::Allocation {
+                        nom: variable.to_string(),
+                        type_var: type_élément_ir.clone(),
+                    });
+                    instructions_courantes.push(IRInstruction::Allocation {
+                        nom: var_itérable.clone(),
+                        type_var: type_itérable_ir.clone(),
+                    });
+                    instructions_courantes.push(IRInstruction::Affecter {
+                        destination: var_itérable.clone(),
+                        valeur: valeur_itérable,
+                        type_var: type_itérable_ir.clone(),
+                    });
+                    instructions_courantes.push(IRInstruction::Allocation {
+                        nom: var_index.clone(),
+                        type_var: IRType::Entier,
+                    });
+                    instructions_courantes.push(IRInstruction::Affecter {
+                        destination: var_index.clone(),
+                        valeur: IRValeur::Entier(0),
+                        type_var: IRType::Entier,
+                    });
+                    instructions_courantes.push(IRInstruction::Allocation {
+                        nom: var_taille.clone(),
+                        type_var: IRType::Entier,
+                    });
+                    let fn_taille = match type_itérable_ir {
+                        IRType::Ensemble(_) => "gal_ensemble_taille",
+                        IRType::Texte => "strlen",
+                        _ => "gal_liste_taille",
+                    };
+                    instructions_courantes.push(IRInstruction::Affecter {
+                        destination: var_taille.clone(),
+                        valeur: IRValeur::Appel(
+                            fn_taille.to_string(),
+                            vec![IRValeur::Référence(var_itérable.clone())],
+                        ),
+                        type_var: IRType::Entier,
+                    });
+
+                    let cond_bloc = self.bloc_suivant("pour_it_cond");
+                    let corps_bloc = self.bloc_suivant("pour_it_corps");
+                    let suite_bloc = self.bloc_suivant("pour_it_suite");
+
+                    instructions_courantes.push(IRInstruction::Saut(cond_bloc.clone()));
+                    blocs.push(IRBloc {
+                        nom: nom_bloc_courant.clone(),
+                        instructions: std::mem::take(&mut instructions_courantes),
+                    });
+
+                    blocs.push(IRBloc {
+                        nom: cond_bloc.clone(),
+                        instructions: vec![IRInstruction::BranchementConditionnel {
+                            condition: IRValeur::Opération(
+                                IROp::Inférieur,
+                                Box::new(IRValeur::Référence(var_index.clone())),
+                                Some(Box::new(IRValeur::Référence(var_taille.clone()))),
+                            ),
+                            bloc_alors: corps_bloc.clone(),
+                            bloc_sinon: suite_bloc.clone(),
+                        }],
+                    });
+
+                    let ancien_type_var = self.types_locaux.insert(variable.clone(), type_élément_src);
+                    let mut blocs_corps = self.générer_bloc(bloc);
+                    if let Some(ancien) = ancien_type_var {
+                        self.types_locaux.insert(variable.clone(), ancien);
+                    } else {
+                        self.types_locaux.remove(variable);
+                    }
+
+                    if blocs_corps.is_empty() {
+                        blocs_corps.push(IRBloc {
+                            nom: corps_bloc.clone(),
+                            instructions: Vec::new(),
+                        });
+                    }
+                    if let Some(premier) = blocs_corps.first_mut() {
+                        premier.nom = corps_bloc.clone();
+                        premier.instructions.insert(
+                            0,
+                            IRInstruction::Affecter {
+                                destination: variable.clone(),
+                                valeur: IRValeur::Index(
+                                    Box::new(IRValeur::Référence(var_itérable.clone())),
+                                    Box::new(IRValeur::Référence(var_index.clone())),
+                                ),
+                                type_var: type_élément_ir,
+                            },
+                        );
+                    }
+                    if let Some(dernier) = blocs_corps.last_mut() {
+                        if !Self::bloc_a_terminateur(&dernier.instructions) {
+                            dernier.instructions.push(IRInstruction::Affecter {
+                                destination: var_index.clone(),
+                                valeur: IRValeur::Opération(
+                                    IROp::Ajouter,
+                                    Box::new(IRValeur::Référence(var_index.clone())),
+                                    Some(Box::new(IRValeur::Entier(1))),
+                                ),
+                                type_var: IRType::Entier,
+                            });
+                            dernier
+                                .instructions
+                                .push(IRInstruction::Saut(cond_bloc.clone()));
+                        }
+                    }
+                    blocs.extend(blocs_corps);
+
+                    nom_bloc_courant = suite_bloc;
+                }
                 InstrAST::Interrompre(_) | InstrAST::Continuer(_) => {}
                 _ => instructions_courantes.extend(self.générer_instructions_bloc(instr)),
             }
@@ -1763,7 +1971,10 @@ impl GénérateurIR {
                         .map(|a| self.générer_expression(a))
                         .collect();
 
-                    if let Some(type_obj) = self.type_statique_expression(objet) {
+                    let type_obj_opt = self
+                        .type_statique_expression(objet)
+                        .or_else(|| self.type_depuis_valeur_ir(&objet_ir));
+                    if let Some(type_obj) = type_obj_opt {
                         if let Type::Module(nom_module) = &type_obj {
                             if nom_module == "liste" {
                                 if let Some(appel_spécial) =
