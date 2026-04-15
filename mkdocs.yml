@@ -54,7 +54,6 @@ theme:
     repo: fontawesome/brands/github
 
 extra:
-  generator: false
   homepage: index.md
   social:
     - icon: fontawesome/brands/github
