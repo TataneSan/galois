@@ -342,6 +342,14 @@ impl Vérificateur {
             },
         );
         symboles_maths.insert(
+            "sinus".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
             "cos".to_string(),
             GenreSymbole::Fonction {
                 paramètres: vec![("x".to_string(), Type::Décimal)],
@@ -350,7 +358,23 @@ impl Vérificateur {
             },
         );
         symboles_maths.insert(
+            "cosinus".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
             "tan".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "tangente".to_string(),
             GenreSymbole::Fonction {
                 paramètres: vec![("x".to_string(), Type::Décimal)],
                 type_retour: Type::Décimal,

@@ -752,6 +752,17 @@ soit f = reseau.tcp_fermer(s)";
 }
 
 #[test]
+fn test_vérification_alias_maths_trigonometrie_fr() {
+    let source = "soit a = maths.sinus(1.0)
+soit b = maths.cosinus(1.0)
+soit c = maths.tangente(1.0)";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_ok());
+}
+
+#[test]
 fn test_vérification_reseau_tcp_connecter_arity_invalide() {
     let source = "soit s = reseau.tcp_connecter(\"127.0.0.1\")";
 
