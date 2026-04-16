@@ -146,6 +146,10 @@ impl GénérateurDoc {
         Ok(())
     }
 
+    pub fn est_vide(&self) -> bool {
+        self.entrées.is_empty()
+    }
+
     fn chercher_doc(&self, position: &Position) -> DocCommentaire {
         let ligne = position.ligne;
         for décalage in 0..ligne {
@@ -269,14 +273,7 @@ impl GénérateurDoc {
         Ok(())
     }
 
-    pub fn générer_html(&self, répertoire_sortie: &Path) -> Resultat<()> {
-        fs::create_dir_all(répertoire_sortie).map_err(|e| {
-            Erreur::runtime(
-                Position::nouvelle(1, 1, ""),
-                &format!("Impossible de créer le répertoire: {}", e),
-            )
-        })?;
-
+    fn construire_index_html(&self) -> String {
         let mut index = String::new();
         index.push_str("<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n");
         index.push_str("<meta charset=\"UTF-8\">\n");
@@ -296,67 +293,107 @@ impl GénérateurDoc {
             par_genre.entry(clé).or_default().push(entrée);
         }
 
-        for (genre, entrées) in &par_genre {
-            index.push_str(&format!("<h2>{}</h2>\n", genre));
-            index.push_str("<div class=\"entries\">\n");
+        if par_genre.is_empty() {
+            index.push_str(
+                "<p>Aucune entrée documentable trouvée dans ce fichier (fonctions, classes, interfaces ou constantes).</p>\n",
+            );
+        } else {
+            for (genre, entrées) in &par_genre {
+                index.push_str(&format!("<h2>{}</h2>\n", genre));
+                index.push_str("<div class=\"entries\">\n");
 
-            for entrée in entrées {
-                index.push_str("<div class=\"entry\">\n");
-                index.push_str(&format!("<h3>{}</h3>\n", entrée.nom));
+                for entrée in entrées {
+                    index.push_str("<div class=\"entry\">\n");
+                    index.push_str(&format!("<h3>{}</h3>\n", entrée.nom));
 
-                if !entrée.description.is_empty() {
-                    index.push_str(&format!("<p>{}</p>\n", entrée.description));
-                }
+                    if !entrée.description.is_empty() {
+                        index.push_str(&format!("<p>{}</p>\n", entrée.description));
+                    }
 
-                if !entrée.paramètres.is_empty() {
-                    index.push_str("<h4>Paramètres</h4>\n<ul>\n");
-                    for (nom, type_str) in &entrée.paramètres {
-                        if !type_str.is_empty() {
-                            index.push_str(&format!(
-                                "<li><code>{}</code>: {}</li>\n",
-                                nom, type_str
-                            ));
-                        } else {
-                            index.push_str(&format!("<li><code>{}</code></li>\n", nom));
+                    if !entrée.paramètres.is_empty() {
+                        index.push_str("<h4>Paramètres</h4>\n<ul>\n");
+                        for (nom, type_str) in &entrée.paramètres {
+                            if !type_str.is_empty() {
+                                index.push_str(&format!(
+                                    "<li><code>{}</code>: {}</li>\n",
+                                    nom, type_str
+                                ));
+                            } else {
+                                index.push_str(&format!("<li><code>{}</code></li>\n", nom));
+                            }
+                        }
+                        index.push_str("</ul>\n");
+                    }
+
+                    if let Some(ref rt) = entrée.type_retour {
+                        index.push_str(&format!(
+                            "<p><strong>Retourne:</strong> <code>{}</code></p>\n",
+                            rt
+                        ));
+                    }
+
+                    if !entrée.exemples.is_empty() {
+                        index.push_str("<h4>Exemples</h4>\n");
+                        for ex in &entrée.exemples {
+                            index.push_str(&format!("<pre><code>{}</code></pre>\n", ex));
                         }
                     }
-                    index.push_str("</ul>\n");
-                }
 
-                if let Some(ref rt) = entrée.type_retour {
-                    index.push_str(&format!(
-                        "<p><strong>Retourne:</strong> <code>{}</code></p>\n",
-                        rt
-                    ));
-                }
-
-                if !entrée.exemples.is_empty() {
-                    index.push_str("<h4>Exemples</h4>\n");
-                    for ex in &entrée.exemples {
-                        index.push_str(&format!("<pre><code>{}</code></pre>\n", ex));
+                    if !entrée.erreurs.is_empty() {
+                        index.push_str("<h4>Erreurs</h4>\n<ul>\n");
+                        for err in &entrée.erreurs {
+                            index.push_str(&format!("<li>{}</li>\n", err));
+                        }
+                        index.push_str("</ul>\n");
                     }
-                }
 
-                if !entrée.erreurs.is_empty() {
-                    index.push_str("<h4>Erreurs</h4>\n<ul>\n");
-                    for err in &entrée.erreurs {
-                        index.push_str(&format!("<li>{}</li>\n", err));
-                    }
-                    index.push_str("</ul>\n");
+                    index.push_str("</div>\n");
                 }
 
                 index.push_str("</div>\n");
             }
-
-            index.push_str("</div>\n");
         }
 
         index.push_str("</body>\n</html>\n");
+        index
+    }
 
-        fs::write(répertoire_sortie.join("index.html"), &index).map_err(|e| {
+    pub fn générer_html(&self, répertoire_sortie: &Path) -> Resultat<()> {
+        fs::create_dir_all(répertoire_sortie).map_err(|e| {
             Erreur::runtime(
                 Position::nouvelle(1, 1, ""),
-                &format!("Impossible d'écrire index.html: {}", e),
+                &format!("Impossible de créer le répertoire: {}", e),
+            )
+        })?;
+
+        fs::write(répertoire_sortie.join("index.html"), self.construire_index_html()).map_err(
+            |e| {
+                Erreur::runtime(
+                    Position::nouvelle(1, 1, ""),
+                    &format!("Impossible d'écrire index.html: {}", e),
+                )
+            },
+        )?;
+
+        Ok(())
+    }
+
+    pub fn générer_html_fichier(&self, fichier_sortie: &Path) -> Resultat<()> {
+        if let Some(parent) = fichier_sortie.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent).map_err(|e| {
+                    Erreur::runtime(
+                        Position::nouvelle(1, 1, ""),
+                        &format!("Impossible de créer le répertoire: {}", e),
+                    )
+                })?;
+            }
+        }
+
+        fs::write(fichier_sortie, self.construire_index_html()).map_err(|e| {
+            Erreur::runtime(
+                Position::nouvelle(1, 1, ""),
+                &format!("Impossible d'écrire {}: {}", fichier_sortie.display(), e),
             )
         })?;
 

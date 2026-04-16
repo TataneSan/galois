@@ -282,6 +282,12 @@ fn doc_accepte_output_avant_fichier() {
         String::from_utf8_lossy(&sortie.stdout),
         String::from_utf8_lossy(&sortie.stderr)
     );
+    let stdout = String::from_utf8_lossy(&sortie.stdout);
+    assert!(
+        stdout.contains("Aucune entrée documentable détectée"),
+        "La commande doc devrait signaler l'absence d'entrées documentables:\n{}",
+        stdout
+    );
 
     let index = base.join("documentation").join("index.html");
     assert!(
@@ -289,8 +295,63 @@ fn doc_accepte_output_avant_fichier() {
         "Le fichier index de documentation devrait exister: {}",
         index.display()
     );
+    let contenu =
+        fs::read_to_string(&index).expect("Impossible de lire le fichier index de documentation");
+    assert!(
+        contenu.contains("Aucune entrée documentable trouvée"),
+        "Le HTML devrait expliquer pourquoi la documentation est vide:\n{}",
+        contenu
+    );
 
     let _ = fs::remove_file(source);
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
+fn doc_peut_generer_un_fichier_html_direct() {
+    let suffixe = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("Horloge système invalide")
+        .as_nanos();
+    let base = env::temp_dir().join(format!(
+        "galois_doc_fichier_{}_{}",
+        std::process::id(),
+        suffixe
+    ));
+    fs::create_dir_all(&base).expect("Impossible de créer le répertoire temporaire");
+
+    let source = base.join("api.gal");
+    fs::write(
+        &source,
+        "/// Retourne 1\nfonction un(): entier\n    retourne 1\nfin\n",
+    )
+    .expect("Impossible d'écrire le programme temporaire");
+
+    let sortie = Command::new(binaire_galois())
+        .args(["doc", "api.gal", "-o", "api_doc.html"])
+        .current_dir(&base)
+        .output()
+        .expect("Impossible de lancer Galois");
+
+    assert!(
+        sortie.status.success(),
+        "Commande doc en échec:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&sortie.stdout),
+        String::from_utf8_lossy(&sortie.stderr)
+    );
+
+    let fichier = base.join("api_doc.html");
+    assert!(
+        fichier.exists(),
+        "Le fichier HTML de documentation devrait exister: {}",
+        fichier.display()
+    );
+    let contenu =
+        fs::read_to_string(&fichier).expect("Impossible de lire le fichier HTML généré");
+    assert!(contenu.contains("<h3>un</h3>"), "La doc devrait contenir la fonction 'un'");
+
+    let _ = fs::remove_file(source);
+    let _ = fs::remove_file(fichier);
     let _ = fs::remove_dir_all(base);
 }
 

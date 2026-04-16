@@ -68,7 +68,7 @@ COMMANDES:
   parser, parse, p <fichier>                  Afficher l'AST
   vérifier, v <fichier>                       Vérifier les types
   ir <fichier>                                Afficher l'IR
-  doc, documentation <fichier> [-o dossier]   Générer la documentation HTML
+  doc, documentation <fichier> [-o sortie]    Générer la documentation HTML
   debug, débogue <fichier>                    Lancer le débogueur
   aide, help                                  Afficher cette aide
 ```

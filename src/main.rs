@@ -298,7 +298,7 @@ fn afficher_aide() {
     println!("  parser, parse, p <fichier>                  Afficher l'AST");
     println!("  vérifier, v <fichier>                       Vérifier les types");
     println!("  ir <fichier>                                Afficher l'IR");
-    println!("  doc, documentation <fichier> [-o dossier]   Générer la documentation HTML");
+    println!("  doc, documentation <fichier> [-o sortie]    Générer la documentation HTML");
     println!("  debug, débogue <fichier>                    Lancer le débogueur");
     println!("  aide, help                                  Afficher cette aide");
     println!();
@@ -764,10 +764,30 @@ fn exécuter_doc(chemin: &str, sortie: Option<String>) -> Resultat<()> {
     générateur.définir_source(&source);
     générateur.générer_depuis_programme(&programme)?;
 
-    let répertoire = sortie.unwrap_or_else(|| "doc".to_string());
-    générateur.générer_html(Path::new(&répertoire))?;
+    let sortie_brute = sortie.unwrap_or_else(|| "doc".to_string());
+    let chemin_sortie = Path::new(&sortie_brute);
+    let extension = chemin_sortie
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase());
+    let sortie_est_fichier_html = matches!(extension.as_deref(), Some("html" | "htm"));
 
-    println!("Documentation générée dans: {}", répertoire);
+    if sortie_est_fichier_html {
+        générateur.générer_html_fichier(chemin_sortie)?;
+        println!("Documentation générée: {}", sortie_brute);
+    } else {
+        générateur.générer_html(chemin_sortie)?;
+        println!(
+            "Documentation générée dans: {} (index.html)",
+            chemin_sortie.display()
+        );
+    }
+
+    if générateur.est_vide() {
+        println!(
+            "Aucune entrée documentable détectée (fonctions, classes, interfaces, constantes)."
+        );
+    }
     Ok(())
 }
 

@@ -140,14 +140,16 @@ Affiche la représentation intermédiaire générée.
 ### `doc` / `documentation` — Générer la documentation
 
 ```bash
-galois doc <fichier.gal> [-o dossier]
+galois doc <fichier.gal> [-o sortie]
 ```
 
 Génère la documentation HTML à partir des commentaires `///`.
+`-o` accepte soit un dossier (création de `index.html`), soit un fichier `.html`.
 
 ```bash
 galois doc programme.gal
 galois doc programme.gal -o documentation
+galois doc programme.gal -o api.html
 ```
 
 ### `debug` / `débogue` — Lancer le débogueur

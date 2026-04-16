@@ -68,6 +68,9 @@ galois doc programme.gal
 
 # Dossier personnalisé
 galois doc programme.gal -o ma_doc
+
+# Fichier HTML direct
+galois doc programme.gal -o ma_doc.html
 ```
 
 Résultat :
@@ -75,6 +78,12 @@ Résultat :
 ```
 ma_doc/
 └── index.html
+```
+
+Ou, avec un fichier :
+
+```
+ma_doc.html
 ```
 
 ## Contenu généré
