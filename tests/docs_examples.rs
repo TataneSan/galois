@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
+use std::{env, fs};
 
 fn binaire_galois() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_galois"))
@@ -165,4 +166,45 @@ fn exemples_hors_doc_supplémentaires() {
         let sortie = exécuter_exemple("extras", nom);
         assert_eq!(normaliser(&sortie), attendu, "échec sur {nom}");
     }
+}
+
+#[test]
+fn run_supprime_le_binaire_genere() {
+    let suffixe = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("Horloge système invalide")
+        .as_nanos();
+    let base = env::temp_dir().join(format!(
+        "galois_run_cleanup_{}_{}",
+        std::process::id(),
+        suffixe
+    ));
+    fs::create_dir_all(&base).expect("Impossible de créer le répertoire temporaire");
+
+    let source = base.join("cleanup.gal");
+    fs::write(&source, "afficher(1)\n").expect("Impossible d'écrire le programme temporaire");
+
+    let sortie = Command::new(binaire_galois())
+        .arg("run")
+        .arg("cleanup.gal")
+        .current_dir(&base)
+        .output()
+        .expect("Impossible de lancer Galois");
+
+    assert!(
+        sortie.status.success(),
+        "Exécution run en échec:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&sortie.stdout),
+        String::from_utf8_lossy(&sortie.stderr)
+    );
+
+    let binaire = base.join("cleanup");
+    assert!(
+        !binaire.exists(),
+        "Le binaire généré devrait être supprimé après run: {}",
+        binaire.display()
+    );
+
+    let _ = fs::remove_file(source);
+    let _ = fs::remove_dir_all(base);
 }

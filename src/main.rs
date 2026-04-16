@@ -390,14 +390,24 @@ fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
         format!("{}", exécutable.display())
     };
 
-    let status = process::Command::new(&chemin_exécutable)
+    let résultat_exécution = process::Command::new(&chemin_exécutable)
         .status()
         .map_err(|e| {
             error::Erreur::runtime(
                 error::Position::nouvelle(1, 1, chemin),
                 &format!("Impossible d'exécuter {}: {}", chemin_exécutable, e),
             )
-        })?;
+        });
+
+    if let Err(e) = fs::remove_file(&exécutable) {
+        eprintln!(
+            "Avertissement: impossible de supprimer l'exécutable temporaire {}: {}",
+            exécutable.display(),
+            e
+        );
+    }
+
+    let status = résultat_exécution?;
 
     let code = status.code().unwrap_or(1);
     if code != 0 {
