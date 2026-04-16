@@ -330,6 +330,10 @@ impl GénérateurLLVM {
             (vec![IRType::Texte, IRType::Entier], IRType::Texte),
         );
         self.signatures_fonctions.insert(
+            "gal_texte_marquer_partage".to_string(),
+            (vec![IRType::Texte], IRType::Vide),
+        );
+        self.signatures_fonctions.insert(
             "gal_texte_split".to_string(),
             (vec![IRType::Texte, IRType::Texte], IRType::Liste(Box::new(IRType::Texte))),
         );
@@ -1152,6 +1156,7 @@ impl GénérateurLLVM {
         self.écrire("declare i8* @gal_texte_sous_chaine(i8*, i64, i64)\n");
         self.écrire("declare i8* @gal_texte_remplacer(i8*, i8*, i8*)\n");
         self.écrire("declare i8* @gal_texte_repeter(i8*, i64)\n");
+        self.écrire("declare void @gal_texte_marquer_partage(i8*)\n");
         self.écrire("declare i8* @gal_texte_split(i8*, i8*)\n");
         self.écrire("declare i8* @gal_texte_caracteres(i8*)\n");
         self.écrire("declare i64 @gal_texte_vers_entier(i8*)\n");
@@ -1496,6 +1501,11 @@ impl GénérateurLLVM {
                 let (reg, code) = self.générer_valeur_pour_type(valeur, type_var);
                 if !code.is_empty() {
                     self.écrire(&code);
+                }
+                if matches!(type_var, IRType::Texte)
+                    && matches!(valeur, IRValeur::Référence(source) if source != destination)
+                {
+                    self.écrire(&format!("  call void @gal_texte_marquer_partage(i8* {})\n", reg));
                 }
                 self.écrire(&format!(
                     "  store {} {}, {}* {}\n",

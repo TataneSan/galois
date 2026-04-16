@@ -401,6 +401,45 @@ fn systeme_lire_fichier_supporte_grand_contenu() {
 }
 
 #[test]
+fn texte_concat_preserve_alias_apres_affectation() {
+    let suffixe = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("Horloge système invalide")
+        .as_nanos();
+    let base = env::temp_dir().join(format!(
+        "galois_texte_alias_{}_{}",
+        std::process::id(),
+        suffixe
+    ));
+    fs::create_dir_all(&base).expect("Impossible de créer le répertoire temporaire");
+
+    let source = base.join("alias.gal");
+    fs::write(
+        &source,
+        "mutable a = \"x\"\na = a + \"y\"\nsoit b = a\na = a + \"z\"\nafficher(b)\nafficher(a)\n",
+    )
+    .expect("Impossible d'écrire le programme temporaire");
+
+    let sortie = Command::new(binaire_galois())
+        .arg("run")
+        .arg("alias.gal")
+        .current_dir(&base)
+        .output()
+        .expect("Impossible de lancer Galois");
+
+    assert!(
+        sortie.status.success(),
+        "Exécution run en échec:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&sortie.stdout),
+        String::from_utf8_lossy(&sortie.stderr)
+    );
+    assert_eq!(normaliser(&String::from_utf8_lossy(&sortie.stdout)), "xy\nxyz");
+
+    let _ = fs::remove_file(source);
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
 fn repl_execute_un_buffer() {
     let mut enfant = Command::new(binaire_galois())
         .arg("repl")

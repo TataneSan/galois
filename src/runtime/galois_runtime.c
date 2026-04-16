@@ -340,16 +340,77 @@ static char* gal_dupliquer_chaine(const char* s) {
     return out;
 }
 
+typedef struct gal_texte_alloc_info gal_texte_alloc_info;
+struct gal_texte_alloc_info {
+    char* ptr;
+    size_t capacité;
+    int partagé;
+    gal_texte_alloc_info* suivant;
+};
+
+static gal_texte_alloc_info* gal_texte_allocs = NULL;
+
+static gal_texte_alloc_info* gal_trouver_alloc_texte(const char* ptr) {
+    gal_texte_alloc_info* courant = gal_texte_allocs;
+    while (courant) {
+        if (courant->ptr == ptr) return courant;
+        courant = courant->suivant;
+    }
+    return NULL;
+}
+
+static size_t gal_capacité_texte(size_t requis) {
+    size_t cap = 64;
+    while (cap < requis) cap *= 2;
+    return cap;
+}
+
+static void gal_enregistrer_alloc_texte(char* ptr, size_t capacité) {
+    if (!ptr) return;
+    gal_texte_alloc_info* info = (gal_texte_alloc_info*)malloc(sizeof(gal_texte_alloc_info));
+    if (!info) return;
+    info->ptr = ptr;
+    info->capacité = capacité;
+    info->partagé = 0;
+    info->suivant = gal_texte_allocs;
+    gal_texte_allocs = info;
+}
+
+void gal_texte_marquer_partage(const char* s) {
+    gal_texte_alloc_info* info = gal_trouver_alloc_texte(s);
+    if (info) info->partagé = 1;
+}
+
 char* gal_concat_texte(const char* a, const char* b) {
     if (!a) a = "";
     if (!b) b = "";
     size_t la = strlen(a);
     size_t lb = strlen(b);
-    char* out = (char*)malloc(la + lb + 1);
+
+    size_t requis = la + lb + 1;
+    gal_texte_alloc_info* info = gal_trouver_alloc_texte(a);
+    if (info && !info->partagé) {
+        if (info->capacité < requis) {
+            size_t nouvelle_capacité = gal_capacité_texte(requis);
+            char* redim = (char*)realloc(info->ptr, nouvelle_capacité);
+            if (!redim) return NULL;
+            info->ptr = redim;
+            info->capacité = nouvelle_capacité;
+            a = redim;
+        }
+        char* base = info->ptr;
+        memmove(base + la, b, lb);
+        base[la + lb] = '\0';
+        return base;
+    }
+
+    size_t capacité = gal_capacité_texte(requis);
+    char* out = (char*)malloc(capacité);
     if (!out) return NULL;
     memcpy(out, a, la);
     memcpy(out + la, b, lb);
     out[la + lb] = '\0';
+    gal_enregistrer_alloc_texte(out, capacité);
     return out;
 }
 
