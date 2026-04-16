@@ -255,6 +255,46 @@ fn run_preserve_un_binaire_homonyme_existant() {
 }
 
 #[test]
+fn doc_accepte_output_avant_fichier() {
+    let suffixe = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("Horloge système invalide")
+        .as_nanos();
+    let base = env::temp_dir().join(format!(
+        "galois_doc_option_{}_{}",
+        std::process::id(),
+        suffixe
+    ));
+    fs::create_dir_all(&base).expect("Impossible de créer le répertoire temporaire");
+
+    let source = base.join("exemple.gal");
+    fs::write(&source, "afficher(1)\n").expect("Impossible d'écrire le programme temporaire");
+
+    let sortie = Command::new(binaire_galois())
+        .args(["doc", "-o", "documentation", "exemple.gal"])
+        .current_dir(&base)
+        .output()
+        .expect("Impossible de lancer Galois");
+
+    assert!(
+        sortie.status.success(),
+        "Commande doc en échec:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&sortie.stdout),
+        String::from_utf8_lossy(&sortie.stderr)
+    );
+
+    let index = base.join("documentation").join("index.html");
+    assert!(
+        index.exists(),
+        "Le fichier index de documentation devrait exister: {}",
+        index.display()
+    );
+
+    let _ = fs::remove_file(source);
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
 fn systeme_lire_fichier_supporte_grand_contenu() {
     let suffixe = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

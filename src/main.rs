@@ -77,6 +77,36 @@ enum Commande {
     Aide,
 }
 
+fn parser_args_fichier_et_sortie(args: &[String], index_départ: usize) -> (Option<String>, Option<String>) {
+    let mut entrée = None;
+    let mut sortie = None;
+    let mut i = index_départ;
+
+    while i < args.len() {
+        match args[i].as_str() {
+            "-o" | "--output" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Erreur: valeur attendue après {}", args[i]);
+                    process::exit(1);
+                }
+                sortie = Some(args[i + 1].clone());
+                i += 2;
+            }
+            arg if arg.starts_with('-') => {
+                i += 1;
+            }
+            _ => {
+                if entrée.is_none() {
+                    entrée = Some(args[i].clone());
+                }
+                i += 1;
+            }
+        }
+    }
+
+    (entrée, sortie)
+}
+
 fn analyser_arguments() -> Commande {
     let args: Vec<String> = env::args().collect();
 
@@ -86,17 +116,12 @@ fn analyser_arguments() -> Commande {
 
     match args[1].as_str() {
         "build" | "b" => {
-            if args.len() < 3 {
+            let (entrée_opt, sortie) = parser_args_fichier_et_sortie(&args, 2);
+            let Some(entrée) = entrée_opt else {
                 eprintln!("Erreur: fichier source requis");
                 process::exit(1);
-            }
-            let entrée = args[2].clone();
-            let release = args.iter().any(|a| a == "--release" || a == "-r");
-            let sortie = if let Some(idx) = args.iter().position(|a| a == "-o" || a == "--output") {
-                args.get(idx + 1).cloned()
-            } else {
-                None
             };
+            let release = args.iter().any(|a| a == "--release" || a == "-r");
             Commande::Build {
                 entrée,
                 sortie,
@@ -104,11 +129,11 @@ fn analyser_arguments() -> Commande {
             }
         }
         "run" | "r" => {
-            if args.len() < 3 {
+            let (entrée_opt, _) = parser_args_fichier_et_sortie(&args, 2);
+            let Some(entrée) = entrée_opt else {
                 eprintln!("Erreur: fichier source requis");
                 process::exit(1);
-            }
-            let entrée = args[2].clone();
+            };
             let release = args.iter().any(|a| a == "--release" || a == "-r");
             Commande::Run { entrée, release }
         }
@@ -117,13 +142,13 @@ fn analyser_arguments() -> Commande {
             Commande::Repl { release }
         }
         "compiler" | "comp" | "c" => {
-            if args.len() < 3 {
+            let (entrée_opt, sortie_opt) = parser_args_fichier_et_sortie(&args, 2);
+            let Some(entrée) = entrée_opt else {
                 eprintln!("Erreur: fichier source requis");
                 process::exit(1);
-            }
-            let entrée = args[2].clone();
-            let sortie = if args.len() > 4 && args[3] == "-o" {
-                args[4].clone()
+            };
+            let sortie = if let Some(sortie) = sortie_opt {
+                sortie
             } else {
                 let chemin = Path::new(&entrée);
                 chemin.with_extension("ll").to_string_lossy().to_string()
@@ -186,15 +211,10 @@ fn analyser_arguments() -> Commande {
             Commande::Add { nom, version }
         }
         "doc" | "documentation" => {
-            if args.len() < 3 {
+            let (entrée_opt, sortie) = parser_args_fichier_et_sortie(&args, 2);
+            let Some(entrée) = entrée_opt else {
                 eprintln!("Erreur: fichier source requis");
                 process::exit(1);
-            }
-            let entrée = args[2].clone();
-            let sortie = if let Some(idx) = args.iter().position(|a| a == "-o" || a == "--output") {
-                args.get(idx + 1).cloned()
-            } else {
-                None
             };
             Commande::Doc { entrée, sortie }
         }
