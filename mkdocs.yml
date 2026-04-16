@@ -77,6 +77,8 @@ nav:
     - guides/index.md
     - Installation: guides/installation.md
     - Demarrage rapide: guides/demarrage.md
+    - REPL interactive: guides/repl.md
+    - Systeme et reseau: guides/systeme-reseau.md
   - Reference:
     - reference/index.md
     - Langage complet: reference/langage.md

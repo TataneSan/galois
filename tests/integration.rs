@@ -734,11 +734,16 @@ soit existe = systeme.existe_chemin(dossier)
 soit estf = systeme.est_fichier(\"/tmp/inexistant_galois.txt\")
 soit taille = systeme.taille_fichier(\"/tmp/inexistant_galois.txt\")
 soit contenu = systeme.lire_fichier(\"/tmp/inexistant_galois.txt\")
+soit err_sys = systeme.derniere_erreur()
+soit err_sys_code = systeme.derniere_erreur_code()
 soit ip4 = reseau.est_ipv4(\"127.0.0.1\")
 soit ip6 = reseau.est_ipv6(\"::1\")
 soit s = reseau.tcp_connecter(\"127.0.0.1\", 80)
 soit e = reseau.tcp_envoyer(s, \"x\")
 soit r = reseau.tcp_recevoir(s, 16)
+soit rj = reseau.tcp_recevoir_jusqua(s, \"\\n\", 64)
+soit err_net = reseau.derniere_erreur()
+soit err_net_code = reseau.derniere_erreur_code()
 soit f = reseau.tcp_fermer(s)";
 
     let programme = parser_source(source);

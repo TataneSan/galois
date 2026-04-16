@@ -20,6 +20,7 @@ Galois inclut une bibliothèque standard riche pour faciliter le développement.
 soit x = maths.racine(16.0)        -- 4.0
 soit s = texte.majuscule("hello")   -- "HELLO"
 afficher(x)
+afficher(s)
 ```
 
 ## Contenu par module
@@ -69,6 +70,26 @@ afficher(x)
 | `regrouper_par` | Grouper par clé |
 | `trier_par` | Trier avec clé |
 | `partition` | Partitionner selon prédicat |
+
+### systeme
+
+| Fonction | Description |
+|----------|-------------|
+| `lire_fichier` | Lire un fichier texte |
+| `ecrire_fichier` | Écrire un fichier texte |
+| `ajouter_fichier` | Ajouter du contenu |
+| `taille_fichier` | Taille en octets |
+| `derniere_erreur` | Détail de la dernière erreur |
+
+### reseau
+
+| Fonction | Description |
+|----------|-------------|
+| `resoudre_ipv4` | Résoudre un hôte en IPv4 |
+| `resoudre_nom` | Résolution inverse IPv4 |
+| `tcp_connecter` | Ouvrir un socket client |
+| `tcp_recevoir_jusqua` | Lire jusqu'à un délimiteur |
+| `derniere_erreur` | Détail de la dernière erreur |
 
 ## Classes utilitaires
 

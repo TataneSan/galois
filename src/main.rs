@@ -15,8 +15,10 @@ mod semantic;
 
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use std::process;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use codegen::GénérateurLLVM;
 use compiler::{CompilateurNatif, OptionsCompilation};
@@ -69,6 +71,9 @@ enum Commande {
     Debug {
         entrée: String,
     },
+    Repl {
+        release: bool,
+    },
     Aide,
 }
 
@@ -106,6 +111,10 @@ fn analyser_arguments() -> Commande {
             let entrée = args[2].clone();
             let release = args.iter().any(|a| a == "--release" || a == "-r");
             Commande::Run { entrée, release }
+        }
+        "repl" => {
+            let release = args.iter().any(|a| a == "--release" || a == "-r");
+            Commande::Repl { release }
         }
         "compiler" | "comp" | "c" => {
             if args.len() < 3 {
@@ -261,6 +270,7 @@ fn afficher_aide() {
     println!("COMMANDES:");
     println!("  build, b <fichier> [-o sortie] [--release]  Compiler vers exécutable natif");
     println!("  run, r <fichier> [--release]                 Compiler et exécuter");
+    println!("  repl [--release]                             Lancer une boucle REPL");
     println!("  compiler, comp, c <fichier> [-o sortie]     Compiler vers LLVM IR");
     println!("  init, nouveau <nom>                         Créer un nouveau projet");
     println!("  add, ajouter <paquet> [version]             Ajouter une dépendance");
@@ -282,10 +292,24 @@ fn afficher_aide() {
     println!("  galois build programme.gal");
     println!("  galois build programme.gal --release -o app");
     println!("  galois run programme.gal");
+    println!("  galois repl");
     println!("  galois add maths 1.0");
     println!("  galois compiler programme.gal -o programme.ll");
     println!("  galois lexer programme.gal");
     println!("  galois parser programme.gal");
+}
+
+fn identifiant_temporaire(préfixe: &str, extension: Option<&str>) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let base = format!("{}_{}_{}", préfixe, std::process::id(), nanos);
+    let mut chemin = std::env::temp_dir().join(base);
+    if let Some(ext) = extension {
+        chemin.set_extension(ext);
+    }
+    chemin
 }
 
 struct RésultatPipeline<T> {
@@ -367,15 +391,17 @@ fn exécuter_build(chemin: &str, sortie: Option<String>, release: bool) -> Resul
     Ok(())
 }
 
-fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
+fn compiler_et_exécuter_programme(chemin: &str, release: bool) -> Resultat<process::ExitStatus> {
     let source = lire_source(chemin)?;
     let résultat = pipeline_llvm(chemin)?;
 
     afficher_diagnostics(&résultat.diagnostics, &source);
 
+    let sortie_temporaire = identifiant_temporaire("galois_run_bin", None);
+
     let options = OptionsCompilation {
         fichier_entrée: chemin.into(),
-        fichier_sortie: None,
+        fichier_sortie: Some(sortie_temporaire),
         release,
         garder_intermédiaires: false,
         verbose: false,
@@ -383,21 +409,12 @@ fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
 
     let compilateur = CompilateurNatif::nouveau(options);
     let exécutable = compilateur.compiler(&résultat.résultat)?;
-
-    let chemin_exécutable = if exécutable.is_relative() {
-        format!("./{}", exécutable.display())
-    } else {
-        format!("{}", exécutable.display())
-    };
-
-    let résultat_exécution = process::Command::new(&chemin_exécutable)
-        .status()
-        .map_err(|e| {
-            error::Erreur::runtime(
-                error::Position::nouvelle(1, 1, chemin),
-                &format!("Impossible d'exécuter {}: {}", chemin_exécutable, e),
-            )
-        });
+    let résultat_exécution = process::Command::new(&exécutable).status().map_err(|e| {
+        error::Erreur::runtime(
+            error::Position::nouvelle(1, 1, chemin),
+            &format!("Impossible d'exécuter {}: {}", exécutable.display(), e),
+        )
+    });
 
     if let Err(e) = fs::remove_file(&exécutable) {
         eprintln!(
@@ -407,11 +424,210 @@ fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
         );
     }
 
-    let status = résultat_exécution?;
+    résultat_exécution
+}
+
+fn compiler_source_temporaire(contenu: &str, préfixe: &str) -> Resultat<PathBuf> {
+    let fichier_temp = identifiant_temporaire(préfixe, Some("gal"));
+    fs::write(&fichier_temp, contenu).map_err(|e| {
+        error::Erreur::runtime(
+            error::Position::nouvelle(1, 1, "<repl>"),
+            &format!(
+                "Impossible d'écrire le fichier temporaire {}: {}",
+                fichier_temp.display(),
+                e
+            ),
+        )
+    })?;
+    Ok(fichier_temp)
+}
+
+fn vérifier_source_repl(contenu: &str) -> Resultat<()> {
+    let fichier_temp = compiler_source_temporaire(contenu, "galois_repl_check")?;
+    let chemin = fichier_temp.to_string_lossy().to_string();
+    let résultat = compiler_pipeline(&chemin);
+    let _ = fs::remove_file(&fichier_temp);
+    résultat.map(|_| ())
+}
+
+fn exécuter_source_repl(contenu: &str, release: bool) -> Resultat<process::Output> {
+    let fichier_temp = compiler_source_temporaire(contenu, "galois_repl_exec")?;
+    let chemin = fichier_temp.to_string_lossy().to_string();
+
+    let mut commande = process::Command::new(env::current_exe().map_err(|e| {
+        error::Erreur::runtime(
+            error::Position::nouvelle(1, 1, "<repl>"),
+            &format!("Impossible de retrouver l'exécutable courant: {}", e),
+        )
+    })?);
+    commande.arg("run").arg(&chemin);
+    if release {
+        commande.arg("--release");
+    }
+
+    let sortie = commande.output().map_err(|e| {
+        error::Erreur::runtime(
+            error::Position::nouvelle(1, 1, "<repl>"),
+            &format!("Impossible d'exécuter le sous-processus REPL: {}", e),
+        )
+    })?;
+    let _ = fs::remove_file(&fichier_temp);
+    Ok(sortie)
+}
+
+fn extraire_sortie_marquee(sortie: &str, début: &str, fin: &str) -> String {
+    if let Some(début_idx) = sortie.find(début) {
+        let après_début = &sortie[début_idx + début.len()..];
+        if let Some(fin_idx) = après_début.find(fin) {
+            let mut extrait = &après_début[..fin_idx];
+            if extrait.starts_with('\n') {
+                extrait = &extrait[1..];
+            }
+            return extrait.to_string();
+        }
+    }
+    sortie.to_string()
+}
+
+fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
+    let status = compiler_et_exécuter_programme(chemin, release)?;
 
     let code = status.code().unwrap_or(1);
     if code != 0 {
         process::exit(code);
+    }
+
+    Ok(())
+}
+
+fn exécuter_repl(release: bool) -> Resultat<()> {
+    println!("REPL Galois (style Python)");
+    println!("Tapez :help pour l'aide, :quit pour quitter.");
+
+    let mut historique = String::new();
+    let mut bloc_courant: Vec<String> = Vec::new();
+    loop {
+        let prompt = if bloc_courant.is_empty() { ">>> " } else { "... " };
+        print!("{}", prompt);
+        io::stdout().flush().map_err(|e| {
+            error::Erreur::runtime(
+                error::Position::nouvelle(1, 1, "<repl>"),
+                &format!("Impossible d'écrire sur la sortie standard: {}", e),
+            )
+        })?;
+
+        let mut ligne = String::new();
+        let lu = io::stdin().read_line(&mut ligne).map_err(|e| {
+            error::Erreur::runtime(
+                error::Position::nouvelle(1, 1, "<repl>"),
+                &format!("Impossible de lire l'entrée utilisateur: {}", e),
+            )
+        })?;
+
+        if lu == 0 {
+            println!();
+            break;
+        }
+
+        let entrée = ligne.trim_end().to_string();
+        let est_run_forcé = entrée == ":run";
+        match entrée.as_str() {
+            ":quit" | ":q" => break,
+            ":help" => {
+                println!("Commandes REPL:");
+                println!("  :run    Exécuter le bloc en cours immédiatement");
+                println!("  :show   Afficher l'historique + bloc courant");
+                println!("  :clear  Vider le bloc courant");
+                println!("  :reset  Réinitialiser tout l'historique");
+                println!("  :quit   Quitter");
+                println!("Saisissez du code directement; il est exécuté dès qu'un bloc complet est détecté.");
+            }
+            ":show" => {
+                let complet = format!("{}{}", historique, bloc_courant.join("\n"));
+                if complet.trim().is_empty() {
+                    println!("<historique vide>");
+                } else {
+                    for (i, ligne_buffer) in complet.lines().enumerate() {
+                        println!("{:>3} | {}", i + 1, ligne_buffer);
+                    }
+                }
+            }
+            ":clear" => {
+                bloc_courant.clear();
+                println!("Bloc courant vidé.");
+            }
+            ":reset" => {
+                historique.clear();
+                bloc_courant.clear();
+                println!("Historique réinitialisé.");
+            }
+            _ if entrée.trim().is_empty() && bloc_courant.is_empty() => {}
+            _ => {
+                if !est_run_forcé {
+                    bloc_courant.push(entrée);
+                }
+
+                if bloc_courant.is_empty() {
+                    continue;
+                }
+
+                let bloc_code = format!("{}\n", bloc_courant.join("\n"));
+                let code_candidat = format!("{}{}", historique, bloc_code);
+                match vérifier_source_repl(&code_candidat) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        let message = format!("{}", e);
+                        if message.contains("Fin de fichier inattendue") && !est_run_forcé {
+                            continue;
+                        }
+                        eprintln!("{}", e);
+                        bloc_courant.clear();
+                        continue;
+                    }
+                }
+
+                let nonce = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos();
+                let marqueur_début = format!("__GAL_REPL_DEBUT_{}__", nonce);
+                let marqueur_fin = format!("__GAL_REPL_FIN_{}__", nonce);
+                let code_exécution = format!(
+                    "{}afficher(\"{}\")\n{}afficher(\"{}\")\n",
+                    historique, marqueur_début, bloc_code, marqueur_fin
+                );
+
+                match exécuter_source_repl(&code_exécution, release) {
+                    Ok(sortie_après) => {
+                        let stdout_après = String::from_utf8_lossy(&sortie_après.stdout);
+                        let stderr_après = String::from_utf8_lossy(&sortie_après.stderr);
+                        let stdout_à_afficher =
+                            extraire_sortie_marquee(&stdout_après, &marqueur_début, &marqueur_fin);
+
+                        if !stdout_à_afficher.is_empty() {
+                            print!("{}", stdout_à_afficher);
+                        }
+                        if !stderr_après.is_empty() {
+                            eprint!("{}", stderr_après);
+                        }
+
+                        if sortie_après.status.success() {
+                            historique = code_candidat;
+                        } else {
+                            eprintln!(
+                                "Avertissement: programme terminé avec le code {}",
+                                sortie_après.status.code().unwrap_or(1)
+                            );
+                        }
+                        bloc_courant.clear();
+                    }
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        bloc_courant.clear();
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
@@ -826,6 +1042,7 @@ fn main() {
         Commande::IR { entrée } => exécuter_ir(&entrée),
         Commande::Doc { entrée, sortie } => exécuter_doc(&entrée, sortie),
         Commande::Debug { entrée } => exécuter_debug(&entrée),
+        Commande::Repl { release } => exécuter_repl(release),
         Commande::Aide => {
             afficher_aide();
             return;

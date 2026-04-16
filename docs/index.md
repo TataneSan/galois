@@ -1,38 +1,22 @@
-# Bienvenue dans Galois
+# Bienvenue sur la documentation Galois
 
-**Galois** est un langage de programmation compilé, entierement ecrit en francais, qui compile vers du code natif via LLVM.
+**Galois** est un langage compilé en français, typé statiquement, qui cible LLVM pour produire des binaires natifs.
 
-!!! tip "Version actuelle: 0.1.0"
+!!! tip "État du projet"
+    Le langage évolue activement. Consultez le [Changelog](CHANGELOG.md) pour les nouveautés récentes.
 
-    Galois est en developpement actif. Consultez le [Changelog](CHANGELOG.md) pour les dernieres modifications.
+## Démarrage ultra-rapide
 
----
+```bash
+galois run mon_programme.gal
+```
 
-## Pourquoi Galois ?
+`run` compile et exécute immédiatement, avec un binaire temporaire nettoyé automatiquement.
 
-| **Langue francaise** | **Performance native** |
-|:--------------------:|:----------------------:|
-| Tous les mots-cles, types et messages d'erreur en francais | Compilation via LLVM IR pour des performances optimales |
-
-| **Typage statique** | **POO optionnelle** |
-|:-------------------:|:-------------------:|
-| Avec inference de types pour alleger l'ecriture | Classes, heritage, interfaces, methodes virtuelles |
-
-| **Interoperabilite C** | **Ramasse-miettes** |
-|:----------------------:|:------------------:|
-| Appels de fonctions C natives via FFI | Collecte automatique de la memoire |
-
-| **Collections riches** | **Diagnostics avances** |
-|:----------------------:|:-----------------------:|
-| Liste, dictionnaire, ensemble, pile, file, tuple... | Messages contextuels avec snippets et suggestions |
-
----
-
-## Exemple rapide
+## Exemple minimal
 
 ```galois
--- Calcul de factorielle avec récursivité
-récursif fonction factorielle(n: entier): entier
+fonction factorielle(n: entier): entier
     si n < 2 alors
         retourne 1
     sinon
@@ -40,150 +24,73 @@ récursif fonction factorielle(n: entier): entier
     fin
 fin
 
-afficher("Factorielle de 10 = " + texte(factorielle(10)))
+afficher(factorielle(10))
 ```
+
+## Exemple OS / Réseau
 
 ```galois
--- Programmation orientée objet
-classe Animal
-    publique nom: texte
-    
-    constructeur(nom: texte)
-        ceci.nom = nom
-    fin
-    
-    virtuelle fonction parler(): texte
-        retourne "..."
-    fin
-fin
-
-classe Chien hérite Animal
-    surcharge fonction parler(): texte
-        retourne "Wouf! Je suis " + ceci.nom
-    fin
-fin
-
-soit rex = nouveau Chien("Rex")
-afficher(rex.parler())  -- Wouf! Je suis Rex
+soit fichier = "/tmp/demo_" + texte(systeme.pid()) + ".txt"
+afficher(systeme.ecrire_fichier(fichier, "bonjour"))
+afficher(systeme.lire_fichier(fichier))
+afficher(systeme.supprimer_fichier(fichier))
+afficher(reseau.est_ipv4("127.0.0.1"))
 ```
 
----
-
-## Installation
-
-```bash
-# Cloner et compiler
-git clone https://github.com/TataneSan/galois.git
-cd galois
-cargo build --release
-
-# L'exécutable est dans target/release/galois
-./target/release/galois --aide
-```
-
----
-
-## Par ou commencer ?
+## Où aller ensuite ?
 
 <div class="grid cards" markdown>
 
-- **Demarrage rapide**
+- **Guides**
 
     ---
 
-    Creez votre premier programme en 5 minutes
-    
-    [Commencer](guides/demarrage.md)
+    Installation, premiers programmes, REPL, OS/Réseau.
 
-- **Reference du langage**
+    [Ouvrir les guides](guides/index.md)
 
-    ---
-
-    Documentation complete de la syntaxe et des types
-    
-    [Consulter](reference/langage.md)
-
-- **Bibliotheque standard**
+- **Référence langage**
 
     ---
 
-    Fonctions mathematiques, texte, collections...
-    
-    [Explorer](stdlib/maths.md)
+    Syntaxe, types, fonctions, POO, modules, diagnostics.
 
-- **Outils CLI**
+    [Aller à la référence](reference/index.md)
+
+- **Bibliothèque standard**
 
     ---
 
-    Compiler, executer, deboguer vos programmes
-    
-    [Decouvrir](reference/cli.md)
+    Maths, texte, collections, système, réseau.
+
+    [Voir la stdlib](stdlib/index.md)
+
+- **CLI**
+
+    ---
+
+    Build, run, repl, debug, doc, parser, vérification.
+
+    [Référence CLI](reference/cli.md)
 
 </div>
 
----
+## Points forts
 
-## Exemples de fonctionnalites
-
-### Pattern Matching
-
-```galois
-soit note = 75
-
-sélectionner note
-    cas 0..59 => "Échec"
-    cas 60..69 => "Passable"
-    cas 70..79 => "Bien"
-    cas 80..100 => "Très bien"
-    pardéfaut => "Note invalide"
-fin
-```
-
-### Lambdas et Pipe
-
-```galois
-soit nombres = [1, 2, 3, 4, 5]
-soit pairs = liste.filtrer(nombres, x => x % 2 == 0)
-soit doublés = liste.transformer(pairs, x => x * 2)
-soit résultat = liste.somme(doublés)
-
-afficher(résultat)  -- 12
-```
-
-### FFI avec C
-
-```galois
-externe fonction printf(format: texte): entier
-externe fonction strlen(s: pointeur<c_char>): c_long
-
-printf("Bonjour depuis C!\n")
-```
-
----
-
-## Statistiques
-
-| Metrique | Valeur |
-|----------|--------|
-| Types primitifs | 6 |
-| Types collections | 8 |
-| Mots-cles | ~90 |
-| Operateurs | 25+ |
-| Fonctions stdlib | 60+ |
-| Tests | 51 |
-
----
+| Domaine | Ce que Galois apporte |
+|---|---|
+| Langue | Mots-clés et diagnostics en français |
+| Performance | Compilation native via LLVM |
+| Typage | Typage statique avec diagnostics détaillés |
+| Productivité | CLI complète + REPL + docs intégrées |
+| Système | API fichiers/environnement (`systeme.*`) |
+| Réseau | DNS, validation IP, TCP client (`reseau.*`) |
 
 ## Contribuer
 
-Les contributions sont les bienvenues ! 
-
-- Signalez des bugs sur [GitHub Issues](https://github.com/TataneSan/galois/issues)
-- Proposez des ameliorations
-- Soumettez des pull requests
-
----
+- Bugs et idées : [GitHub Issues](https://github.com/TataneSan/galois/issues)
+- Contributions : pull requests bienvenues
 
 ## Licence
 
-MIT License - voir [LICENSE](https://github.com/TataneSan/galois/blob/master/LICENSE)
+MIT — voir [LICENSE](https://github.com/TataneSan/galois/blob/master/LICENSE)

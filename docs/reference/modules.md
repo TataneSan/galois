@@ -96,6 +96,7 @@ Fonctions principales :
 - `existe_chemin(chemin)`, `est_fichier(chemin)`, `est_dossier(chemin)`
 - `creer_dossier(chemin)`, `supprimer_fichier(chemin)`, `supprimer_dossier(chemin)`
 - `lire_fichier(chemin)`, `ecrire_fichier(chemin, contenu)`, `ajouter_fichier(chemin, contenu)`, `taille_fichier(chemin)`
+- `derniere_erreur()`, `derniere_erreur_code()`
 
 #### `reseau`
 
@@ -103,7 +104,8 @@ Fonctions principales :
 
 - `est_ipv4(ip)`, `est_ipv6(ip)`
 - `resoudre_ipv4(hote)`, `resoudre_nom(ip)`, `nom_hote_local()`
-- TCP client: `tcp_connecter(hote, port)`, `tcp_envoyer(socket, donnees)`, `tcp_recevoir(socket, taille_max)`, `tcp_fermer(socket)`
+- TCP client: `tcp_connecter(hote, port)`, `tcp_envoyer(socket, donnees)`, `tcp_recevoir(socket, taille_max)`, `tcp_recevoir_jusqua(socket, delimiteur, taille_max)`, `tcp_fermer(socket)`
+- `derniere_erreur()`, `derniere_erreur_code()`
 
 ## Chemins de module
 

@@ -19,10 +19,13 @@ soit socket = reseau.tcp_connecter("127.0.0.1", port)
 
 si socket >= 0 alors
     soit envoyes = reseau.tcp_envoyer(socket, "ping")
-    soit reponse = reseau.tcp_recevoir(socket, 64)
+    soit reponse = reseau.tcp_recevoir_jusqua(socket, "\n", 64)
     afficher(envoyes)
     afficher(reponse)
     afficher(reseau.tcp_fermer(socket))
+sinon
+    afficher(reseau.derniere_erreur_code())
+    afficher(reseau.derniere_erreur())
 fin
 ```
 
@@ -38,4 +41,7 @@ fin
 | `tcp_connecter(hote, port)` | `entier` (socket >= 0, sinon -1) |
 | `tcp_envoyer(socket, donnees)` | `entier` (octets envoyés, ou -1) |
 | `tcp_recevoir(socket, taille_max)` | `texte` |
+| `tcp_recevoir_jusqua(socket, delimiteur, taille_max)` | `texte` |
 | `tcp_fermer(socket)` | `entier` (0/1) |
+| `derniere_erreur()` | `texte` |
+| `derniere_erreur_code()` | `entier` |

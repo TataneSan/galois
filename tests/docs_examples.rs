@@ -1,7 +1,7 @@
 use std::io::{ErrorKind, Read, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::{env, fs};
@@ -86,7 +86,8 @@ fn exemples_doc_systeme_et_reseau() {
                     let mut tampon = [0u8; 64];
                     let lu = flux.read(&mut tampon).expect("Lecture TCP échouée");
                     assert_eq!(&tampon[..lu], b"ping");
-                    flux.write_all(b"pong").expect("Écriture TCP échouée");
+                    flux.write_all(b"pong\nsuite")
+                        .expect("Écriture TCP échouée");
                     return;
                 }
                 Err(e) if e.kind() == ErrorKind::WouldBlock => {
@@ -110,7 +111,7 @@ fn exemples_doc_systeme_et_reseau() {
     serveur.join().expect("Le serveur TCP de test a paniqué");
 
     let attendu = std::iter::repeat("vrai")
-        .take(20)
+        .take(23)
         .collect::<Vec<_>>()
         .join("\n");
     assert_eq!(normaliser(&sortie), attendu);
@@ -197,6 +198,7 @@ fn run_supprime_le_binaire_genere() {
         String::from_utf8_lossy(&sortie.stdout),
         String::from_utf8_lossy(&sortie.stderr)
     );
+    assert_eq!(normaliser(&String::from_utf8_lossy(&sortie.stdout)), "1");
 
     let binaire = base.join("cleanup");
     assert!(
@@ -207,4 +209,126 @@ fn run_supprime_le_binaire_genere() {
 
     let _ = fs::remove_file(source);
     let _ = fs::remove_dir_all(base);
+}
+
+#[test]
+fn run_preserve_un_binaire_homonyme_existant() {
+    let suffixe = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("Horloge système invalide")
+        .as_nanos();
+    let base = env::temp_dir().join(format!(
+        "galois_run_preserve_{}_{}",
+        std::process::id(),
+        suffixe
+    ));
+    fs::create_dir_all(&base).expect("Impossible de créer le répertoire temporaire");
+
+    let source = base.join("cleanup.gal");
+    fs::write(&source, "afficher(1)\n").expect("Impossible d'écrire le programme temporaire");
+
+    let binaire_existant = base.join("cleanup");
+    fs::write(&binaire_existant, "SENTINEL").expect("Impossible d'écrire le binaire sentinelle");
+
+    let sortie = Command::new(binaire_galois())
+        .arg("run")
+        .arg("cleanup.gal")
+        .current_dir(&base)
+        .output()
+        .expect("Impossible de lancer Galois");
+
+    assert!(
+        sortie.status.success(),
+        "Exécution run en échec:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&sortie.stdout),
+        String::from_utf8_lossy(&sortie.stderr)
+    );
+    assert_eq!(normaliser(&String::from_utf8_lossy(&sortie.stdout)), "1");
+
+    let contenu = fs::read_to_string(&binaire_existant)
+        .expect("Impossible de lire le binaire sentinelle après run");
+    assert_eq!(contenu, "SENTINEL");
+
+    let _ = fs::remove_file(source);
+    let _ = fs::remove_file(binaire_existant);
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
+fn systeme_lire_fichier_supporte_grand_contenu() {
+    let suffixe = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("Horloge système invalide")
+        .as_nanos();
+    let base = env::temp_dir().join(format!(
+        "galois_grand_fichier_{}_{}",
+        std::process::id(),
+        suffixe
+    ));
+    fs::create_dir_all(&base).expect("Impossible de créer le répertoire temporaire");
+
+    let contenu = "a".repeat(200_000);
+    let fichier_donnees = base.join("grand.txt");
+    let source_code = format!(
+        "soit chemin = \"{}\"\nafficher(systeme.ecrire_fichier(chemin, \"{}\"))\nafficher(systeme.taille_fichier(chemin))\nafficher(systeme.lire_fichier(chemin).taille())\nafficher(systeme.supprimer_fichier(chemin))\n",
+        fichier_donnees.display(),
+        contenu
+    );
+    let source = base.join("grand.gal");
+    fs::write(&source, source_code).expect("Impossible d'écrire le programme de test");
+
+    let sortie = Command::new(binaire_galois())
+        .arg("run")
+        .arg("grand.gal")
+        .current_dir(&base)
+        .output()
+        .expect("Impossible de lancer Galois");
+
+    assert!(
+        sortie.status.success(),
+        "Exécution run en échec:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&sortie.stdout),
+        String::from_utf8_lossy(&sortie.stderr)
+    );
+
+    let attendu = format!("1\n{}\n{}\n1", contenu.len(), contenu.len());
+    assert_eq!(normaliser(&String::from_utf8_lossy(&sortie.stdout)), attendu);
+
+    let _ = fs::remove_file(source);
+    let _ = fs::remove_file(fichier_donnees);
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
+fn repl_execute_un_buffer() {
+    let mut enfant = Command::new(binaire_galois())
+        .arg("repl")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Impossible de lancer le REPL");
+
+    {
+        let stdin = enfant.stdin.as_mut().expect("stdin indisponible");
+        stdin
+            .write_all(b"soit x = 40\nafficher(x + 2)\n:run\n:quit\n")
+            .expect("Impossible d'écrire dans stdin du REPL");
+    }
+
+    let sortie = enfant
+        .wait_with_output()
+        .expect("Impossible de récupérer la sortie REPL");
+    assert!(
+        sortie.status.success(),
+        "REPL en échec:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&sortie.stdout),
+        String::from_utf8_lossy(&sortie.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&sortie.stdout);
+    assert!(
+        stdout.contains("42"),
+        "La sortie REPL devrait contenir 42, sortie:\n{}",
+        stdout
+    );
 }

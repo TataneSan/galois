@@ -1,6 +1,13 @@
 # Référence du Langage
 
-Cette section contient la documentation complète de la syntaxe et des fonctionnalités du langage Galois.
+Cette section centralise la syntaxe, les fonctionnalités du langage, les modules natifs et les outils.
+
+## Parcours recommandé
+
+1. Lire [Types](types.md), [Variables](variables.md), [Fonctions](fonctions.md)
+2. Enchaîner avec [Contrôle](controle.md), [Opérateurs](operateurs.md), [Collections](collections.md)
+3. Approfondir via [POO](poo.md), [Interfaces](interfaces.md), [Modules](modules.md)
+4. Finaliser avec [FFI](ffi.md), [Diagnostics](diagnostics.md) et [CLI](cli.md)
 
 ## Documentation
 
@@ -29,6 +36,8 @@ Cette section contient la documentation complète de la syntaxe et des fonctionn
 |------|-------------|
 | [FFI](ffi.md) | Interopérabilité avec C |
 | [Diagnostics](diagnostics.md) | Erreurs, warnings, messages |
+| [CLI](cli.md) | Toutes les commandes en ligne de commande |
+| [Paquets](paquets.md) | Gestion des projets et dépendances |
 
 ## Recherche rapide
 
@@ -69,3 +78,9 @@ sélectionner x cas ... pardéfaut ... fin
 ```
 
 [Référence complète :material-arrow-right:](langage.md){ .md-button .md-button--primary }
+
+## Nouveautés notables
+
+- REPL interactive (`galois repl`) avec prompt style Python.
+- Modules `systeme` et `reseau` étendus (fichiers, erreurs détaillées, TCP client).
+- Diagnostics plus lisibles dans les workflows CLI.

@@ -60,6 +60,7 @@ UTILISATION: galois <commande> [options]
 COMMANDES:
   build, b <fichier> [-o sortie] [--release]  Compiler vers exécutable natif
   run, r <fichier> [--release]                 Compiler et exécuter
+  repl [--release]                             Lancer une boucle REPL
   compiler, comp, c <fichier> [-o sortie]     Compiler vers LLVM IR
   init, nouveau <nom>                         Créer un nouveau projet
   add, ajouter <paquet> [version]             Ajouter une dépendance
@@ -80,5 +81,22 @@ Le runtime C (`src/runtime/galois_runtime.c`) est compilé automatiquement lors 
 - Les fonctions d'affichage (`afficher`)
 - Les opérations sur les collections
 - Les fonctions mathématiques
+- Les APIs système/réseau (`systeme.*`, `reseau.*`)
 
 Aucune installation supplémentaire n'est nécessaire.
+
+## Vérifier rapidement l'installation
+
+```bash
+cat > test_install.gal << 'EOF'
+afficher("ok")
+EOF
+
+galois run test_install.gal
+```
+
+Vous devez obtenir :
+
+```text
+ok
+```

@@ -518,6 +518,8 @@ impl GénérateurIR {
             "lire_fichier" => "gal_systeme_lire_fichier".to_string(),
             "ecrire_fichier" => "gal_systeme_ecrire_fichier".to_string(),
             "ajouter_fichier" => "gal_systeme_ajouter_fichier".to_string(),
+            "derniere_erreur" => "gal_systeme_derniere_erreur".to_string(),
+            "derniere_erreur_code" => "gal_systeme_derniere_erreur_code".to_string(),
             "resoudre_ipv4" => "gal_reseau_resoudre_ipv4".to_string(),
             "resoudre_nom" => "gal_reseau_resoudre_nom".to_string(),
             "nom_hote_local" => "gal_reseau_nom_hote_local".to_string(),
@@ -526,6 +528,7 @@ impl GénérateurIR {
             "tcp_connecter" => "gal_reseau_tcp_connecter".to_string(),
             "tcp_envoyer" => "gal_reseau_tcp_envoyer".to_string(),
             "tcp_recevoir" => "gal_reseau_tcp_recevoir".to_string(),
+            "tcp_recevoir_jusqua" => "gal_reseau_tcp_recevoir_jusqua".to_string(),
             "tcp_fermer" => "gal_reseau_tcp_fermer".to_string(),
             "ajouter" => "gal_liste_ajouter".to_string(),
             "obtenir" => "gal_liste_obtenir".to_string(),
@@ -551,6 +554,28 @@ impl GénérateurIR {
             "enfiler" => "gal_file_enfiler_i64".to_string(),
             "défiler" | "defiler" => "gal_file_defiler_i64".to_string(),
             _ => nom.to_string(),
+        }
+    }
+
+    fn nom_fonction_native_module(&self, module: &str, nom: &str) -> String {
+        match (module, nom) {
+            ("système", "derniere_erreur")
+            | ("systeme", "derniere_erreur")
+            | ("Système", "derniere_erreur")
+            | ("Systeme", "derniere_erreur") => "gal_systeme_derniere_erreur".to_string(),
+            ("système", "derniere_erreur_code")
+            | ("systeme", "derniere_erreur_code")
+            | ("Système", "derniere_erreur_code")
+            | ("Systeme", "derniere_erreur_code") => "gal_systeme_derniere_erreur_code".to_string(),
+            ("réseau", "derniere_erreur")
+            | ("reseau", "derniere_erreur")
+            | ("Réseau", "derniere_erreur")
+            | ("Reseau", "derniere_erreur") => "gal_reseau_derniere_erreur".to_string(),
+            ("réseau", "derniere_erreur_code")
+            | ("reseau", "derniere_erreur_code")
+            | ("Réseau", "derniere_erreur_code")
+            | ("Reseau", "derniere_erreur_code") => "gal_reseau_derniere_erreur_code".to_string(),
+            _ => self.nom_fonction_native(nom),
         }
     }
 
@@ -2387,7 +2412,10 @@ impl GénérateurIR {
                                     return appel_spécial;
                                 }
                             }
-                            return IRValeur::Appel(self.nom_fonction_native(membre), args_ir);
+                            return IRValeur::Appel(
+                                self.nom_fonction_native_module(nom_module, membre),
+                                args_ir,
+                            );
                         } else if matches!(type_obj, Type::Liste(_))
                             && matches!(membre.as_str(), "filtrer" | "transformer" | "mapper" | "somme" | "réduire")
                         {

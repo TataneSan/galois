@@ -20,6 +20,20 @@ Résultat :
 Bonjour le monde !
 ```
 
+## Tester rapidement dans la REPL
+
+```bash
+galois repl
+```
+
+Puis :
+
+```text
+>>> afficher("Bonjour depuis la REPL")
+Bonjour depuis la REPL
+>>> :quit
+```
+
 ## Variables et calculs
 
 ```galois
@@ -106,6 +120,12 @@ galois build bonjour.gal --release
 # Spécifier le nom de sortie
 galois build bonjour.gal -o mon_programme
 ```
+
+## Notes pratiques
+
+- `galois run` utilise un binaire temporaire (nettoyé automatiquement).
+- Pour conserver un binaire, utilisez `galois build`.
+- Pour inspecter la structure du programme, utilisez `galois parser` et `galois ir`.
 
 ## Créer un projet
 

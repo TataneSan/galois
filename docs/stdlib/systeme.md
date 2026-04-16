@@ -17,6 +17,8 @@ afficher(systeme.plateforme())
 systeme.definir_env("APP_MODE", "test")
 afficher(systeme.existe_env("APP_MODE"))
 afficher(systeme.variable_env("APP_MODE"))
+afficher(systeme.derniere_erreur())
+afficher(systeme.derniere_erreur_code())
 ```
 
 ## Fichiers et dossiers
@@ -58,3 +60,5 @@ afficher(systeme.supprimer_dossier(dossier))
 | `lire_fichier(chemin)` | `texte` |
 | `ecrire_fichier(chemin, contenu)` | `entier` (0/1) |
 | `ajouter_fichier(chemin, contenu)` | `entier` (0/1) |
+| `derniere_erreur()` | `texte` |
+| `derniere_erreur_code()` | `entier` |

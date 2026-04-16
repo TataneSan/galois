@@ -6,6 +6,17 @@
 galois <commande> [options] [arguments]
 ```
 
+## Vue rapide
+
+| Besoin | Commande |
+|---|---|
+| Exécuter un fichier | `galois run fichier.gal` |
+| Compiler un binaire | `galois build fichier.gal` |
+| Boucle interactive | `galois repl` |
+| Vérifier les types | `galois vérifier fichier.gal` |
+| Voir l'AST | `galois parser fichier.gal` |
+| Générer la doc | `galois doc fichier.gal` |
+
 ## Commandes
 
 ### `build` / `b` — Compiler vers un exécutable natif
@@ -40,10 +51,28 @@ galois run <fichier.gal> [--release]
 
 Compile le programme puis l'exécute immédiatement.
 
+Le binaire utilisé par `run` est temporaire et supprimé automatiquement après exécution.
+
 ```bash
 galois run programme.gal
 galois run programme.gal --release
 ```
+
+### `repl` — Boucle interactive
+
+```bash
+galois repl [--release]
+```
+
+Lance une boucle interactive pour saisir des lignes Galois et exécuter le buffer courant.
+Le prompt suit le style Python: `>>>` pour une nouvelle entrée et `...` pour une continuation de bloc.
+
+Commandes internes :
+- `:run` force l'exécution du bloc courant
+- `:show` affiche l'historique + bloc courant
+- `:clear` vide le bloc courant
+- `:reset` réinitialise l'historique
+- `:quit` quitte la boucle
 
 ### `compiler` / `comp` / `c` — Compiler vers LLVM IR
 
@@ -182,3 +211,10 @@ Code objet (.o)
     ↓ Éditeur de liens
 Exécutable natif
 ```
+
+## Conseils de workflow
+
+1. Démarrer en REPL pour valider une idée.
+2. Passer à `run` pour une exécution de fichier complète.
+3. Utiliser `build` pour produire un binaire final.
+4. Ajouter `--release` sur `run`/`build` pour les mesures de performance.

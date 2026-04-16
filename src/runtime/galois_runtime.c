@@ -8,8 +8,11 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/select.h>
 #include <sys/utsname.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -112,6 +115,45 @@ struct gal_file {
 gal_liste* gal_liste_nouveau(int64_t taille_élément);
 void gal_liste_ajouter_i64(gal_liste* l, int64_t valeur);
 void gal_liste_ajouter_ptr(gal_liste* l, void* valeur);
+static char* gal_dupliquer_chaine(const char* s);
+
+static char gal_derniere_erreur_systeme[512] = "";
+static char gal_derniere_erreur_reseau[512] = "";
+static int gal_derniere_erreur_code_systeme = 0;
+static int gal_derniere_erreur_code_reseau = 0;
+
+static void gal_set_code_erreur(char* tampon, int code) {
+    if (tampon == gal_derniere_erreur_systeme) {
+        gal_derniere_erreur_code_systeme = code;
+    } else if (tampon == gal_derniere_erreur_reseau) {
+        gal_derniere_erreur_code_reseau = code;
+    }
+}
+
+static void gal_set_erreur(char* tampon, size_t taille, const char* message) {
+    if (!message) message = "";
+    snprintf(tampon, taille, "%s", message);
+    tampon[taille - 1] = '\0';
+    gal_set_code_erreur(tampon, message[0] == '\0' ? 0 : 1);
+}
+
+static void gal_set_erreur_errno(char* tampon, size_t taille, const char* contexte) {
+    const char* raison = strerror(errno);
+    if (!raison) raison = "erreur inconnue";
+    if (!contexte) contexte = "erreur";
+    snprintf(tampon, taille, "%s: %s", contexte, raison);
+    tampon[taille - 1] = '\0';
+    gal_set_code_erreur(tampon, errno == 0 ? 1 : errno);
+}
+
+static void gal_set_erreur_gai(char* tampon, size_t taille, const char* contexte, int code) {
+    const char* raison = gai_strerror(code);
+    if (!raison) raison = "erreur réseau inconnue";
+    if (!contexte) contexte = "erreur réseau";
+    snprintf(tampon, taille, "%s: %s", contexte, raison);
+    tampon[taille - 1] = '\0';
+    gal_set_code_erreur(tampon, code == 0 ? -1 : -code);
+}
 
 // ===== GC - Ramasse-miettes =====
 
@@ -1566,145 +1608,295 @@ char* gal_systeme_plateforme() {
 }
 
 char* gal_systeme_variable_env(const char* nom) {
-    if (!nom || !*nom) return gal_dupliquer_chaine("");
+    if (!nom || !*nom) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "nom de variable d'environnement invalide");
+        return gal_dupliquer_chaine("");
+    }
     const char* valeur = getenv(nom);
-    if (!valeur) return gal_dupliquer_chaine("");
+    if (!valeur) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "variable d'environnement absente");
+        return gal_dupliquer_chaine("");
+    }
+    gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "");
     return gal_dupliquer_chaine(valeur);
 }
 
 void gal_systeme_definir_env(const char* nom, const char* valeur) {
-    if (!nom || !*nom) return;
+    if (!nom || !*nom) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "nom de variable d'environnement invalide");
+        return;
+    }
     if (!valeur) valeur = "";
-    setenv(nom, valeur, 1);
+    if (setenv(nom, valeur, 1) != 0) {
+        gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "setenv a échoué");
+        return;
+    }
+    gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "");
 }
 
 gal_entier gal_systeme_existe_env(const char* nom) {
-    if (!nom || !*nom) return 0;
+    if (!nom || !*nom) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "nom de variable d'environnement invalide");
+        return 0;
+    }
+    gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "");
     return getenv(nom) ? 1 : 0;
 }
 
 gal_entier gal_systeme_existe_chemin(const char* chemin) {
-    if (!chemin || !*chemin) return 0;
+    if (!chemin || !*chemin) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "chemin invalide");
+        return 0;
+    }
     struct stat info;
-    return stat(chemin, &info) == 0 ? 1 : 0;
+    if (stat(chemin, &info) == 0) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "");
+        return 1;
+    }
+    gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "stat a échoué");
+    return 0;
 }
 
 gal_entier gal_systeme_est_fichier(const char* chemin) {
-    if (!chemin || !*chemin) return 0;
+    if (!chemin || !*chemin) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "chemin invalide");
+        return 0;
+    }
     struct stat info;
-    if (stat(chemin, &info) != 0) return 0;
+    if (stat(chemin, &info) != 0) {
+        gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "stat a échoué");
+        return 0;
+    }
+    gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "");
     return S_ISREG(info.st_mode) ? 1 : 0;
 }
 
 gal_entier gal_systeme_est_dossier(const char* chemin) {
-    if (!chemin || !*chemin) return 0;
+    if (!chemin || !*chemin) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "chemin invalide");
+        return 0;
+    }
     struct stat info;
-    if (stat(chemin, &info) != 0) return 0;
+    if (stat(chemin, &info) != 0) {
+        gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "stat a échoué");
+        return 0;
+    }
+    gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "");
     return S_ISDIR(info.st_mode) ? 1 : 0;
 }
 
 gal_entier gal_systeme_creer_dossier(const char* chemin) {
-    if (!chemin || !*chemin) return 0;
-    if (mkdir(chemin, 0755) == 0) return 1;
+    if (!chemin || !*chemin) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "chemin invalide");
+        return 0;
+    }
+    if (mkdir(chemin, 0755) == 0) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "");
+        return 1;
+    }
     if (errno == EEXIST) {
         struct stat info;
         if (stat(chemin, &info) == 0 && S_ISDIR(info.st_mode)) {
+            gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "");
             return 1;
         }
     }
+    gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "mkdir a échoué");
     return 0;
 }
 
 gal_entier gal_systeme_supprimer_fichier(const char* chemin) {
-    if (!chemin || !*chemin) return 0;
-    return unlink(chemin) == 0 ? 1 : 0;
+    if (!chemin || !*chemin) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "chemin invalide");
+        return 0;
+    }
+    if (unlink(chemin) == 0) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "");
+        return 1;
+    }
+    gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "unlink a échoué");
+    return 0;
 }
 
 gal_entier gal_systeme_supprimer_dossier(const char* chemin) {
-    if (!chemin || !*chemin) return 0;
-    return rmdir(chemin) == 0 ? 1 : 0;
+    if (!chemin || !*chemin) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "chemin invalide");
+        return 0;
+    }
+    if (rmdir(chemin) == 0) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "");
+        return 1;
+    }
+    gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "rmdir a échoué");
+    return 0;
 }
 
 gal_entier gal_systeme_taille_fichier(const char* chemin) {
-    if (!chemin || !*chemin) return -1;
+    if (!chemin || !*chemin) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "chemin invalide");
+        return -1;
+    }
     struct stat info;
-    if (stat(chemin, &info) != 0) return -1;
-    if (!S_ISREG(info.st_mode)) return -1;
+    if (stat(chemin, &info) != 0) {
+        gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "stat a échoué");
+        return -1;
+    }
+    if (!S_ISREG(info.st_mode)) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "le chemin n'est pas un fichier");
+        return -1;
+    }
+    gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "");
     return (gal_entier)info.st_size;
 }
 
 char* gal_systeme_lire_fichier(const char* chemin) {
-    if (!chemin || !*chemin) return gal_dupliquer_chaine("");
+    if (!chemin || !*chemin) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "chemin invalide");
+        return gal_dupliquer_chaine("");
+    }
 
     FILE* f = fopen(chemin, "rb");
-    if (!f) return gal_dupliquer_chaine("");
-
-    if (fseek(f, 0, SEEK_END) != 0) {
-        fclose(f);
+    if (!f) {
+        gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "fopen a échoué");
         return gal_dupliquer_chaine("");
     }
 
-    long taille = ftell(f);
-    if (taille < 0) {
-        fclose(f);
-        return gal_dupliquer_chaine("");
-    }
-    rewind(f);
-
-    char* contenu = (char*)malloc((size_t)taille + 1);
+    size_t capacité = 4096;
+    size_t total = 0;
+    char* contenu = (char*)malloc(capacité + 1);
     if (!contenu) {
         fclose(f);
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "allocation mémoire échouée");
         return gal_dupliquer_chaine("");
     }
 
-    size_t lu = fread(contenu, 1, (size_t)taille, f);
-    fclose(f);
-    contenu[lu] = '\0';
+    char bloc[4096];
+    while (1) {
+        size_t lu = fread(bloc, 1, sizeof(bloc), f);
+        if (lu > 0) {
+            if (total + lu > capacité) {
+                while (total + lu > capacité) {
+                    capacité *= 2;
+                }
+                char* agrandi = (char*)realloc(contenu, capacité + 1);
+                if (!agrandi) {
+                    free(contenu);
+                    fclose(f);
+                    gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "allocation mémoire échouée");
+                    return gal_dupliquer_chaine("");
+                }
+                contenu = agrandi;
+            }
+            memcpy(contenu + total, bloc, lu);
+            total += lu;
+        }
+        if (lu < sizeof(bloc)) {
+            if (ferror(f)) {
+                free(contenu);
+                fclose(f);
+                gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "fread a échoué");
+                return gal_dupliquer_chaine("");
+            }
+            break;
+        }
+    }
+
+    if (fclose(f) != 0) {
+        free(contenu);
+        gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "fclose a échoué");
+        return gal_dupliquer_chaine("");
+    }
+
+    contenu[total] = '\0';
+    gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "");
     return contenu;
 }
 
 gal_entier gal_systeme_ecrire_fichier(const char* chemin, const char* contenu) {
-    if (!chemin || !*chemin) return 0;
+    if (!chemin || !*chemin) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "chemin invalide");
+        return 0;
+    }
     if (!contenu) contenu = "";
 
     FILE* f = fopen(chemin, "wb");
-    if (!f) return 0;
+    if (!f) {
+        gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "fopen a échoué");
+        return 0;
+    }
 
     size_t longueur = strlen(contenu);
     size_t écrit = fwrite(contenu, 1, longueur, f);
-    int ok = (écrit == longueur && fflush(f) == 0 && ferror(f) == 0) ? 1 : 0;
-    fclose(f);
-    return ok;
+    int ok = (écrit == longueur && fflush(f) == 0 && ferror(f) == 0 && fclose(f) == 0) ? 1 : 0;
+    if (!ok) {
+        gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "écriture de fichier échouée");
+        return 0;
+    }
+    gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "");
+    return 1;
 }
 
 gal_entier gal_systeme_ajouter_fichier(const char* chemin, const char* contenu) {
-    if (!chemin || !*chemin) return 0;
+    if (!chemin || !*chemin) {
+        gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "chemin invalide");
+        return 0;
+    }
     if (!contenu) contenu = "";
 
     FILE* f = fopen(chemin, "ab");
-    if (!f) return 0;
+    if (!f) {
+        gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "fopen a échoué");
+        return 0;
+    }
 
     size_t longueur = strlen(contenu);
     size_t écrit = fwrite(contenu, 1, longueur, f);
-    int ok = (écrit == longueur && fflush(f) == 0 && ferror(f) == 0) ? 1 : 0;
-    fclose(f);
-    return ok;
+    int ok = (écrit == longueur && fflush(f) == 0 && ferror(f) == 0 && fclose(f) == 0) ? 1 : 0;
+    if (!ok) {
+        gal_set_erreur_errno(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "ajout au fichier échoué");
+        return 0;
+    }
+    gal_set_erreur(gal_derniere_erreur_systeme, sizeof(gal_derniere_erreur_systeme), "");
+    return 1;
+}
+
+char* gal_systeme_derniere_erreur() {
+    return gal_dupliquer_chaine(gal_derniere_erreur_systeme);
 }
 
 gal_entier gal_reseau_est_ipv4(const char* ip) {
     struct in_addr addr;
-    if (!ip) return 0;
-    return inet_pton(AF_INET, ip, &addr) == 1 ? 1 : 0;
+    if (!ip) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "adresse IPv4 invalide");
+        return 0;
+    }
+    if (inet_pton(AF_INET, ip, &addr) == 1) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "");
+        return 1;
+    }
+    gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "adresse IPv4 invalide");
+    return 0;
 }
 
 gal_entier gal_reseau_est_ipv6(const char* ip) {
     struct in6_addr addr;
-    if (!ip) return 0;
-    return inet_pton(AF_INET6, ip, &addr) == 1 ? 1 : 0;
+    if (!ip) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "adresse IPv6 invalide");
+        return 0;
+    }
+    if (inet_pton(AF_INET6, ip, &addr) == 1) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "");
+        return 1;
+    }
+    gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "adresse IPv6 invalide");
+    return 0;
 }
 
 char* gal_reseau_resoudre_ipv4(const char* hote) {
-    if (!hote || !*hote) return gal_dupliquer_chaine("");
+    if (!hote || !*hote) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "hôte invalide");
+        return gal_dupliquer_chaine("");
+    }
 
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
@@ -1712,7 +1904,9 @@ char* gal_reseau_resoudre_ipv4(const char* hote) {
     hints.ai_socktype = SOCK_STREAM;
 
     struct addrinfo* résultat = NULL;
-    if (getaddrinfo(hote, NULL, &hints, &résultat) != 0 || !résultat) {
+    int err = getaddrinfo(hote, NULL, &hints, &résultat);
+    if (err != 0 || !résultat) {
+        gal_set_erreur_gai(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "getaddrinfo a échoué", err);
         return gal_dupliquer_chaine("");
     }
 
@@ -1726,17 +1920,25 @@ char* gal_reseau_resoudre_ipv4(const char* hote) {
         }
     }
     freeaddrinfo(résultat);
-    if (!ip[0]) return gal_dupliquer_chaine("");
+    if (!ip[0]) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "aucune adresse IPv4 trouvée");
+        return gal_dupliquer_chaine("");
+    }
+    gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "");
     return gal_dupliquer_chaine(ip);
 }
 
 char* gal_reseau_resoudre_nom(const char* ip) {
-    if (!ip || !*ip) return gal_dupliquer_chaine("");
+    if (!ip || !*ip) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "adresse IP invalide");
+        return gal_dupliquer_chaine("");
+    }
 
     struct sockaddr_in sa;
     memset(&sa, 0, sizeof(sa));
     sa.sin_family = AF_INET;
     if (inet_pton(AF_INET, ip, &sa.sin_addr) != 1) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "adresse IPv4 invalide");
         return gal_dupliquer_chaine("");
     }
 
@@ -1749,9 +1951,11 @@ char* gal_reseau_resoudre_nom(const char* ip) {
             NULL,
             0,
             NI_NAMEREQD) != 0) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "résolution inverse impossible");
         return gal_dupliquer_chaine("");
     }
 
+    gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "");
     return gal_dupliquer_chaine(hote);
 }
 
@@ -1759,9 +1963,75 @@ char* gal_reseau_nom_hote_local() {
     return gal_systeme_nom_hote();
 }
 
+static int gal_reseau_configurer_timeouts(int socket_fd, int secondes) {
+    struct timeval tv;
+    tv.tv_sec = secondes;
+    tv.tv_usec = 0;
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) != 0) return 0;
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) != 0) return 0;
+    return 1;
+}
+
+static int gal_reseau_connecter_avec_timeout(
+    int socket_fd,
+    const struct sockaddr* adresse,
+    socklen_t taille_adresse,
+    int timeout_secondes
+) {
+    int flags = fcntl(socket_fd, F_GETFL, 0);
+    if (flags < 0) return -1;
+    if (fcntl(socket_fd, F_SETFL, flags | O_NONBLOCK) < 0) return -1;
+
+    int résultat = connect(socket_fd, adresse, taille_adresse);
+    if (résultat == 0) {
+        (void)fcntl(socket_fd, F_SETFL, flags);
+        return 0;
+    }
+    if (errno != EINPROGRESS) {
+        (void)fcntl(socket_fd, F_SETFL, flags);
+        return -1;
+    }
+
+    fd_set écriture;
+    FD_ZERO(&écriture);
+    FD_SET(socket_fd, &écriture);
+
+    struct timeval timeout;
+    timeout.tv_sec = timeout_secondes;
+    timeout.tv_usec = 0;
+
+    int sélection = select(socket_fd + 1, NULL, &écriture, NULL, &timeout);
+    if (sélection <= 0) {
+        if (sélection == 0) errno = ETIMEDOUT;
+        (void)fcntl(socket_fd, F_SETFL, flags);
+        return -1;
+    }
+
+    int erreur_socket = 0;
+    socklen_t longueur = sizeof(erreur_socket);
+    if (getsockopt(socket_fd, SOL_SOCKET, SO_ERROR, &erreur_socket, &longueur) != 0) {
+        (void)fcntl(socket_fd, F_SETFL, flags);
+        return -1;
+    }
+    if (erreur_socket != 0) {
+        errno = erreur_socket;
+        (void)fcntl(socket_fd, F_SETFL, flags);
+        return -1;
+    }
+
+    (void)fcntl(socket_fd, F_SETFL, flags);
+    return 0;
+}
+
 gal_entier gal_reseau_tcp_connecter(const char* hote, gal_entier port) {
-    if (!hote || !*hote) return -1;
-    if (port < 1 || port > 65535) return -1;
+    if (!hote || !*hote) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "hôte invalide");
+        return -1;
+    }
+    if (port < 1 || port > 65535) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "port invalide");
+        return -1;
+    }
 
     char service[16];
     snprintf(service, sizeof(service), "%lld", (long long)port);
@@ -1772,7 +2042,9 @@ gal_entier gal_reseau_tcp_connecter(const char* hote, gal_entier port) {
     hints.ai_socktype = SOCK_STREAM;
 
     struct addrinfo* résultat = NULL;
-    if (getaddrinfo(hote, service, &hints, &résultat) != 0 || !résultat) {
+    int err = getaddrinfo(hote, service, &hints, &résultat);
+    if (err != 0 || !résultat) {
+        gal_set_erreur_gai(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "getaddrinfo a échoué", err);
         return -1;
     }
 
@@ -1780,7 +2052,8 @@ gal_entier gal_reseau_tcp_connecter(const char* hote, gal_entier port) {
     for (struct addrinfo* ai = résultat; ai; ai = ai->ai_next) {
         sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (sock < 0) continue;
-        if (connect(sock, ai->ai_addr, ai->ai_addrlen) == 0) {
+        if (gal_reseau_connecter_avec_timeout(sock, ai->ai_addr, ai->ai_addrlen, 5) == 0 &&
+            gal_reseau_configurer_timeouts(sock, 5)) {
             break;
         }
         close(sock);
@@ -1788,42 +2061,153 @@ gal_entier gal_reseau_tcp_connecter(const char* hote, gal_entier port) {
     }
 
     freeaddrinfo(résultat);
+    if (sock < 0) {
+        gal_set_erreur_errno(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "connexion TCP échouée");
+        return -1;
+    }
+    gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "");
     return (gal_entier)sock;
 }
 
 gal_entier gal_reseau_tcp_envoyer(gal_entier socket_fd, const char* données) {
-    if (socket_fd < 0 || !données) return -1;
+    if (socket_fd < 0 || !données) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "socket ou données invalides");
+        return -1;
+    }
 
     size_t longueur = strlen(données);
     size_t total = 0;
     while (total < longueur) {
         ssize_t écrit = send((int)socket_fd, données + total, longueur - total, 0);
-        if (écrit <= 0) return -1;
+        if (écrit <= 0) {
+            gal_set_erreur_errno(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "envoi TCP échoué");
+            return -1;
+        }
         total += (size_t)écrit;
     }
+    gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "");
     return (gal_entier)total;
 }
 
 char* gal_reseau_tcp_recevoir(gal_entier socket_fd, gal_entier taille_max) {
-    if (socket_fd < 0 || taille_max <= 0) return gal_dupliquer_chaine("");
+    if (socket_fd < 0 || taille_max <= 0) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "socket ou taille invalide");
+        return gal_dupliquer_chaine("");
+    }
     if (taille_max > 1048576) taille_max = 1048576;
 
     char* tampon = (char*)malloc((size_t)taille_max + 1);
-    if (!tampon) return gal_dupliquer_chaine("");
+    if (!tampon) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "allocation mémoire échouée");
+        return gal_dupliquer_chaine("");
+    }
 
     ssize_t lu = recv((int)socket_fd, tampon, (size_t)taille_max, 0);
     if (lu <= 0) {
         free(tampon);
+        gal_set_erreur_errno(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "réception TCP échouée");
         return gal_dupliquer_chaine("");
     }
 
     tampon[lu] = '\0';
+    gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "");
+    return tampon;
+}
+
+static const char* gal_memmem_simple(
+    const char* haystack,
+    size_t haystack_len,
+    const char* needle,
+    size_t needle_len
+) {
+    if (needle_len == 0 || haystack_len < needle_len) return NULL;
+    for (size_t i = 0; i <= haystack_len - needle_len; i++) {
+        if (memcmp(haystack + i, needle, needle_len) == 0) {
+            return haystack + i;
+        }
+    }
+    return NULL;
+}
+
+char* gal_reseau_tcp_recevoir_jusqua(gal_entier socket_fd, const char* delimiteur, gal_entier taille_max) {
+    if (socket_fd < 0 || taille_max <= 0 || !delimiteur) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "paramètres invalides");
+        return gal_dupliquer_chaine("");
+    }
+    if (*delimiteur == '\0') {
+        return gal_reseau_tcp_recevoir(socket_fd, taille_max);
+    }
+    if (taille_max > 1048576) taille_max = 1048576;
+
+    size_t max = (size_t)taille_max;
+    size_t taille_delimiteur = strlen(delimiteur);
+    char* tampon = (char*)malloc(max + 1);
+    if (!tampon) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "allocation mémoire échouée");
+        return gal_dupliquer_chaine("");
+    }
+
+    size_t total = 0;
+    char bloc[1024];
+    while (total < max) {
+        size_t à_lire = max - total;
+        if (à_lire > sizeof(bloc)) à_lire = sizeof(bloc);
+
+        ssize_t lu = recv((int)socket_fd, bloc, à_lire, 0);
+        if (lu < 0) {
+            if (total == 0) {
+                free(tampon);
+                gal_set_erreur_errno(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "réception TCP échouée");
+                return gal_dupliquer_chaine("");
+            }
+            break;
+        }
+        if (lu == 0) {
+            break;
+        }
+        memcpy(tampon + total, bloc, (size_t)lu);
+        total += (size_t)lu;
+
+        const char* trouvé = gal_memmem_simple(
+            tampon,
+            total,
+            delimiteur,
+            taille_delimiteur
+        );
+        if (trouvé) {
+            total = (size_t)(trouvé - tampon) + taille_delimiteur;
+            break;
+        }
+    }
+
+    tampon[total] = '\0';
+    gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "");
     return tampon;
 }
 
 gal_entier gal_reseau_tcp_fermer(gal_entier socket_fd) {
-    if (socket_fd < 0) return 0;
-    return close((int)socket_fd) == 0 ? 1 : 0;
+    if (socket_fd < 0) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "socket invalide");
+        return 0;
+    }
+    if (close((int)socket_fd) == 0) {
+        gal_set_erreur(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "");
+        return 1;
+    }
+    gal_set_erreur_errno(gal_derniere_erreur_reseau, sizeof(gal_derniere_erreur_reseau), "fermeture TCP échouée");
+    return 0;
+}
+
+char* gal_reseau_derniere_erreur() {
+    return gal_dupliquer_chaine(gal_derniere_erreur_reseau);
+}
+
+gal_entier gal_systeme_derniere_erreur_code() {
+    return (gal_entier)gal_derniere_erreur_code_systeme;
+}
+
+gal_entier gal_reseau_derniere_erreur_code() {
+    return (gal_entier)gal_derniere_erreur_code_reseau;
 }
 
 // ===== Fonctions utilitaires =====

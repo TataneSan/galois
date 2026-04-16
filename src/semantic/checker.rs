@@ -670,6 +670,22 @@ impl Vérificateur {
                 est_async: false,
             },
         );
+        symboles_systeme.insert(
+            "derniere_erreur".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: Vec::new(),
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "derniere_erreur_code".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: Vec::new(),
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
         table.définir("système", GenreSymbole::Module { symboles: symboles_systeme.clone() });
         table.définir("systeme", GenreSymbole::Module { symboles: symboles_systeme.clone() });
         table.définir("Système", GenreSymbole::Module { symboles: symboles_systeme.clone() });
@@ -751,9 +767,37 @@ impl Vérificateur {
             },
         );
         symboles_reseau.insert(
+            "tcp_recevoir_jusqua".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![
+                    ("socket".to_string(), Type::Entier),
+                    ("delimiteur".to_string(), Type::Texte),
+                    ("taille_max".to_string(), Type::Entier),
+                ],
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        symboles_reseau.insert(
             "tcp_fermer".to_string(),
             GenreSymbole::Fonction {
                 paramètres: vec![("socket".to_string(), Type::Entier)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_reseau.insert(
+            "derniere_erreur".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: Vec::new(),
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        symboles_reseau.insert(
+            "derniere_erreur_code".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: Vec::new(),
                 type_retour: Type::Entier,
                 est_async: false,
             },

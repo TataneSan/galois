@@ -416,6 +416,14 @@ impl GénérateurLLVM {
             (vec![IRType::Texte, IRType::Texte], IRType::Entier),
         );
         self.signatures_fonctions.insert(
+            "gal_systeme_derniere_erreur".to_string(),
+            (vec![], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_derniere_erreur_code".to_string(),
+            (vec![], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
             "gal_reseau_resoudre_ipv4".to_string(),
             (vec![IRType::Texte], IRType::Texte),
         );
@@ -448,8 +456,20 @@ impl GénérateurLLVM {
             (vec![IRType::Entier, IRType::Entier], IRType::Texte),
         );
         self.signatures_fonctions.insert(
+            "gal_reseau_tcp_recevoir_jusqua".to_string(),
+            (vec![IRType::Entier, IRType::Texte, IRType::Entier], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
             "gal_reseau_tcp_fermer".to_string(),
             (vec![IRType::Entier], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_reseau_derniere_erreur".to_string(),
+            (vec![], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_reseau_derniere_erreur_code".to_string(),
+            (vec![], IRType::Entier),
         );
         self.signatures_fonctions.insert(
             "gal_liste_nouveau".to_string(),
@@ -1132,6 +1152,8 @@ impl GénérateurLLVM {
         self.écrire("declare i8* @gal_systeme_lire_fichier(i8*)\n");
         self.écrire("declare i64 @gal_systeme_ecrire_fichier(i8*, i8*)\n");
         self.écrire("declare i64 @gal_systeme_ajouter_fichier(i8*, i8*)\n");
+        self.écrire("declare i8* @gal_systeme_derniere_erreur()\n");
+        self.écrire("declare i64 @gal_systeme_derniere_erreur_code()\n");
         self.écrire("declare i8* @gal_reseau_resoudre_ipv4(i8*)\n");
         self.écrire("declare i8* @gal_reseau_resoudre_nom(i8*)\n");
         self.écrire("declare i8* @gal_reseau_nom_hote_local()\n");
@@ -1140,7 +1162,10 @@ impl GénérateurLLVM {
         self.écrire("declare i64 @gal_reseau_tcp_connecter(i8*, i64)\n");
         self.écrire("declare i64 @gal_reseau_tcp_envoyer(i64, i8*)\n");
         self.écrire("declare i8* @gal_reseau_tcp_recevoir(i64, i64)\n");
+        self.écrire("declare i8* @gal_reseau_tcp_recevoir_jusqua(i64, i8*, i64)\n");
         self.écrire("declare i64 @gal_reseau_tcp_fermer(i64)\n");
+        self.écrire("declare i8* @gal_reseau_derniere_erreur()\n");
+        self.écrire("declare i64 @gal_reseau_derniere_erreur_code()\n");
 
         let mut externes_déclarées = HashSet::new();
         for f in &module.fonctions {
