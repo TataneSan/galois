@@ -376,6 +376,46 @@ impl GénérateurLLVM {
             (vec![IRType::Texte], IRType::Entier),
         );
         self.signatures_fonctions.insert(
+            "gal_systeme_existe_chemin".to_string(),
+            (vec![IRType::Texte], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_est_fichier".to_string(),
+            (vec![IRType::Texte], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_est_dossier".to_string(),
+            (vec![IRType::Texte], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_creer_dossier".to_string(),
+            (vec![IRType::Texte], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_supprimer_fichier".to_string(),
+            (vec![IRType::Texte], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_supprimer_dossier".to_string(),
+            (vec![IRType::Texte], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_taille_fichier".to_string(),
+            (vec![IRType::Texte], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_lire_fichier".to_string(),
+            (vec![IRType::Texte], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_ecrire_fichier".to_string(),
+            (vec![IRType::Texte, IRType::Texte], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_systeme_ajouter_fichier".to_string(),
+            (vec![IRType::Texte, IRType::Texte], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
             "gal_reseau_resoudre_ipv4".to_string(),
             (vec![IRType::Texte], IRType::Texte),
         );
@@ -390,6 +430,26 @@ impl GénérateurLLVM {
         self.signatures_fonctions.insert(
             "gal_reseau_est_ipv4".to_string(),
             (vec![IRType::Texte], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_reseau_est_ipv6".to_string(),
+            (vec![IRType::Texte], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_reseau_tcp_connecter".to_string(),
+            (vec![IRType::Texte, IRType::Entier], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_reseau_tcp_envoyer".to_string(),
+            (vec![IRType::Entier, IRType::Texte], IRType::Entier),
+        );
+        self.signatures_fonctions.insert(
+            "gal_reseau_tcp_recevoir".to_string(),
+            (vec![IRType::Entier, IRType::Entier], IRType::Texte),
+        );
+        self.signatures_fonctions.insert(
+            "gal_reseau_tcp_fermer".to_string(),
+            (vec![IRType::Entier], IRType::Entier),
         );
         self.signatures_fonctions.insert(
             "gal_liste_nouveau".to_string(),
@@ -1062,10 +1122,25 @@ impl GénérateurLLVM {
         self.écrire("declare i8* @gal_systeme_variable_env(i8*)\n");
         self.écrire("declare void @gal_systeme_definir_env(i8*, i8*)\n");
         self.écrire("declare i64 @gal_systeme_existe_env(i8*)\n");
+        self.écrire("declare i64 @gal_systeme_existe_chemin(i8*)\n");
+        self.écrire("declare i64 @gal_systeme_est_fichier(i8*)\n");
+        self.écrire("declare i64 @gal_systeme_est_dossier(i8*)\n");
+        self.écrire("declare i64 @gal_systeme_creer_dossier(i8*)\n");
+        self.écrire("declare i64 @gal_systeme_supprimer_fichier(i8*)\n");
+        self.écrire("declare i64 @gal_systeme_supprimer_dossier(i8*)\n");
+        self.écrire("declare i64 @gal_systeme_taille_fichier(i8*)\n");
+        self.écrire("declare i8* @gal_systeme_lire_fichier(i8*)\n");
+        self.écrire("declare i64 @gal_systeme_ecrire_fichier(i8*, i8*)\n");
+        self.écrire("declare i64 @gal_systeme_ajouter_fichier(i8*, i8*)\n");
         self.écrire("declare i8* @gal_reseau_resoudre_ipv4(i8*)\n");
         self.écrire("declare i8* @gal_reseau_resoudre_nom(i8*)\n");
         self.écrire("declare i8* @gal_reseau_nom_hote_local()\n");
         self.écrire("declare i64 @gal_reseau_est_ipv4(i8*)\n");
+        self.écrire("declare i64 @gal_reseau_est_ipv6(i8*)\n");
+        self.écrire("declare i64 @gal_reseau_tcp_connecter(i8*, i64)\n");
+        self.écrire("declare i64 @gal_reseau_tcp_envoyer(i64, i8*)\n");
+        self.écrire("declare i8* @gal_reseau_tcp_recevoir(i64, i64)\n");
+        self.écrire("declare i64 @gal_reseau_tcp_fermer(i64)\n");
 
         let mut externes_déclarées = HashSet::new();
         for f in &module.fonctions {

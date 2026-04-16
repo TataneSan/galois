@@ -1,5 +1,9 @@
+use std::io::{ErrorKind, Read, Write};
+use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::Command;
+use std::thread;
+use std::time::{Duration, Instant};
 
 fn binaire_galois() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_galois"))
@@ -13,10 +17,17 @@ fn exemple_path(dossier: &str, nom: &str) -> PathBuf {
 }
 
 fn exécuter_exemple(dossier: &str, nom: &str) -> String {
-    let sortie = Command::new(binaire_galois())
-        .args(["run", exemple_path(dossier, nom).to_str().expect("Chemin invalide")])
-        .output()
-        .expect("Impossible de lancer Galois");
+    exécuter_exemple_avec_env(dossier, nom, &[])
+}
+
+fn exécuter_exemple_avec_env(dossier: &str, nom: &str, envs: &[(&str, &str)]) -> String {
+    let mut commande = Command::new(binaire_galois());
+    commande.args(["run", exemple_path(dossier, nom).to_str().expect("Chemin invalide")]);
+    for (clé, valeur) in envs {
+        commande.env(clé, valeur);
+    }
+
+    let sortie = commande.output().expect("Impossible de lancer Galois");
 
     assert!(
         sortie.status.success(),
@@ -55,8 +66,53 @@ fn exemples_doc_structures() {
 
 #[test]
 fn exemples_doc_systeme_et_reseau() {
-    let sortie = exécuter_exemple("docs", "systeme_reseau.gal");
-    assert_eq!(normaliser(&sortie), "vrai\nvrai\nvrai\nvrai");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("Impossible de démarrer le serveur TCP");
+    listener
+        .set_nonblocking(true)
+        .expect("Impossible de passer le listener en non-bloquant");
+    let port = listener
+        .local_addr()
+        .expect("Impossible de récupérer l'adresse du listener")
+        .port();
+
+    let serveur = thread::spawn(move || {
+        let départ = Instant::now();
+        loop {
+            match listener.accept() {
+                Ok((mut flux, _)) => {
+                    flux.set_read_timeout(Some(Duration::from_secs(5)))
+                        .expect("Impossible de configurer le timeout de lecture");
+                    let mut tampon = [0u8; 64];
+                    let lu = flux.read(&mut tampon).expect("Lecture TCP échouée");
+                    assert_eq!(&tampon[..lu], b"ping");
+                    flux.write_all(b"pong").expect("Écriture TCP échouée");
+                    return;
+                }
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                    assert!(
+                        départ.elapsed() <= Duration::from_secs(10),
+                        "Timeout: le client Galois ne s'est pas connecté"
+                    );
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => panic!("Accept TCP en échec: {e}"),
+            }
+        }
+    });
+
+    let port_texte = port.to_string();
+    let sortie = exécuter_exemple_avec_env(
+        "docs",
+        "systeme_reseau.gal",
+        &[("GALOIS_TEST_TCP_PORT", port_texte.as_str())],
+    );
+    serveur.join().expect("Le serveur TCP de test a paniqué");
+
+    let attendu = std::iter::repeat("vrai")
+        .take(20)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(normaliser(&sortie), attendu);
 }
 
 #[test]

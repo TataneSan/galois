@@ -726,3 +726,40 @@ fn test_ir_dictionnaire_initialisation_typée() {
 
     assert!(trouvé, "Initialisation dictionnaire typée non générée");
 }
+
+#[test]
+fn test_vérification_modules_systeme_reseau_v1_etendue() {
+    let source = "soit dossier = \"/tmp\"
+soit existe = systeme.existe_chemin(dossier)
+soit estf = systeme.est_fichier(\"/tmp/inexistant_galois.txt\")
+soit taille = systeme.taille_fichier(\"/tmp/inexistant_galois.txt\")
+soit contenu = systeme.lire_fichier(\"/tmp/inexistant_galois.txt\")
+soit ip4 = reseau.est_ipv4(\"127.0.0.1\")
+soit ip6 = reseau.est_ipv6(\"::1\")
+soit s = reseau.tcp_connecter(\"127.0.0.1\", 80)
+soit e = reseau.tcp_envoyer(s, \"x\")
+soit r = reseau.tcp_recevoir(s, 16)
+soit f = reseau.tcp_fermer(s)";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_ok());
+}
+
+#[test]
+fn test_vérification_reseau_tcp_connecter_arity_invalide() {
+    let source = "soit s = reseau.tcp_connecter(\"127.0.0.1\")";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_err());
+}
+
+#[test]
+fn test_vérification_reseau_tcp_envoyer_type_invalide() {
+    let source = "soit e = reseau.tcp_envoyer(\"pas_un_socket\", \"ping\")";
+
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_err());
+}

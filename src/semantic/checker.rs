@@ -584,6 +584,92 @@ impl Vérificateur {
                 est_async: false,
             },
         );
+        symboles_systeme.insert(
+            "existe_chemin".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("chemin".to_string(), Type::Texte)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "est_fichier".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("chemin".to_string(), Type::Texte)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "est_dossier".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("chemin".to_string(), Type::Texte)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "creer_dossier".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("chemin".to_string(), Type::Texte)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "supprimer_fichier".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("chemin".to_string(), Type::Texte)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "supprimer_dossier".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("chemin".to_string(), Type::Texte)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "taille_fichier".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("chemin".to_string(), Type::Texte)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "lire_fichier".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("chemin".to_string(), Type::Texte)],
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "ecrire_fichier".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![
+                    ("chemin".to_string(), Type::Texte),
+                    ("contenu".to_string(), Type::Texte),
+                ],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_systeme.insert(
+            "ajouter_fichier".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![
+                    ("chemin".to_string(), Type::Texte),
+                    ("contenu".to_string(), Type::Texte),
+                ],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
         table.définir("système", GenreSymbole::Module { symboles: symboles_systeme.clone() });
         table.définir("systeme", GenreSymbole::Module { symboles: symboles_systeme.clone() });
         table.définir("Système", GenreSymbole::Module { symboles: symboles_systeme.clone() });
@@ -619,6 +705,55 @@ impl Vérificateur {
             "est_ipv4".to_string(),
             GenreSymbole::Fonction {
                 paramètres: vec![("ip".to_string(), Type::Texte)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_reseau.insert(
+            "est_ipv6".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("ip".to_string(), Type::Texte)],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_reseau.insert(
+            "tcp_connecter".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![
+                    ("hote".to_string(), Type::Texte),
+                    ("port".to_string(), Type::Entier),
+                ],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_reseau.insert(
+            "tcp_envoyer".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![
+                    ("socket".to_string(), Type::Entier),
+                    ("donnees".to_string(), Type::Texte),
+                ],
+                type_retour: Type::Entier,
+                est_async: false,
+            },
+        );
+        symboles_reseau.insert(
+            "tcp_recevoir".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![
+                    ("socket".to_string(), Type::Entier),
+                    ("taille_max".to_string(), Type::Entier),
+                ],
+                type_retour: Type::Texte,
+                est_async: false,
+            },
+        );
+        symboles_reseau.insert(
+            "tcp_fermer".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("socket".to_string(), Type::Entier)],
                 type_retour: Type::Entier,
                 est_async: false,
             },

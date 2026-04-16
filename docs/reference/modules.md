@@ -87,6 +87,24 @@ afficher(systeme.pid())
 afficher(reseau.est_ipv4("127.0.0.1"))
 ```
 
+#### `systeme`
+
+Fonctions principales :
+
+- `pid()`, `uid()`, `nom_hote()`, `plateforme()`
+- `variable_env(nom)`, `definir_env(nom, valeur)`, `existe_env(nom)`
+- `existe_chemin(chemin)`, `est_fichier(chemin)`, `est_dossier(chemin)`
+- `creer_dossier(chemin)`, `supprimer_fichier(chemin)`, `supprimer_dossier(chemin)`
+- `lire_fichier(chemin)`, `ecrire_fichier(chemin, contenu)`, `ajouter_fichier(chemin, contenu)`, `taille_fichier(chemin)`
+
+#### `reseau`
+
+Fonctions principales :
+
+- `est_ipv4(ip)`, `est_ipv6(ip)`
+- `resoudre_ipv4(hote)`, `resoudre_nom(ip)`, `nom_hote_local()`
+- TCP client: `tcp_connecter(hote, port)`, `tcp_envoyer(socket, donnees)`, `tcp_recevoir(socket, taille_max)`, `tcp_fermer(socket)`
+
 ## Chemins de module
 
 Les modules peuvent être organisés en hiérarchie :

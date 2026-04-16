@@ -10,6 +10,8 @@ Galois inclut une bibliothèque standard riche pour faciliter le développement.
 | [texte](texte.md) | Manipulation de chaînes | ~10 |
 | [entrée_sortie](entree-sortie.md) | Lecture/écriture | ~5 |
 | [collections](collections.md) | Utilitaires collections | ~10 |
+| [systeme](systeme.md) | OS, environnement, fichiers | ~15 |
+| [reseau](reseau.md) | DNS, IP, client TCP | ~10 |
 
 ## Utilisation
 

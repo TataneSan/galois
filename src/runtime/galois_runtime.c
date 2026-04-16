@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/utsname.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -1582,10 +1583,124 @@ gal_entier gal_systeme_existe_env(const char* nom) {
     return getenv(nom) ? 1 : 0;
 }
 
+gal_entier gal_systeme_existe_chemin(const char* chemin) {
+    if (!chemin || !*chemin) return 0;
+    struct stat info;
+    return stat(chemin, &info) == 0 ? 1 : 0;
+}
+
+gal_entier gal_systeme_est_fichier(const char* chemin) {
+    if (!chemin || !*chemin) return 0;
+    struct stat info;
+    if (stat(chemin, &info) != 0) return 0;
+    return S_ISREG(info.st_mode) ? 1 : 0;
+}
+
+gal_entier gal_systeme_est_dossier(const char* chemin) {
+    if (!chemin || !*chemin) return 0;
+    struct stat info;
+    if (stat(chemin, &info) != 0) return 0;
+    return S_ISDIR(info.st_mode) ? 1 : 0;
+}
+
+gal_entier gal_systeme_creer_dossier(const char* chemin) {
+    if (!chemin || !*chemin) return 0;
+    if (mkdir(chemin, 0755) == 0) return 1;
+    if (errno == EEXIST) {
+        struct stat info;
+        if (stat(chemin, &info) == 0 && S_ISDIR(info.st_mode)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+gal_entier gal_systeme_supprimer_fichier(const char* chemin) {
+    if (!chemin || !*chemin) return 0;
+    return unlink(chemin) == 0 ? 1 : 0;
+}
+
+gal_entier gal_systeme_supprimer_dossier(const char* chemin) {
+    if (!chemin || !*chemin) return 0;
+    return rmdir(chemin) == 0 ? 1 : 0;
+}
+
+gal_entier gal_systeme_taille_fichier(const char* chemin) {
+    if (!chemin || !*chemin) return -1;
+    struct stat info;
+    if (stat(chemin, &info) != 0) return -1;
+    if (!S_ISREG(info.st_mode)) return -1;
+    return (gal_entier)info.st_size;
+}
+
+char* gal_systeme_lire_fichier(const char* chemin) {
+    if (!chemin || !*chemin) return gal_dupliquer_chaine("");
+
+    FILE* f = fopen(chemin, "rb");
+    if (!f) return gal_dupliquer_chaine("");
+
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return gal_dupliquer_chaine("");
+    }
+
+    long taille = ftell(f);
+    if (taille < 0) {
+        fclose(f);
+        return gal_dupliquer_chaine("");
+    }
+    rewind(f);
+
+    char* contenu = (char*)malloc((size_t)taille + 1);
+    if (!contenu) {
+        fclose(f);
+        return gal_dupliquer_chaine("");
+    }
+
+    size_t lu = fread(contenu, 1, (size_t)taille, f);
+    fclose(f);
+    contenu[lu] = '\0';
+    return contenu;
+}
+
+gal_entier gal_systeme_ecrire_fichier(const char* chemin, const char* contenu) {
+    if (!chemin || !*chemin) return 0;
+    if (!contenu) contenu = "";
+
+    FILE* f = fopen(chemin, "wb");
+    if (!f) return 0;
+
+    size_t longueur = strlen(contenu);
+    size_t écrit = fwrite(contenu, 1, longueur, f);
+    int ok = (écrit == longueur && fflush(f) == 0 && ferror(f) == 0) ? 1 : 0;
+    fclose(f);
+    return ok;
+}
+
+gal_entier gal_systeme_ajouter_fichier(const char* chemin, const char* contenu) {
+    if (!chemin || !*chemin) return 0;
+    if (!contenu) contenu = "";
+
+    FILE* f = fopen(chemin, "ab");
+    if (!f) return 0;
+
+    size_t longueur = strlen(contenu);
+    size_t écrit = fwrite(contenu, 1, longueur, f);
+    int ok = (écrit == longueur && fflush(f) == 0 && ferror(f) == 0) ? 1 : 0;
+    fclose(f);
+    return ok;
+}
+
 gal_entier gal_reseau_est_ipv4(const char* ip) {
     struct in_addr addr;
     if (!ip) return 0;
     return inet_pton(AF_INET, ip, &addr) == 1 ? 1 : 0;
+}
+
+gal_entier gal_reseau_est_ipv6(const char* ip) {
+    struct in6_addr addr;
+    if (!ip) return 0;
+    return inet_pton(AF_INET6, ip, &addr) == 1 ? 1 : 0;
 }
 
 char* gal_reseau_resoudre_ipv4(const char* hote) {
@@ -1642,6 +1757,73 @@ char* gal_reseau_resoudre_nom(const char* ip) {
 
 char* gal_reseau_nom_hote_local() {
     return gal_systeme_nom_hote();
+}
+
+gal_entier gal_reseau_tcp_connecter(const char* hote, gal_entier port) {
+    if (!hote || !*hote) return -1;
+    if (port < 1 || port > 65535) return -1;
+
+    char service[16];
+    snprintf(service, sizeof(service), "%lld", (long long)port);
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    struct addrinfo* résultat = NULL;
+    if (getaddrinfo(hote, service, &hints, &résultat) != 0 || !résultat) {
+        return -1;
+    }
+
+    int sock = -1;
+    for (struct addrinfo* ai = résultat; ai; ai = ai->ai_next) {
+        sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (sock < 0) continue;
+        if (connect(sock, ai->ai_addr, ai->ai_addrlen) == 0) {
+            break;
+        }
+        close(sock);
+        sock = -1;
+    }
+
+    freeaddrinfo(résultat);
+    return (gal_entier)sock;
+}
+
+gal_entier gal_reseau_tcp_envoyer(gal_entier socket_fd, const char* données) {
+    if (socket_fd < 0 || !données) return -1;
+
+    size_t longueur = strlen(données);
+    size_t total = 0;
+    while (total < longueur) {
+        ssize_t écrit = send((int)socket_fd, données + total, longueur - total, 0);
+        if (écrit <= 0) return -1;
+        total += (size_t)écrit;
+    }
+    return (gal_entier)total;
+}
+
+char* gal_reseau_tcp_recevoir(gal_entier socket_fd, gal_entier taille_max) {
+    if (socket_fd < 0 || taille_max <= 0) return gal_dupliquer_chaine("");
+    if (taille_max > 1048576) taille_max = 1048576;
+
+    char* tampon = (char*)malloc((size_t)taille_max + 1);
+    if (!tampon) return gal_dupliquer_chaine("");
+
+    ssize_t lu = recv((int)socket_fd, tampon, (size_t)taille_max, 0);
+    if (lu <= 0) {
+        free(tampon);
+        return gal_dupliquer_chaine("");
+    }
+
+    tampon[lu] = '\0';
+    return tampon;
+}
+
+gal_entier gal_reseau_tcp_fermer(gal_entier socket_fd) {
+    if (socket_fd < 0) return 0;
+    return close((int)socket_fd) == 0 ? 1 : 0;
 }
 
 // ===== Fonctions utilitaires =====

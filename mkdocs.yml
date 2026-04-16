@@ -97,6 +97,8 @@ nav:
     - Texte: stdlib/texte.md
     - Entree/Sortie: stdlib/entree-sortie.md
     - Collections: stdlib/collections.md
+    - Systeme: stdlib/systeme.md
+    - Reseau: stdlib/reseau.md
   - Outils:
     - CLI: reference/cli.md
     - Paquets: reference/paquets.md

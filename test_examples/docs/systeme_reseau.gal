@@ -7,5 +7,30 @@ fin
 
 afficher(bool_texte(maths.temps_ms() >= 0))
 afficher(bool_texte(systeme.pid() > 0))
+
+soit fichier = "/tmp/galois_os_reseau_" + texte(systeme.pid()) + ".txt"
+soit dossier = "/tmp/galois_os_reseau_dossier_" + texte(systeme.pid())
+
+afficher(bool_texte(systeme.ecrire_fichier(fichier, "abc") == 1))
+afficher(bool_texte(systeme.existe_chemin(fichier) == 1))
+afficher(bool_texte(systeme.est_fichier(fichier) == 1))
+afficher(bool_texte(systeme.taille_fichier(fichier) == 3))
+afficher(bool_texte(systeme.lire_fichier(fichier).contient("abc")))
+afficher(bool_texte(systeme.ajouter_fichier(fichier, "def") == 1))
+afficher(bool_texte(systeme.taille_fichier(fichier) == 6))
+afficher(bool_texte(systeme.supprimer_fichier(fichier) == 1))
+
+afficher(bool_texte(systeme.creer_dossier(dossier) == 1))
+afficher(bool_texte(systeme.est_dossier(dossier) == 1))
+afficher(bool_texte(systeme.supprimer_dossier(dossier) == 1))
+
 afficher(bool_texte(reseau.est_ipv4("127.0.0.1") == 1))
 afficher(bool_texte(reseau.est_ipv4("256.0.0.1") == 0))
+afficher(bool_texte(reseau.est_ipv6("::1") == 1))
+
+soit port_tcp = entier_depuis_texte(systeme.variable_env("GALOIS_TEST_TCP_PORT"))
+soit socket_tcp = reseau.tcp_connecter("127.0.0.1", port_tcp)
+afficher(bool_texte(socket_tcp >= 0))
+afficher(bool_texte(reseau.tcp_envoyer(socket_tcp, "ping") == 4))
+afficher(bool_texte(reseau.tcp_recevoir(socket_tcp, 32).contient("pong")))
+afficher(bool_texte(reseau.tcp_fermer(socket_tcp) == 1))
