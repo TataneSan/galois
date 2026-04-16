@@ -16,6 +16,7 @@ pub struct GénérateurLLVM {
     dispatch_requis: Vec<(String, bool, String, Vec<IRType>, IRType)>,
     dispatch_index: HashSet<String>,
     types_variables: HashMap<String, IRType>,
+    fonction_courante: Option<String>,
 }
 
 impl GénérateurLLVM {
@@ -34,6 +35,7 @@ impl GénérateurLLVM {
             dispatch_requis: Vec::new(),
             dispatch_index: HashSet::new(),
             types_variables: HashMap::new(),
+            fonction_courante: None,
         }
     }
 
@@ -1333,6 +1335,7 @@ impl GénérateurLLVM {
     fn générer_fonction(&mut self, f: &IRFonction) {
         let type_ret = self.type_llvm(&f.type_retour);
         let nom_llvm = self.nom_llvm(&f.nom);
+        self.fonction_courante = Some(f.nom.clone());
 
         self.types_variables.clear();
         for (nom, type_param) in &f.paramètres {
@@ -1468,6 +1471,7 @@ impl GénérateurLLVM {
         }
 
         self.écrire("}\n\n");
+        self.fonction_courante = None;
     }
 
     fn générer_bloc(&mut self, bloc: &IRBloc, type_retour: &IRType) {
@@ -1616,6 +1620,48 @@ impl GénérateurLLVM {
             }
             IRInstruction::Retourner(valeur) => {
                 if let Some(v) = valeur {
+                    if let IRValeur::Appel(fonction, arguments) = v {
+                        if self.fonction_courante.as_deref() == Some(fonction.as_str()) {
+                            let signature = self
+                                .signatures_fonctions
+                                .get(fonction)
+                                .cloned()
+                                .unwrap_or((Vec::new(), type_retour.clone()));
+                            if !matches!(signature.1, IRType::Vide) {
+                                let mut args_code = String::new();
+                                for (i, arg) in arguments.iter().enumerate() {
+                                    let type_arg =
+                                        signature.0.get(i).cloned().unwrap_or(IRType::Entier);
+                                    let (arg_reg, arg_instrs) =
+                                        self.générer_valeur_pour_type(arg, &type_arg);
+                                    if !arg_instrs.is_empty() {
+                                        self.écrire(&arg_instrs);
+                                    }
+                                    if i > 0 {
+                                        args_code.push_str(", ");
+                                    }
+                                    args_code.push_str(&format!(
+                                        "{} {}",
+                                        self.type_llvm_stockage(&type_arg),
+                                        arg_reg
+                                    ));
+                                }
+
+                                let type_ret = self.type_llvm_stockage(&signature.1);
+                                let reg = self.reg_suivant();
+                                self.écrire(&format!(
+                                    "  {} = musttail call {} @{}({})\n",
+                                    reg,
+                                    type_ret,
+                                    self.nom_llvm(fonction),
+                                    args_code
+                                ));
+                                self.écrire(&format!("  ret {} {}\n", type_ret, reg));
+                                return;
+                            }
+                        }
+                    }
+
                     let type_ret = self.type_llvm(type_retour);
                     let (reg, code) = self.générer_valeur_pour_type(v, type_retour);
                     if !code.is_empty() {
