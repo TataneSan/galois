@@ -563,14 +563,27 @@ fn lire_entrée_repl() -> Resultat<EntréeRepl> {
             match événement {
                 Event::Key(touche) if touche.kind == KeyEventKind::Press => match touche.code {
                     KeyCode::Enter => {
-                        exécuter = touche.modifiers.contains(KeyModifiers::SHIFT);
-                        println!();
+                        exécuter = touche.modifiers.contains(KeyModifiers::SHIFT)
+                            || texte.trim().is_empty();
+                        print!("\r\n");
+                        io::stdout().flush().map_err(|e| {
+                            error::Erreur::runtime(
+                                error::Position::nouvelle(1, 1, "<repl>"),
+                                &format!("Impossible d'écrire sur la sortie standard: {}", e),
+                            )
+                        })?;
                         break;
                     }
                     KeyCode::Char('d') if touche.modifiers.contains(KeyModifiers::CONTROL) => {
                         if texte.is_empty() {
                             fin_flux = true;
-                            println!();
+                            print!("\r\n");
+                            io::stdout().flush().map_err(|e| {
+                                error::Erreur::runtime(
+                                    error::Position::nouvelle(1, 1, "<repl>"),
+                                    &format!("Impossible d'écrire sur la sortie standard: {}", e),
+                                )
+                            })?;
                             break;
                         }
                     }
@@ -645,7 +658,7 @@ fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
 
 fn exécuter_repl(release: bool) -> Resultat<()> {
     println!("REPL Galois (style Python)");
-    println!("Entrée = nouvelle ligne, Shift+Entrée = exécuter le buffer.");
+    println!("Entrée = nouvelle ligne (ligne vide = exécuter), Shift+Entrée = exécuter le buffer.");
     println!("Tapez :help pour l'aide, :quit pour quitter.");
 
     let mut historique = String::new();
@@ -679,7 +692,8 @@ fn exécuter_repl(release: bool) -> Resultat<()> {
                 ":help" => {
                 println!("Commandes REPL:");
                 println!("  Entrée           Ajouter une ligne au bloc courant");
-                println!("  Shift+Entrée     Exécuter le bloc courant");
+                println!("  Shift+Entrée     Exécuter le bloc courant (si support terminal)");
+                println!("  Entrée sur ligne vide  Exécuter le bloc courant");
                 println!("  :run             Exécuter le bloc en cours immédiatement");
                 println!("  :show   Afficher l'historique + bloc courant");
                 println!("  :clear  Vider le bloc courant");

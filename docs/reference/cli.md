@@ -66,7 +66,7 @@ galois repl [--release]
 
 Lance une boucle interactive pour saisir des lignes Galois et exécuter le buffer courant.
 Le prompt suit le style Python: `>>>` pour une nouvelle entrée et `...` pour une continuation de bloc.
-Dans la REPL interactive: `Entrée` ajoute une ligne au buffer, `Shift+Entrée` exécute le buffer.
+Dans la REPL interactive: `Entrée` ajoute une ligne au buffer, `Shift+Entrée` exécute le buffer (si supporté par le terminal), et **Entrée sur ligne vide** exécute aussi le buffer.
 
 Commandes internes :
 - `:run` force l'exécution du bloc courant

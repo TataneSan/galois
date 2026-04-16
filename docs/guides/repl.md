@@ -19,9 +19,10 @@ galois repl --release
 - `>>>` : nouvelle entrée
 - `...` : continuation d'un bloc (fonction, condition, etc.)
 - `Entrée` : ajoute une ligne au bloc courant
-- `Shift+Entrée` : exécute le bloc courant
+- `Shift+Entrée` : exécute le bloc courant (si supporté par votre terminal)
+- `Entrée` sur une ligne vide : exécute aussi le bloc courant
 
-Si votre terminal ne remonte pas `Shift+Entrée`, utilisez `:run`.
+Si votre terminal ne remonte pas `Shift+Entrée`, utilisez une ligne vide ou `:run`.
 
 ## Exemple
 
