@@ -657,7 +657,7 @@ fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
 }
 
 fn exécuter_repl(release: bool) -> Resultat<()> {
-    println!("REPL Galois (style Python)");
+    println!("REPL Galois");
     println!("Entrée = nouvelle ligne (ligne vide = exécuter), Shift+Entrée = exécuter le buffer.");
     println!("Tapez :aide pour l'aide, :quitter pour quitter.");
 

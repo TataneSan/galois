@@ -904,6 +904,22 @@ impl GénérateurLLVM {
             (vec![IRType::Décimal], IRType::Décimal),
         );
         self.signatures_fonctions.insert(
+            "gal_arcsin".to_string(),
+            (vec![IRType::Décimal], IRType::Décimal),
+        );
+        self.signatures_fonctions.insert(
+            "gal_arccos".to_string(),
+            (vec![IRType::Décimal], IRType::Décimal),
+        );
+        self.signatures_fonctions.insert(
+            "gal_arctan".to_string(),
+            (vec![IRType::Décimal], IRType::Décimal),
+        );
+        self.signatures_fonctions.insert(
+            "gal_arctan2".to_string(),
+            (vec![IRType::Décimal, IRType::Décimal], IRType::Décimal),
+        );
+        self.signatures_fonctions.insert(
             "gal_log".to_string(),
             (vec![IRType::Décimal], IRType::Décimal),
         );
@@ -1097,6 +1113,10 @@ impl GénérateurLLVM {
         self.écrire("declare double @gal_sin(double)\n");
         self.écrire("declare double @gal_cos(double)\n");
         self.écrire("declare double @gal_tan(double)\n");
+        self.écrire("declare double @gal_arcsin(double)\n");
+        self.écrire("declare double @gal_arccos(double)\n");
+        self.écrire("declare double @gal_arctan(double)\n");
+        self.écrire("declare double @gal_arctan2(double, double)\n");
         self.écrire("declare double @gal_log(double)\n");
         self.écrire("declare double @gal_exp(double)\n");
         self.écrire("declare double @gal_racine(double)\n");

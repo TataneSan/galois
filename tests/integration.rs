@@ -755,7 +755,13 @@ soit f = reseau.tcp_fermer(s)";
 fn test_vérification_alias_maths_trigonometrie_fr() {
     let source = "soit a = maths.sinus(1.0)
 soit b = maths.cosinus(1.0)
-soit c = maths.tangente(1.0)";
+soit c = maths.tangente(1.0)
+soit d = maths.logarithme(1.0)
+soit e = maths.exponentielle(1.0)
+soit f = maths.arcsinus(0.5)
+soit g = maths.arccosinus(0.5)
+soit h = maths.arctangente(1.0)
+soit i = maths.arctan2(1.0, 1.0)";
 
     let programme = parser_source(source);
     let mut vérif = Vérificateur::nouveau();

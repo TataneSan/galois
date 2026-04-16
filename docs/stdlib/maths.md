@@ -17,11 +17,17 @@ depuis Maths importe *
 | `sinus(x)` | `(décimal) -> décimal` | Sinus (radians) |
 | `cosinus(x)` | `(décimal) -> décimal` | Cosinus (radians) |
 | `tangente(x)` | `(décimal) -> décimal` | Tangente (radians) |
+| `arcsinus(x)` | `(décimal) -> décimal` | Arc sinus |
+| `arccosinus(x)` | `(décimal) -> décimal` | Arc cosinus |
+| `arctangente(x)` | `(décimal) -> décimal` | Arc tangente |
+| `arctan2(y, x)` | `(décimal, décimal) -> décimal` | Arc tangente 2 |
 | `logarithme(x)` | `(décimal) -> décimal` | Logarithme népérien |
 | `exponentielle(x)` | `(décimal) -> décimal` | Exponentielle |
 | `plafond(x)` | `(décimal) -> décimal` | Arrondi supérieur |
 | `plancher(x)` | `(décimal) -> décimal` | Arrondi inférieur |
 | `arrondi(x)` | `(décimal) -> décimal` | Arrondi au plus proche |
+
+Alias courts aussi disponibles: `sin`, `cos`, `tan`, `arcsin`, `arccos`, `arctan`, `log`, `exp`.
 
 ## Constantes
 

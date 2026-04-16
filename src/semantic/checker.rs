@@ -382,6 +382,62 @@ impl Vérificateur {
             },
         );
         symboles_maths.insert(
+            "arcsin".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "arcsinus".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "arccos".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "arccosinus".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "arctan".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "arctangente".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "arctan2".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("y".to_string(), Type::Décimal), ("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
             "log".to_string(),
             GenreSymbole::Fonction {
                 paramètres: vec![("x".to_string(), Type::Décimal)],
@@ -390,7 +446,23 @@ impl Vérificateur {
             },
         );
         symboles_maths.insert(
+            "logarithme".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
             "exp".to_string(),
+            GenreSymbole::Fonction {
+                paramètres: vec![("x".to_string(), Type::Décimal)],
+                type_retour: Type::Décimal,
+                est_async: false,
+            },
+        );
+        symboles_maths.insert(
+            "exponentielle".to_string(),
             GenreSymbole::Fonction {
                 paramètres: vec![("x".to_string(), Type::Décimal)],
                 type_retour: Type::Décimal,
