@@ -69,11 +69,11 @@ Le prompt suit le style Python: `>>>` pour une nouvelle entrée et `...` pour un
 Dans la REPL interactive: `Entrée` ajoute une ligne au buffer, `Shift+Entrée` exécute le buffer (si supporté par le terminal), et **Entrée sur ligne vide** exécute aussi le buffer.
 
 Commandes internes :
-- `:run` force l'exécution du bloc courant
-- `:show` affiche l'historique + bloc courant
-- `:clear` vide le bloc courant
-- `:reset` réinitialise l'historique
-- `:quit` quitte la boucle
+- `:executer` force l'exécution du bloc courant
+- `:afficher` affiche l'historique + bloc courant
+- `:vider` vide le bloc courant
+- `:reinitialiser` réinitialise l'historique
+- `:quitter` quitte la boucle
 
 ### `compiler` / `comp` / `c` — Compiler vers LLVM IR
 

@@ -413,7 +413,7 @@ fn repl_execute_un_buffer() {
     {
         let stdin = enfant.stdin.as_mut().expect("stdin indisponible");
         stdin
-            .write_all(b"soit x = 40\nafficher(x + 2)\n:run\n:quit\n")
+            .write_all(b"soit x = 40\nafficher(x + 2)\n:executer\n:quitter\n")
             .expect("Impossible d'écrire dans stdin du REPL");
     }
 
@@ -447,7 +447,7 @@ fn repl_ne_execute_pas_sans_run() {
     {
         let stdin = enfant.stdin.as_mut().expect("stdin indisponible");
         stdin
-            .write_all(b"afficher(42)\n:quit\n")
+            .write_all(b"afficher(42)\n:quitter\n")
             .expect("Impossible d'écrire dans stdin du REPL");
     }
 

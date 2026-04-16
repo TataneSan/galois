@@ -30,9 +30,9 @@ Puis :
 
 ```text
 >>> afficher("Bonjour depuis la REPL")
-... :run
+... :executer
 Bonjour depuis la REPL
->>> :quit
+>>> :quitter
 ```
 
 ## Variables et calculs

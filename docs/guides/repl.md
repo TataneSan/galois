@@ -22,20 +22,20 @@ galois repl --release
 - `Shift+Entrée` : exécute le bloc courant (si supporté par votre terminal)
 - `Entrée` sur une ligne vide : exécute aussi le bloc courant
 
-Si votre terminal ne remonte pas `Shift+Entrée`, utilisez une ligne vide ou `:run`.
+Si votre terminal ne remonte pas `Shift+Entrée`, utilisez une ligne vide ou `:executer`.
 
 ## Exemple
 
 ```text
 >>> soit x = 40
 ... afficher(x + 2)
-... :run
+... :executer
 42
 >>> fonction double(n: entier): entier
 ...     retourne n * 2
 ... fin
 ... afficher(double(21))
-... :run
+... :executer
 42
 ```
 
@@ -43,14 +43,14 @@ Si votre terminal ne remonte pas `Shift+Entrée`, utilisez une ligne vide ou `:r
 
 | Commande | Effet |
 |---|---|
-| `:run` | Force l'exécution du bloc courant |
-| `:show` | Affiche l'historique et le bloc courant |
-| `:clear` | Vide le bloc courant |
-| `:reset` | Réinitialise tout l'historique |
-| `:quit` | Quitte la REPL |
+| `:executer` | Force l'exécution du bloc courant |
+| `:afficher` | Affiche l'historique et le bloc courant |
+| `:vider` | Vide le bloc courant |
+| `:reinitialiser` | Réinitialise tout l'historique |
+| `:quitter` | Quitte la REPL |
 
 ## Bonnes pratiques
 
 1. Utilisez la REPL pour valider une expression ou une API avant de coder un fichier complet.
-2. Réinitialisez (`:reset`) quand vous changez de sujet pour éviter les effets de bord.
+2. Réinitialisez (`:reinitialiser`) quand vous changez de sujet pour éviter les effets de bord.
 3. Basculer ensuite vers `galois run fichier.gal` pour figer l'exemple.

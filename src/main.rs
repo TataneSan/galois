@@ -659,7 +659,7 @@ fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
 fn exécuter_repl(release: bool) -> Resultat<()> {
     println!("REPL Galois (style Python)");
     println!("Entrée = nouvelle ligne (ligne vide = exécuter), Shift+Entrée = exécuter le buffer.");
-    println!("Tapez :help pour l'aide, :quit pour quitter.");
+    println!("Tapez :aide pour l'aide, :quitter pour quitter.");
 
     let mut historique = String::new();
     let mut bloc_courant: Vec<String> = Vec::new();
@@ -688,38 +688,40 @@ fn exécuter_repl(release: bool) -> Resultat<()> {
             }
         } else {
             match commande {
-                ":quit" | ":q" => break,
-                ":help" => {
-                println!("Commandes REPL:");
-                println!("  Entrée           Ajouter une ligne au bloc courant");
-                println!("  Shift+Entrée     Exécuter le bloc courant (si support terminal)");
-                println!("  Entrée sur ligne vide  Exécuter le bloc courant");
-                println!("  :run             Exécuter le bloc en cours immédiatement");
-                println!("  :show   Afficher l'historique + bloc courant");
-                println!("  :clear  Vider le bloc courant");
-                println!("  :reset  Réinitialiser tout l'historique");
-                println!("  :quit   Quitter");
-            }
-                ":show" => {
-                let complet = format!("{}{}", historique, bloc_courant.join("\n"));
-                if complet.trim().is_empty() {
-                    println!("<historique vide>");
-                } else {
-                    for (i, ligne_buffer) in complet.lines().enumerate() {
-                        println!("{:>3} | {}", i + 1, ligne_buffer);
+                ":quitter" | ":quit" | ":q" => break,
+                ":aide" | ":help" => {
+                    println!("Commandes REPL:");
+                    println!("  Entrée                  Ajouter une ligne au bloc courant");
+                    println!(
+                        "  Shift+Entrée            Exécuter le bloc courant (si support terminal)"
+                    );
+                    println!("  Entrée sur ligne vide   Exécuter le bloc courant");
+                    println!("  :executer               Exécuter le bloc en cours immédiatement");
+                    println!("  :afficher               Afficher l'historique + bloc courant");
+                    println!("  :vider                  Vider le bloc courant");
+                    println!("  :reinitialiser          Réinitialiser tout l'historique");
+                    println!("  :quitter                Quitter");
+                }
+                ":afficher" | ":show" => {
+                    let complet = format!("{}{}", historique, bloc_courant.join("\n"));
+                    if complet.trim().is_empty() {
+                        println!("<historique vide>");
+                    } else {
+                        for (i, ligne_buffer) in complet.lines().enumerate() {
+                            println!("{:>3} | {}", i + 1, ligne_buffer);
+                        }
                     }
                 }
+                ":vider" | ":clear" => {
+                    bloc_courant.clear();
+                    println!("Bloc courant vidé.");
                 }
-                ":clear" => {
-                bloc_courant.clear();
-                println!("Bloc courant vidé.");
+                ":reinitialiser" | ":réinitialiser" | ":reset" => {
+                    historique.clear();
+                    bloc_courant.clear();
+                    println!("Historique réinitialisé.");
                 }
-                ":reset" => {
-                historique.clear();
-                bloc_courant.clear();
-                println!("Historique réinitialisé.");
-                }
-                ":run" => est_run_forcé = true,
+                ":executer" | ":exécuter" | ":run" => est_run_forcé = true,
                 _ => {
                     bloc_courant.push(entrée);
                 }
