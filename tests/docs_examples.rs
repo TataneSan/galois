@@ -433,3 +433,37 @@ fn repl_execute_un_buffer() {
         stdout
     );
 }
+
+#[test]
+fn repl_ne_execute_pas_sans_run() {
+    let mut enfant = Command::new(binaire_galois())
+        .arg("repl")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Impossible de lancer le REPL");
+
+    {
+        let stdin = enfant.stdin.as_mut().expect("stdin indisponible");
+        stdin
+            .write_all(b"afficher(42)\n:quit\n")
+            .expect("Impossible d'écrire dans stdin du REPL");
+    }
+
+    let sortie = enfant
+        .wait_with_output()
+        .expect("Impossible de récupérer la sortie REPL");
+    assert!(
+        sortie.status.success(),
+        "REPL en échec:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&sortie.stdout),
+        String::from_utf8_lossy(&sortie.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&sortie.stdout);
+    assert!(
+        !stdout.contains("\n42\n"),
+        "Le REPL ne doit pas exécuter automatiquement sans :run/Shift+Entrée, sortie:\n{}",
+        stdout
+    );
+}

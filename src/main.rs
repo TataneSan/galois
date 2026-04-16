@@ -15,10 +15,12 @@ mod semantic;
 
 use std::env;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 
 use codegen::GénérateurLLVM;
 use compiler::{CompilateurNatif, OptionsCompilation};
@@ -509,6 +511,127 @@ fn extraire_sortie_marquee(sortie: &str, début: &str, fin: &str) -> String {
     sortie.to_string()
 }
 
+struct EntréeRepl {
+    texte: String,
+    exécuter: bool,
+    fin_flux: bool,
+}
+
+fn lire_entrée_repl() -> Resultat<EntréeRepl> {
+    if !io::stdin().is_terminal() {
+        let mut ligne = String::new();
+        let lu = io::stdin().read_line(&mut ligne).map_err(|e| {
+            error::Erreur::runtime(
+                error::Position::nouvelle(1, 1, "<repl>"),
+                &format!("Impossible de lire l'entrée utilisateur: {}", e),
+            )
+        })?;
+        if lu == 0 {
+            return Ok(EntréeRepl {
+                texte: String::new(),
+                exécuter: false,
+                fin_flux: true,
+            });
+        }
+        return Ok(EntréeRepl {
+            texte: ligne.trim_end().to_string(),
+            exécuter: false,
+            fin_flux: false,
+        });
+    }
+
+    crossterm::terminal::enable_raw_mode().map_err(|e| {
+        error::Erreur::runtime(
+            error::Position::nouvelle(1, 1, "<repl>"),
+            &format!("Impossible d'activer le mode raw du terminal: {}", e),
+        )
+    })?;
+
+    let mut texte = String::new();
+    let mut exécuter = false;
+    let mut fin_flux = false;
+
+    let lecture = (|| -> Resultat<()> {
+        loop {
+            let événement = event::read().map_err(|e| {
+                error::Erreur::runtime(
+                    error::Position::nouvelle(1, 1, "<repl>"),
+                    &format!("Impossible de lire un événement clavier: {}", e),
+                )
+            })?;
+
+            match événement {
+                Event::Key(touche) if touche.kind == KeyEventKind::Press => match touche.code {
+                    KeyCode::Enter => {
+                        exécuter = touche.modifiers.contains(KeyModifiers::SHIFT);
+                        println!();
+                        break;
+                    }
+                    KeyCode::Char('d') if touche.modifiers.contains(KeyModifiers::CONTROL) => {
+                        if texte.is_empty() {
+                            fin_flux = true;
+                            println!();
+                            break;
+                        }
+                    }
+                    KeyCode::Backspace => {
+                        if texte.pop().is_some() {
+                            print!("\u{8} \u{8}");
+                            io::stdout().flush().map_err(|e| {
+                                error::Erreur::runtime(
+                                    error::Position::nouvelle(1, 1, "<repl>"),
+                                    &format!("Impossible d'écrire sur la sortie standard: {}", e),
+                                )
+                            })?;
+                        }
+                    }
+                    KeyCode::Tab => {
+                        texte.push('\t');
+                        print!("\t");
+                        io::stdout().flush().map_err(|e| {
+                            error::Erreur::runtime(
+                                error::Position::nouvelle(1, 1, "<repl>"),
+                                &format!("Impossible d'écrire sur la sortie standard: {}", e),
+                            )
+                        })?;
+                    }
+                    KeyCode::Char(caractère) => {
+                        texte.push(caractère);
+                        print!("{}", caractère);
+                        io::stdout().flush().map_err(|e| {
+                            error::Erreur::runtime(
+                                error::Position::nouvelle(1, 1, "<repl>"),
+                                &format!("Impossible d'écrire sur la sortie standard: {}", e),
+                            )
+                        })?;
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+        Ok(())
+    })();
+
+    let désactivation = crossterm::terminal::disable_raw_mode().map_err(|e| {
+        error::Erreur::runtime(
+            error::Position::nouvelle(1, 1, "<repl>"),
+            &format!("Impossible de désactiver le mode raw du terminal: {}", e),
+        )
+    });
+
+    if let Err(e) = désactivation {
+        return Err(e);
+    }
+    lecture?;
+
+    Ok(EntréeRepl {
+        texte,
+        exécuter,
+        fin_flux,
+    })
+}
+
 fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
     let status = compiler_et_exécuter_programme(chemin, release)?;
 
@@ -522,6 +645,7 @@ fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
 
 fn exécuter_repl(release: bool) -> Resultat<()> {
     println!("REPL Galois (style Python)");
+    println!("Entrée = nouvelle ligne, Shift+Entrée = exécuter le buffer.");
     println!("Tapez :help pour l'aide, :quit pour quitter.");
 
     let mut historique = String::new();
@@ -536,33 +660,33 @@ fn exécuter_repl(release: bool) -> Resultat<()> {
             )
         })?;
 
-        let mut ligne = String::new();
-        let lu = io::stdin().read_line(&mut ligne).map_err(|e| {
-            error::Erreur::runtime(
-                error::Position::nouvelle(1, 1, "<repl>"),
-                &format!("Impossible de lire l'entrée utilisateur: {}", e),
-            )
-        })?;
-
-        if lu == 0 {
-            println!();
+        let entrée_repl = lire_entrée_repl()?;
+        if entrée_repl.fin_flux {
             break;
         }
 
-        let entrée = ligne.trim_end().to_string();
-        let est_run_forcé = entrée == ":run";
-        match entrée.as_str() {
-            ":quit" | ":q" => break,
-            ":help" => {
+        let entrée = entrée_repl.texte;
+        let mut est_run_forcé = entrée_repl.exécuter;
+        let commande = entrée.trim();
+
+        if est_run_forcé {
+            if !entrée.is_empty() {
+                bloc_courant.push(entrée);
+            }
+        } else {
+            match commande {
+                ":quit" | ":q" => break,
+                ":help" => {
                 println!("Commandes REPL:");
-                println!("  :run    Exécuter le bloc en cours immédiatement");
+                println!("  Entrée           Ajouter une ligne au bloc courant");
+                println!("  Shift+Entrée     Exécuter le bloc courant");
+                println!("  :run             Exécuter le bloc en cours immédiatement");
                 println!("  :show   Afficher l'historique + bloc courant");
                 println!("  :clear  Vider le bloc courant");
                 println!("  :reset  Réinitialiser tout l'historique");
                 println!("  :quit   Quitter");
-                println!("Saisissez du code directement; il est exécuté dès qu'un bloc complet est détecté.");
             }
-            ":show" => {
+                ":show" => {
                 let complet = format!("{}{}", historique, bloc_courant.join("\n"));
                 if complet.trim().is_empty() {
                     println!("<historique vide>");
@@ -571,81 +695,77 @@ fn exécuter_repl(release: bool) -> Resultat<()> {
                         println!("{:>3} | {}", i + 1, ligne_buffer);
                     }
                 }
-            }
-            ":clear" => {
+                }
+                ":clear" => {
                 bloc_courant.clear();
                 println!("Bloc courant vidé.");
-            }
-            ":reset" => {
+                }
+                ":reset" => {
                 historique.clear();
                 bloc_courant.clear();
                 println!("Historique réinitialisé.");
-            }
-            _ if entrée.trim().is_empty() && bloc_courant.is_empty() => {}
-            _ => {
-                if !est_run_forcé {
+                }
+                ":run" => est_run_forcé = true,
+                _ => {
                     bloc_courant.push(entrée);
                 }
+            }
+        }
 
-                if bloc_courant.is_empty() {
-                    continue;
+        if !est_run_forcé {
+            continue;
+        }
+
+        if bloc_courant.is_empty() {
+            continue;
+        }
+
+        let bloc_code = format!("{}\n", bloc_courant.join("\n"));
+        let code_candidat = format!("{}{}", historique, bloc_code);
+        if let Err(e) = vérifier_source_repl(&code_candidat) {
+            eprintln!("{}", e);
+            bloc_courant.clear();
+            continue;
+        }
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let marqueur_début = format!("__GAL_REPL_DEBUT_{}__", nonce);
+        let marqueur_fin = format!("__GAL_REPL_FIN_{}__", nonce);
+        let code_exécution = format!(
+            "{}afficher(\"{}\")\n{}afficher(\"{}\")\n",
+            historique, marqueur_début, bloc_code, marqueur_fin
+        );
+
+        match exécuter_source_repl(&code_exécution, release) {
+            Ok(sortie_après) => {
+                let stdout_après = String::from_utf8_lossy(&sortie_après.stdout);
+                let stderr_après = String::from_utf8_lossy(&sortie_après.stderr);
+                let stdout_à_afficher =
+                    extraire_sortie_marquee(&stdout_après, &marqueur_début, &marqueur_fin);
+
+                if !stdout_à_afficher.is_empty() {
+                    print!("{}", stdout_à_afficher);
+                }
+                if !stderr_après.is_empty() {
+                    eprint!("{}", stderr_après);
                 }
 
-                let bloc_code = format!("{}\n", bloc_courant.join("\n"));
-                let code_candidat = format!("{}{}", historique, bloc_code);
-                match vérifier_source_repl(&code_candidat) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        let message = format!("{}", e);
-                        if message.contains("Fin de fichier inattendue") && !est_run_forcé {
-                            continue;
-                        }
-                        eprintln!("{}", e);
-                        bloc_courant.clear();
-                        continue;
-                    }
+                if sortie_après.status.success() {
+                    historique = code_candidat;
+                } else {
+                    eprintln!(
+                        "Avertissement: programme terminé avec le code {}",
+                        sortie_après.status.code().unwrap_or(1)
+                    );
                 }
-
-                let nonce = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos();
-                let marqueur_début = format!("__GAL_REPL_DEBUT_{}__", nonce);
-                let marqueur_fin = format!("__GAL_REPL_FIN_{}__", nonce);
-                let code_exécution = format!(
-                    "{}afficher(\"{}\")\n{}afficher(\"{}\")\n",
-                    historique, marqueur_début, bloc_code, marqueur_fin
-                );
-
-                match exécuter_source_repl(&code_exécution, release) {
-                    Ok(sortie_après) => {
-                        let stdout_après = String::from_utf8_lossy(&sortie_après.stdout);
-                        let stderr_après = String::from_utf8_lossy(&sortie_après.stderr);
-                        let stdout_à_afficher =
-                            extraire_sortie_marquee(&stdout_après, &marqueur_début, &marqueur_fin);
-
-                        if !stdout_à_afficher.is_empty() {
-                            print!("{}", stdout_à_afficher);
-                        }
-                        if !stderr_après.is_empty() {
-                            eprint!("{}", stderr_après);
-                        }
-
-                        if sortie_après.status.success() {
-                            historique = code_candidat;
-                        } else {
-                            eprintln!(
-                                "Avertissement: programme terminé avec le code {}",
-                                sortie_après.status.code().unwrap_or(1)
-                            );
-                        }
-                        bloc_courant.clear();
-                    }
-                    Err(e) => {
-                        eprintln!("{}", e);
-                        bloc_courant.clear();
-                    }
-                }
+                bloc_courant.clear();
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                bloc_courant.clear();
             }
         }
     }

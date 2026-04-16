@@ -18,19 +18,23 @@ galois repl --release
 
 - `>>>` : nouvelle entrée
 - `...` : continuation d'un bloc (fonction, condition, etc.)
+- `Entrée` : ajoute une ligne au bloc courant
+- `Shift+Entrée` : exécute le bloc courant
 
-La REPL exécute automatiquement dès qu'un bloc complet est détecté.
+Si votre terminal ne remonte pas `Shift+Entrée`, utilisez `:run`.
 
 ## Exemple
 
 ```text
 >>> soit x = 40
->>> afficher(x + 2)
+... afficher(x + 2)
+... :run
 42
 >>> fonction double(n: entier): entier
 ...     retourne n * 2
 ... fin
->>> afficher(double(21))
+... afficher(double(21))
+... :run
 42
 ```
 

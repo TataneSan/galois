@@ -30,6 +30,7 @@ Puis :
 
 ```text
 >>> afficher("Bonjour depuis la REPL")
+... :run
 Bonjour depuis la REPL
 >>> :quit
 ```
