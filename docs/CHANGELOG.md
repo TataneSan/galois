@@ -12,7 +12,7 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 - Optimisations IR et runtime (constant folding, dead code elimination, GC durci, benchmarks).
 - Base tooling/release plus solide (analyse réutilisable, CI, cohérence docs/code).
 
-## [0.1.0] - 2024-04-14
+## [0.1.0] - 2026-04-14
 
 ### Ajouté
 
