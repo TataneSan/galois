@@ -2,6 +2,16 @@
 
 Tous les changements notables de ce projet seront documentés dans ce fichier.
 
+## [0.2.0] - 2026-04-17
+
+### Ajouté
+- CLI plus cohérente et plus agréable à utiliser (`--help`, `--version`, `init .`, diagnostics JSON, lockfile).
+- Gestion des paquets renforcée (`galois.lock`, `add`, `upgrade`, validations explicites).
+- Diagnostics enrichis (codes plus précis, multi-spans, sorties humaines et JSON).
+- Langage étendu (génériques, async/await MVP, exhaustivité des `cas`).
+- Optimisations IR et runtime (constant folding, dead code elimination, GC durci, benchmarks).
+- Base tooling/release plus solide (analyse réutilisable, CI, cohérence docs/code).
+
 ## [0.1.0] - 2024-04-14
 
 ### Ajouté
@@ -96,12 +106,6 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 ---
 
 ## Roadmap
-
-### Version 0.2.0 (Planifiée)
-- [ ] Génériques/Templates
-- [ ] Async/Await
-- [x] Optimisations IR (constant folding, dead code elimination)
-- [ ] Tests unitaires pour runtime/collections et gc
 
 ### Version 0.3.0 (Planifiée)
 - [ ] Backend alternatif (inkwell)

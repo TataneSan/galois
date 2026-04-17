@@ -46,5 +46,5 @@ document.addEventListener("DOMContentLoaded", function() {
 });
 
 // Version actuelle
-console.log('📚 Documentation Galois v0.1.0');
+console.log('📚 Documentation Galois v0.2.0');
 console.log('🔗 https://github.com/TataneSan/galois');
