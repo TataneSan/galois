@@ -538,3 +538,6 @@ impl<T: Clone + std::hash::Hash + Eq> Ensemble<T> {
         self.données.clear();
     }
 }
+
+#[cfg(test)]
+mod tests;

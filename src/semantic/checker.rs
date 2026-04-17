@@ -1,8 +1,23 @@
-use crate::error::{Diagnostics, Erreur, GenreWarning, Position, Resultat, Warning};
+use crate::error::{Diagnostics, Erreur, GenreWarning, Position, Resultat, SpanSecondaire, Warning};
 use crate::parser::ast::*;
 use crate::semantic::symbols::{GenreSymbole, MéthodeClasseSymbole, TableSymboles};
 use crate::semantic::types::{Type, Unificateur};
 use std::collections::{HashMap, HashSet};
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum LittéralPattern {
+    Booléen(bool),
+    Entier(i64),
+    Texte(String),
+    Nul,
+}
+
+#[derive(Debug, Clone)]
+struct ContexteFonction {
+    nom: String,
+    type_retour: Type,
+    est_async: bool,
+}
 
 pub struct Vérificateur {
     pub table: TableSymboles,
@@ -12,6 +27,12 @@ pub struct Vérificateur {
     dans_constructeur: bool,
     classe_courante: Option<String>,
     variables_utilisées: HashSet<String>,
+    portées_paramètres_type: Vec<HashMap<String, Type>>,
+    arités_types_nominales: HashMap<String, usize>,
+    arités_fonctions: HashMap<String, usize>,
+    variables_type_fonctions: HashMap<String, Vec<u64>>,
+    variables_type_nominales: HashMap<String, Vec<u64>>,
+    pile_fonctions: Vec<ContexteFonction>,
 }
 
 impl Vérificateur {
@@ -903,6 +924,18 @@ impl Vérificateur {
         table.définir("Réseau", GenreSymbole::Module { symboles: symboles_reseau.clone() });
         table.définir("Reseau", GenreSymbole::Module { symboles: symboles_reseau });
 
+        let arités_types_nominales = HashMap::from([
+            ("tableau".to_string(), 1usize),
+            ("liste".to_string(), 1usize),
+            ("pile".to_string(), 1usize),
+            ("file".to_string(), 1usize),
+            ("liste_chaînée".to_string(), 1usize),
+            ("liste_chainee".to_string(), 1usize),
+            ("dictionnaire".to_string(), 2usize),
+            ("ensemble".to_string(), 1usize),
+            ("pointeur".to_string(), 1usize),
+        ]);
+
         Self {
             table,
             unificateur: Unificateur::nouveau(),
@@ -911,6 +944,12 @@ impl Vérificateur {
             dans_constructeur: false,
             classe_courante: None,
             variables_utilisées: HashSet::new(),
+            portées_paramètres_type: Vec::new(),
+            arités_types_nominales,
+            arités_fonctions: HashMap::new(),
+            variables_type_fonctions: HashMap::new(),
+            variables_type_nominales: HashMap::new(),
+            pile_fonctions: Vec::new(),
         }
     }
 
@@ -937,9 +976,179 @@ impl Vérificateur {
         self.erreurs.push(Erreur::typage(position, message));
     }
 
+    fn erreur_avec_suggestion(&mut self, position: Position, message: &str, suggestion: &str) {
+        self.erreurs
+            .push(Erreur::typage(position, message).avec_suggestion(suggestion));
+    }
+
+    fn erreur_avec_spans_secondaires(
+        &mut self,
+        position: Position,
+        message: &str,
+        spans_secondaires: Vec<SpanSecondaire>,
+    ) {
+        let mut erreur = Erreur::typage(position, message);
+        erreur.spans_secondaires = spans_secondaires;
+        self.erreurs.push(erreur);
+    }
+
     fn warning(&mut self, genre: GenreWarning, position: Position, message: &str) {
         self.warnings
             .push(Warning::nouveau(genre, position, message));
+    }
+
+    fn warning_avec_suggestion(
+        &mut self, genre: GenreWarning, position: Position, message: &str, suggestion: &str
+    ) {
+        self.warnings
+            .push(Warning::nouveau(genre, position, message).avec_suggestion(suggestion));
+    }
+
+    fn entrer_contexte_fonction(&mut self, nom: &str, type_retour: Type, est_async: bool) {
+        self.pile_fonctions.push(ContexteFonction {
+            nom: nom.to_string(),
+            type_retour,
+            est_async,
+        });
+    }
+
+    fn sortir_contexte_fonction(&mut self) {
+        self.pile_fonctions.pop();
+    }
+
+    fn contexte_fonction_courant(&self) -> Option<&ContexteFonction> {
+        self.pile_fonctions.last()
+    }
+
+    fn entrer_portée_paramètres_type(
+        &mut self,
+        paramètres_type: &[String],
+        position: &Position,
+    ) -> Vec<u64> {
+        let mut portée = HashMap::new();
+        let mut ids = Vec::new();
+
+        for nom in paramètres_type {
+            if portée.contains_key(nom) {
+                self.erreur(
+                    position.clone(),
+                    &format!("Paramètre de type '{}' déclaré plusieurs fois", nom),
+                );
+                continue;
+            }
+
+            let variable = self.unificateur.nouvelle_variable();
+            if let Type::Variable(id) = variable {
+                ids.push(id);
+                portée.insert(nom.clone(), Type::Variable(id));
+            }
+        }
+
+        self.portées_paramètres_type.push(portée);
+        ids
+    }
+
+    fn sortir_portée_paramètres_type(&mut self) {
+        self.portées_paramètres_type.pop();
+    }
+
+    fn chercher_paramètre_type(&self, nom: &str) -> Option<Type> {
+        self.portées_paramètres_type
+            .iter()
+            .rev()
+            .find_map(|portée| portée.get(nom).cloned())
+    }
+
+    fn vérifier_arité_type(
+        &mut self,
+        nom: &str,
+        arité_reçue: usize,
+        position: &Position,
+        contexte: &str,
+    ) {
+        if let Some(arité_attendue) = self.arités_types_nominales.get(nom) {
+            if *arité_attendue != arité_reçue {
+                self.erreur(
+                    position.clone(),
+                    &format!(
+                        "{} '{}' attend {} argument(s) de type, reçu {}",
+                        contexte, nom, arité_attendue, arité_reçue
+                    ),
+                );
+            }
+        } else if let Some(sym) = self.table.chercher(nom) {
+            if matches!(sym.genre, GenreSymbole::Classe { .. } | GenreSymbole::Interface { .. })
+                && arité_reçue > 0
+            {
+                self.erreur(
+                    position.clone(),
+                    &format!(
+                        "{} '{}' n'accepte pas d'arguments de type",
+                        contexte, nom
+                    ),
+                );
+            }
+        }
+    }
+
+    fn substituer_variables_type(&self, type_src: &Type, substitutions: &HashMap<u64, Type>) -> Type {
+        match type_src {
+            Type::Variable(id) => substitutions.get(id).cloned().unwrap_or(Type::Variable(*id)),
+            Type::Tableau(inner, taille) => Type::Tableau(
+                Box::new(self.substituer_variables_type(inner, substitutions)),
+                *taille,
+            ),
+            Type::Liste(inner) => {
+                Type::Liste(Box::new(self.substituer_variables_type(inner, substitutions)))
+            }
+            Type::Pile(inner) => {
+                Type::Pile(Box::new(self.substituer_variables_type(inner, substitutions)))
+            }
+            Type::File(inner) => {
+                Type::File(Box::new(self.substituer_variables_type(inner, substitutions)))
+            }
+            Type::ListeChaînée(inner) => Type::ListeChaînée(Box::new(
+                self.substituer_variables_type(inner, substitutions),
+            )),
+            Type::Dictionnaire(k, v) => Type::Dictionnaire(
+                Box::new(self.substituer_variables_type(k, substitutions)),
+                Box::new(self.substituer_variables_type(v, substitutions)),
+            ),
+            Type::Ensemble(inner) => {
+                Type::Ensemble(Box::new(self.substituer_variables_type(inner, substitutions)))
+            }
+            Type::Tuple(types) => Type::Tuple(
+                types
+                    .iter()
+                    .map(|t| self.substituer_variables_type(t, substitutions))
+                    .collect(),
+            ),
+            Type::Fonction(params, ret) => Type::Fonction(
+                params
+                    .iter()
+                    .map(|t| self.substituer_variables_type(t, substitutions))
+                    .collect(),
+                Box::new(self.substituer_variables_type(ret, substitutions)),
+            ),
+            Type::Paramétré(nom, args) => Type::Paramétré(
+                nom.clone(),
+                args.iter()
+                    .map(|t| self.substituer_variables_type(t, substitutions))
+                    .collect(),
+            ),
+            Type::Pointeur(inner) => {
+                Type::Pointeur(Box::new(self.substituer_variables_type(inner, substitutions)))
+            }
+            Type::Externe(nom, params, ret) => Type::Externe(
+                nom.clone(),
+                params
+                    .iter()
+                    .map(|t| self.substituer_variables_type(t, substitutions))
+                    .collect(),
+                Box::new(self.substituer_variables_type(ret, substitutions)),
+            ),
+            _ => type_src.clone(),
+        }
     }
 
     fn classe_hérite_de(&self, classe: &str, ancêtre: &str) -> bool {
@@ -1088,7 +1297,15 @@ impl Vérificateur {
             (Type::Liste(src), Type::Tableau(dst, _))
             | (Type::Liste(src), Type::Ensemble(dst)) => self.type_compatible(src, dst),
             (Type::Classe(src, _), Type::Classe(dst, _)) => self.classe_hérite_de(src, dst),
+            (Type::Paramétré(src, _), Type::Classe(dst, _))
+            | (Type::Classe(src, _), Type::Paramétré(dst, _))
+            | (Type::Paramétré(src, _), Type::Paramétré(dst, _)) => {
+                self.classe_hérite_de(src, dst)
+            }
             (Type::Classe(src, _), Type::Interface(dst)) => {
+                self.classe_implémente_interface(src, dst)
+            }
+            (Type::Paramétré(src, _), Type::Interface(dst)) => {
                 self.classe_implémente_interface(src, dst)
             }
             _ => self.unificateur.unifier(source, cible),
@@ -1142,7 +1359,7 @@ impl Vérificateur {
                 };
 
                 let type_final = if let Some(type_ann) = type_ann {
-                    let type_annoté = self.convertir_type(type_ann);
+                    let type_annoté = self.convertir_type(type_ann, position);
                     if !self.type_compatible(&type_valeur, &type_annoté) {
                         self.erreur(
                             position.clone(),
@@ -1173,7 +1390,7 @@ impl Vérificateur {
             } => {
                 let type_valeur = self.vérifier_expression(valeur)?;
                 let type_final = if let Some(type_ann) = type_ann {
-                    let type_annoté = self.convertir_type(type_ann);
+                    let type_annoté = self.convertir_type(type_ann, position);
                     if !self.type_compatible(&type_valeur, &type_annoté) {
                         self.erreur(
                             position.clone(),
@@ -1346,9 +1563,10 @@ impl Vérificateur {
                 valeur,
                 cas,
                 par_défaut,
-                ..
+                position,
             } => {
-                let _ = self.vérifier_expression(valeur)?;
+                let type_valeur = self.vérifier_expression(valeur)?;
+                self.analyser_sélectionner(type_valeur, cas, par_défaut, position);
                 for (pattern, bloc) in cas {
                     self.vérifier_pattern(pattern)?;
                     self.vérifier_bloc(bloc)?;
@@ -1357,9 +1575,41 @@ impl Vérificateur {
                     self.vérifier_bloc(bloc)?;
                 }
             }
-            InstrAST::Retourne { valeur, .. } => {
-                if let Some(v) = valeur {
-                    self.vérifier_expression(v)?;
+            InstrAST::Retourne { valeur, position } => {
+                if let Some(contexte) = self.contexte_fonction_courant().cloned() {
+                    match valeur {
+                        Some(v) => {
+                            let type_valeur = self.vérifier_expression(v)?;
+                            if !self.type_compatible(&type_valeur, &contexte.type_retour) {
+                                let attendu = self.unificateur.résoudre(&contexte.type_retour);
+                                let obtenu = self.unificateur.résoudre(&type_valeur);
+                                self.erreur(
+                                    v.position().clone(),
+                                    &format!(
+                                        "Type de retour incompatible dans '{}': attendu {}, obtenu {}",
+                                        contexte.nom, attendu, obtenu
+                                    ),
+                                );
+                            }
+                        }
+                        None => {
+                            if !self.type_compatible(&Type::Rien, &contexte.type_retour) {
+                                let attendu = self.unificateur.résoudre(&contexte.type_retour);
+                                self.erreur(
+                                    position.clone(),
+                                    &format!(
+                                        "La fonction '{}' doit retourner une valeur de type {}",
+                                        contexte.nom, attendu
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    self.erreur(
+                        position.clone(),
+                        "L'instruction 'retourne' est autorisée uniquement dans une fonction",
+                    );
                 }
             }
             InstrAST::Interrompre(_) | InstrAST::Continuer(_) => {}
@@ -1389,19 +1639,20 @@ impl Vérificateur {
                 nom,
                 paramètres,
                 type_retour,
+                position,
                 ..
             } => {
                 let mut param_types = Vec::new();
                 for p in paramètres {
                     let t = if let Some(type_ann) = &p.type_ann {
-                        self.convertir_type(type_ann)
+                        self.convertir_type(type_ann, &p.position)
                     } else {
                         Type::Inconnu
                     };
                     param_types.push((p.nom.clone(), t));
                 }
                 let type_ret = if let Some(rt) = type_retour {
-                    self.convertir_type(rt)
+                    self.convertir_type(rt, position)
                 } else {
                     Type::Rien
                 };
@@ -1428,10 +1679,21 @@ impl Vérificateur {
     }
 
     fn vérifier_déclaration_fonction(&mut self, décl: &DéclarationFonctionAST) -> Resultat<()> {
+        let ids_paramètres_type =
+            self.entrer_portée_paramètres_type(&décl.paramètres_type, &décl.position);
+        self.arités_fonctions
+            .insert(décl.nom.clone(), décl.paramètres_type.len());
+        if ids_paramètres_type.is_empty() {
+            self.variables_type_fonctions.remove(&décl.nom);
+        } else {
+            self.variables_type_fonctions
+                .insert(décl.nom.clone(), ids_paramètres_type);
+        }
+
         let mut param_types = Vec::new();
         for p in &décl.paramètres {
             let t = if let Some(type_ann) = &p.type_ann {
-                self.convertir_type(type_ann)
+                self.convertir_type(type_ann, &p.position)
             } else {
                 self.unificateur.nouvelle_variable()
             };
@@ -1439,7 +1701,7 @@ impl Vérificateur {
         }
 
         let type_retour = if let Some(rt) = &décl.type_retour {
-            self.convertir_type(rt)
+            self.convertir_type(rt, &décl.position)
         } else {
             self.unificateur.nouvelle_variable()
         };
@@ -1454,6 +1716,10 @@ impl Vérificateur {
         );
 
         self.table.entrer_portée();
+        for paramètre_type in &décl.paramètres_type {
+            self.table
+                .définir(paramètre_type, GenreSymbole::ParamètreType);
+        }
         for (nom, t) in &param_types {
             self.table.définir(
                 nom,
@@ -1463,18 +1729,42 @@ impl Vérificateur {
                 },
             );
         }
-        self.vérifier_bloc(&décl.corps)?;
+        self.entrer_contexte_fonction(&décl.nom, type_retour.clone(), décl.est_async);
+        let résultat_bloc = self.vérifier_bloc(&décl.corps);
+        self.sortir_contexte_fonction();
         self.table.sortir_portée();
+        self.sortir_portée_paramètres_type();
+        résultat_bloc?;
 
         Ok(())
     }
 
     fn vérifier_déclaration_classe(&mut self, décl: &DéclarationClasseAST) -> Resultat<()> {
+        let ids_paramètres_type =
+            self.entrer_portée_paramètres_type(&décl.paramètres_type, &décl.position);
+        self.arités_types_nominales
+            .insert(décl.nom.clone(), décl.paramètres_type.len());
+        if ids_paramètres_type.is_empty() {
+            self.variables_type_nominales.remove(&décl.nom);
+        } else {
+            self.variables_type_nominales
+                .insert(décl.nom.clone(), ids_paramètres_type);
+        }
+
         let mut champs = HashMap::new();
         let mut méthodes = HashMap::new();
         let mut constructeur: Option<MéthodeClasseSymbole> = None;
 
         if let Some(parent) = &décl.parent {
+            self.vérifier_arité_type(
+                parent,
+                décl.parent_arguments_type.len(),
+                &décl.position,
+                "La classe parente",
+            );
+            for argument_type in &décl.parent_arguments_type {
+                let _ = self.convertir_type(argument_type, &décl.position);
+            }
             match self.table.chercher(parent) {
                 Some(sym) => {
                     if !matches!(sym.genre, GenreSymbole::Classe { .. }) {
@@ -1493,7 +1783,20 @@ impl Vérificateur {
             }
         }
 
-        for interface in &décl.interfaces {
+        for (index, interface) in décl.interfaces.iter().enumerate() {
+            let arguments_type = décl
+                .interfaces_arguments_type
+                .get(index)
+                .map_or(&[][..], |v| v.as_slice());
+            self.vérifier_arité_type(
+                interface,
+                arguments_type.len(),
+                &décl.position,
+                "L'interface",
+            );
+            for argument_type in arguments_type {
+                let _ = self.convertir_type(argument_type, &décl.position);
+            }
             match self.table.chercher(interface) {
                 Some(sym) => {
                     if !matches!(sym.genre, GenreSymbole::Interface { .. }) {
@@ -1514,9 +1817,14 @@ impl Vérificateur {
 
         for membre in &décl.membres {
             match membre {
-                MembreClasseAST::Champ { nom, type_ann, .. } => {
+                MembreClasseAST::Champ {
+                    nom,
+                    type_ann,
+                    position,
+                    ..
+                } => {
                     let t = if let Some(type_ann) = type_ann {
-                        self.convertir_type(type_ann)
+                        self.convertir_type(type_ann, position)
                     } else {
                         Type::Inconnu
                     };
@@ -1526,14 +1834,14 @@ impl Vérificateur {
                     let mut param_types = Vec::new();
                     for p in &déclaration.paramètres {
                         let t = if let Some(type_ann) = &p.type_ann {
-                            self.convertir_type(type_ann)
+                            self.convertir_type(type_ann, &p.position)
                         } else {
                             Type::Inconnu
                         };
                         param_types.push((p.nom.clone(), t));
                     }
                     let type_retour = if let Some(rt) = &déclaration.type_retour {
-                        self.convertir_type(rt)
+                        self.convertir_type(rt, &déclaration.position)
                     } else {
                         Type::Rien
                     };
@@ -1661,7 +1969,7 @@ impl Vérificateur {
                     let mut param_types = Vec::new();
                     for p in paramètres {
                         let t = if let Some(type_ann) = &p.type_ann {
-                            self.convertir_type(type_ann)
+                            self.convertir_type(type_ann, &p.position)
                         } else {
                             Type::Inconnu
                         };
@@ -1876,7 +2184,7 @@ impl Vérificateur {
                     self.table.entrer_portée();
                     for p in paramètres {
                         let t = if let Some(type_ann) = &p.type_ann {
-                            self.convertir_type(type_ann)
+                            self.convertir_type(type_ann, &p.position)
                         } else {
                             Type::Inconnu
                         };
@@ -1888,35 +2196,50 @@ impl Vérificateur {
                             },
                         );
                     }
-                    self.vérifier_bloc(corps)?;
+                    let nom_constructeur = format!("{}.constructeur", décl.nom);
+                    self.entrer_contexte_fonction(&nom_constructeur, Type::Rien, false);
+                    let résultat_corps = self.vérifier_bloc(corps);
+                    self.sortir_contexte_fonction();
                     self.table.sortir_portée();
-
                     self.dans_constructeur = ancien_constructeur;
+                    résultat_corps?;
                 }
                 _ => {}
             }
         }
 
         self.classe_courante = ancienne_classe;
+        self.sortir_portée_paramètres_type();
         Ok(())
     }
 
     fn vérifier_déclaration_interface(
         &mut self, décl: &DéclarationInterfaceAST
     ) -> Resultat<()> {
+        let ids_paramètres_type =
+            self.entrer_portée_paramètres_type(&décl.paramètres_type, &décl.position);
+        self.arités_types_nominales
+            .insert(décl.nom.clone(), décl.paramètres_type.len());
+        if ids_paramètres_type.is_empty() {
+            self.variables_type_nominales.remove(&décl.nom);
+        } else {
+            self.variables_type_nominales
+                .insert(décl.nom.clone(), ids_paramètres_type);
+        }
+
         let mut méthodes = HashMap::new();
         for m in &décl.méthodes {
             let mut param_types = Vec::new();
             for p in &m.paramètres {
                 let t = if let Some(type_ann) = &p.type_ann {
-                    self.convertir_type(type_ann)
+                    self.convertir_type(type_ann, &p.position)
                 } else {
                     Type::Inconnu
                 };
                 param_types.push((p.nom.clone(), t));
             }
             let type_retour = if let Some(rt) = &m.type_retour {
-                self.convertir_type(rt)
+                self.convertir_type(rt, &m.position)
             } else {
                 Type::Rien
             };
@@ -1933,6 +2256,7 @@ impl Vérificateur {
         }
         self.table
             .définir(&décl.nom, GenreSymbole::Interface { méthodes });
+        self.sortir_portée_paramètres_type();
         Ok(())
     }
 
@@ -1986,12 +2310,18 @@ impl Vérificateur {
 
                 if *op == OpBinaire::Pipe {
                     return Ok(match &**droite {
-                        ExprAST::AppelFonction { appelé, arguments, position: pos_appel } => {
+                        ExprAST::AppelFonction {
+                            appelé,
+                            arguments_type,
+                            arguments,
+                            position: pos_appel,
+                        } => {
                             let mut nouveaux_args = vec![gauche.as_ref().clone()];
                             nouveaux_args.extend(arguments.clone());
                             
                             let n_appel = ExprAST::AppelFonction {
                                 appelé: appelé.clone(),
+                                arguments_type: arguments_type.clone(),
                                 arguments: nouveaux_args,
                                 position: pos_appel.clone(),
                             };
@@ -2119,13 +2449,19 @@ impl Vérificateur {
                     }
                     OpBinaire::Pipe => {
                         match &**droite {
-                            ExprAST::AppelFonction { appelé, arguments, position: pos_appel } => {
+                            ExprAST::AppelFonction {
+                                appelé,
+                                arguments_type,
+                                arguments,
+                                position: pos_appel,
+                            } => {
                                 // Cas: x |> f(y) => f(x, y)
                                 let mut nouveaux_args = vec![gauche.as_ref().clone()];
                                 nouveaux_args.extend(arguments.clone());
                                 
                                 let n_appel = ExprAST::AppelFonction {
                                     appelé: appelé.clone(),
+                                    arguments_type: arguments_type.clone(),
                                     arguments: nouveaux_args,
                                     position: pos_appel.clone(),
                                 };
@@ -2196,6 +2532,7 @@ impl Vérificateur {
 
             ExprAST::AppelFonction {
                 appelé,
+                arguments_type,
                 arguments,
                 position,
             } => {
@@ -2284,6 +2621,117 @@ impl Vérificateur {
                     return Ok(Type::Rien);
                 }
 
+                let arguments_type_convertis: Vec<Type> = arguments_type
+                    .iter()
+                    .map(|arg_type| self.convertir_type(arg_type, position))
+                    .collect();
+
+                if let ExprAST::Identifiant(nom, _) = appelé.as_ref() {
+                    let infos = self.table.chercher(nom).and_then(|sym| {
+                        if let GenreSymbole::Fonction {
+                            paramètres,
+                            type_retour,
+                            ..
+                        } = &sym.genre
+                        {
+                            Some((paramètres.clone(), type_retour.clone()))
+                        } else {
+                            None
+                        }
+                    });
+
+                    if let Some((paramètres, type_retour)) = infos {
+                        let ids_génériques = self
+                            .variables_type_fonctions
+                            .get(nom)
+                            .cloned()
+                            .unwrap_or_default();
+                        let arité_attendue = self.arités_fonctions.get(nom).copied().unwrap_or(0);
+
+                        if arité_attendue > 0 && arguments_type.is_empty() {
+                            self.erreur(
+                                position.clone(),
+                                &format!(
+                                    "La fonction générique '{}' requiert des arguments de type explicites pour le codegen IR/LLVM (ex: {}<entier>(...))",
+                                    nom, nom
+                                ),
+                            );
+                            return Ok(Type::Inconnu);
+                        }
+
+                        if !arguments_type.is_empty() && arguments_type.len() != arité_attendue {
+                            self.erreur(
+                                position.clone(),
+                                &format!(
+                                    "La fonction '{}' attend {} argument(s) de type, reçu {}",
+                                    nom,
+                                    arité_attendue,
+                                    arguments_type.len()
+                                ),
+                            );
+                        } else if arguments_type.is_empty() && arité_attendue == 0 && !ids_génériques.is_empty() {
+                            // Defensive: une fonction marquée générique doit exposer une arité cohérente.
+                            self.arités_fonctions.insert(nom.clone(), ids_génériques.len());
+                        } else if !arguments_type.is_empty() && arité_attendue == 0 {
+                            self.erreur(
+                                position.clone(),
+                                &format!("La fonction '{}' n'accepte pas d'arguments de type", nom),
+                            );
+                        }
+
+                        let mut substitutions = HashMap::new();
+                        for (index, id) in ids_génériques.iter().enumerate() {
+                            if let Some(argument_type) = arguments_type_convertis.get(index) {
+                                substitutions.insert(*id, argument_type.clone());
+                            } else {
+                                substitutions.insert(*id, self.unificateur.nouvelle_variable());
+                            }
+                        }
+
+                        let paramètres_instanciés: Vec<Type> = paramètres
+                            .iter()
+                            .map(|(_, t)| self.substituer_variables_type(t, &substitutions))
+                            .collect();
+                        let type_retour_instancié =
+                            self.substituer_variables_type(&type_retour, &substitutions);
+
+                        if arguments.len() != paramètres_instanciés.len() {
+                            self.erreur(
+                                position.clone(),
+                                &format!(
+                                    "Attendu {} arguments, obtenu {}",
+                                    paramètres_instanciés.len(),
+                                    arguments.len()
+                                ),
+                            );
+                        }
+                        for (i, arg) in arguments.iter().enumerate() {
+                            let type_arg = self.vérifier_expression(arg)?;
+                            if i < paramètres_instanciés.len()
+                                && !self.type_compatible(&type_arg, &paramètres_instanciés[i])
+                            {
+                                self.erreur(
+                                    arg.position().clone(),
+                                    &format!(
+                                        "Argument {}: attendu {}, obtenu {}",
+                                        i + 1,
+                                        paramètres_instanciés[i],
+                                        type_arg
+                                    ),
+                                );
+                            }
+                        }
+                        return Ok(type_retour_instancié);
+                    }
+                }
+
+                if !arguments_type.is_empty() {
+                    self.erreur(
+                        position.clone(),
+                        "Arguments de type explicites supportés uniquement pour les fonctions nommées",
+                    );
+                }
+
                 let type_appelé = self.vérifier_expression(appelé)?;
                 match &type_appelé {
                     Type::Fonction(params, ret) => {
@@ -2314,29 +2762,6 @@ impl Vérificateur {
                         *ret.clone()
                     }
                     _ => {
-                        if let ExprAST::Identifiant(nom, _) = appelé.as_ref() {
-                            let infos = self.table.chercher(nom).and_then(|sym| {
-                                if let GenreSymbole::Fonction {
-                                    paramètres,
-                                    type_retour,
-                                    ..
-                                } = &sym.genre
-                                {
-                                    Some((paramètres.clone(), type_retour.clone()))
-                                } else {
-                                    None
-                                }
-                            });
-                            if let Some((paramètres, type_retour)) = infos {
-                                for (i, arg) in arguments.iter().enumerate() {
-                                    let type_arg = self.vérifier_expression(arg)?;
-                                    if i < paramètres.len() {
-                                        self.type_compatible(&type_arg, &paramètres[i].1);
-                                    }
-                                }
-                                return Ok(type_retour);
-                            }
-                        }
                         if matches!(appelé.as_ref(), ExprAST::AccèsMembre { .. }) && arguments.is_empty() {
                             return Ok(type_appelé);
                         }
@@ -2383,6 +2808,26 @@ impl Vérificateur {
                         }
                     }
                     Type::Classe(nom, _) | Type::Paramétré(nom, _) => {
+                        let mut substitutions = HashMap::new();
+                        if let Type::Paramétré(_, arguments_type_objet) = &type_obj {
+                            if let Some(ids) = self.variables_type_nominales.get(nom).cloned() {
+                                if ids.len() != arguments_type_objet.len() {
+                                    self.erreur(
+                                        position.clone(),
+                                        &format!(
+                                            "Le type '{}' attend {} argument(s) de type, reçu {}",
+                                            nom,
+                                            ids.len(),
+                                            arguments_type_objet.len()
+                                        ),
+                                    );
+                                }
+                                for (id, argument_type) in ids.iter().zip(arguments_type_objet.iter()) {
+                                    substitutions.insert(*id, argument_type.clone());
+                                }
+                            }
+                        }
+
                         let mut courante = Some(nom.clone());
                         let mut champ_trouvé: Option<Type> = None;
                         while let Some(cn) = courante {
@@ -2399,7 +2844,8 @@ impl Vérificateur {
                                 })
                                 .unwrap_or_default();
                             if let Some(t) = champs.get(membre) {
-                                champ_trouvé = Some(t.clone());
+                                champ_trouvé =
+                                    Some(self.substituer_variables_type(t, &substitutions));
                                 break;
                             }
                             courante = parent;
@@ -2411,8 +2857,17 @@ impl Vérificateur {
                             self.méthode_classe_ou_parent(nom, membre)
                         {
                             Type::Fonction(
-                                méthode.paramètres.iter().map(|(_, t)| t.clone()).collect(),
-                                Box::new(méthode.type_retour.clone()),
+                                méthode
+                                    .paramètres
+                                    .iter()
+                                    .map(|(_, t)| self.substituer_variables_type(t, &substitutions))
+                                    .collect(),
+                                Box::new(
+                                    self.substituer_variables_type(
+                                        &méthode.type_retour,
+                                        &substitutions,
+                                    ),
+                                ),
                             )
                         } else {
                             self.erreur(
@@ -2547,7 +3002,7 @@ impl Vérificateur {
                 let mut param_types = Vec::new();
                 for p in paramètres {
                     let t = if let Some(type_ann) = &p.type_ann {
-                        self.convertir_type(type_ann)
+                        self.convertir_type(type_ann, &p.position)
                     } else {
                         self.unificateur.nouvelle_variable()
                     };
@@ -2608,9 +3063,13 @@ impl Vérificateur {
                 if let Some(sinon) = sinon {
                     let type_sinon = self.vérifier_expression(sinon)?;
                     if !self.type_compatible(&type_alors, &type_sinon) {
-                        self.erreur(
+                        self.erreur_avec_spans_secondaires(
                             sinon.position().clone(),
                             "Branches conditionnelles de types différents",
+                            vec![SpanSecondaire::nouveau(
+                                &format!("branche 'alors' évaluée en {}", type_alors),
+                                alors.position().clone(),
+                            )],
                         );
                     }
                     self.unificateur.résoudre(&type_alors)
@@ -2671,32 +3130,119 @@ impl Vérificateur {
             }
 
             ExprAST::Transtypage { type_cible, .. } | ExprAST::As { type_cible, .. } => {
-                self.convertir_type(type_cible)
+                self.convertir_type(type_cible, expr.position())
             }
 
             ExprAST::Nouveau {
                 classe,
+                arguments_type,
                 arguments,
                 position,
             } => {
+                let arguments_type_convertis: Vec<Type> = arguments_type
+                    .iter()
+                    .map(|arg_type| self.convertir_type(arg_type, position))
+                    .collect();
+
                 if classe == "pile" {
-                    return Ok(Type::Pile(Box::new(Type::Entier)));
+                    if !arguments_type.is_empty() && arguments_type.len() != 1 {
+                        self.erreur(
+                            position.clone(),
+                            &format!(
+                                "La classe '{}' attend 1 argument de type, reçu {}",
+                                classe,
+                                arguments_type.len()
+                            ),
+                        );
+                    }
+                    let type_élément = arguments_type_convertis
+                        .first()
+                        .cloned()
+                        .unwrap_or(Type::Entier);
+                    return Ok(Type::Pile(Box::new(type_élément)));
                 }
                 if classe == "file" {
-                    return Ok(Type::File(Box::new(Type::Entier)));
+                    if !arguments_type.is_empty() && arguments_type.len() != 1 {
+                        self.erreur(
+                            position.clone(),
+                            &format!(
+                                "La classe '{}' attend 1 argument de type, reçu {}",
+                                classe,
+                                arguments_type.len()
+                            ),
+                        );
+                    }
+                    let type_élément = arguments_type_convertis
+                        .first()
+                        .cloned()
+                        .unwrap_or(Type::Entier);
+                    return Ok(Type::File(Box::new(type_élément)));
                 }
                 if classe == "liste_chaînée" || classe == "liste_chainee" {
-                    return Ok(Type::ListeChaînée(Box::new(Type::Entier)));
+                    if !arguments_type.is_empty() && arguments_type.len() != 1 {
+                        self.erreur(
+                            position.clone(),
+                            &format!(
+                                "La classe '{}' attend 1 argument de type, reçu {}",
+                                classe,
+                                arguments_type.len()
+                            ),
+                        );
+                    }
+                    let type_élément = arguments_type_convertis
+                        .first()
+                        .cloned()
+                        .unwrap_or(Type::Entier);
+                    return Ok(Type::ListeChaînée(Box::new(type_élément)));
                 }
                 if classe == "ensemble" {
-                    return Ok(Type::Ensemble(Box::new(Type::Entier)));
+                    if !arguments_type.is_empty() && arguments_type.len() != 1 {
+                        self.erreur(
+                            position.clone(),
+                            &format!(
+                                "La classe '{}' attend 1 argument de type, reçu {}",
+                                classe,
+                                arguments_type.len()
+                            ),
+                        );
+                    }
+                    let type_élément = arguments_type_convertis
+                        .first()
+                        .cloned()
+                        .unwrap_or(Type::Entier);
+                    return Ok(Type::Ensemble(Box::new(type_élément)));
                 }
                 if classe == "dictionnaire" {
+                    if !arguments_type.is_empty() && arguments_type.len() != 2 {
+                        self.erreur(
+                            position.clone(),
+                            &format!(
+                                "La classe '{}' attend 2 arguments de type, reçu {}",
+                                classe,
+                                arguments_type.len()
+                            ),
+                        );
+                    }
+                    let type_clé = arguments_type_convertis
+                        .first()
+                        .cloned()
+                        .unwrap_or(Type::Texte);
+                    let type_valeur = arguments_type_convertis
+                        .get(1)
+                        .cloned()
+                        .unwrap_or(Type::Entier);
                     return Ok(Type::Dictionnaire(
-                        Box::new(Type::Texte),
-                        Box::new(Type::Entier),
+                        Box::new(type_clé),
+                        Box::new(type_valeur),
                     ));
                 }
+
+                self.vérifier_arité_type(
+                    classe,
+                    arguments_type.len(),
+                    position,
+                    "La classe",
+                );
 
                 let arguments_types: Vec<Type> = arguments
                     .iter()
@@ -2726,6 +3272,30 @@ impl Vérificateur {
                         Type::Inconnu
                     }
                     Some((false, constructeur, parent)) => {
+                        let ids_génériques = self
+                            .variables_type_nominales
+                            .get(classe)
+                            .cloned()
+                            .unwrap_or_default();
+                        if !ids_génériques.is_empty() && arguments_type.is_empty() {
+                            self.erreur(
+                                position.clone(),
+                                &format!(
+                                    "La classe générique '{}' requiert des arguments de type explicites pour le codegen IR/LLVM (ex: nouveau {}<entier>(...))",
+                                    classe, classe
+                                ),
+                            );
+                            return Ok(Type::Inconnu);
+                        }
+                        let mut substitutions = HashMap::new();
+                        for (index, id) in ids_génériques.iter().enumerate() {
+                            if let Some(argument_type) = arguments_type_convertis.get(index) {
+                                substitutions.insert(*id, argument_type.clone());
+                            } else {
+                                substitutions.insert(*id, self.unificateur.nouvelle_variable());
+                            }
+                        }
+
                         let constructeur_effectif = if constructeur.is_some() {
                             constructeur
                         } else {
@@ -2735,20 +3305,28 @@ impl Vérificateur {
                         };
 
                         if let Some(constructeur) = constructeur_effectif {
-                            if arguments_types.len() != constructeur.paramètres.len() {
+                            let paramètres_constructeur: Vec<Type> = constructeur
+                                .paramètres
+                                .iter()
+                                .map(|(_, type_param)| {
+                                    self.substituer_variables_type(type_param, &substitutions)
+                                })
+                                .collect();
+
+                            if arguments_types.len() != paramètres_constructeur.len() {
                                 self.erreur(
                                     position.clone(),
                                     &format!(
                                         "Constructeur de '{}' attend {} argument(s), reçu {}",
                                         classe,
-                                        constructeur.paramètres.len(),
+                                        paramètres_constructeur.len(),
                                         arguments_types.len()
                                     ),
                                 );
                             } else {
-                                for (i, (type_arg, (_, type_param))) in arguments_types
+                                for (i, (type_arg, type_param)) in arguments_types
                                     .iter()
-                                    .zip(constructeur.paramètres.iter())
+                                    .zip(paramètres_constructeur.iter())
                                     .enumerate()
                                 {
                                     if !self.type_compatible(type_arg, type_param) {
@@ -2777,7 +3355,21 @@ impl Vérificateur {
                                 ),
                             );
                         }
-                        Type::Classe(classe.clone(), None)
+                        if ids_génériques.is_empty() {
+                            Type::Classe(classe.clone(), None)
+                        } else {
+                            let arguments_type_instanciés = ids_génériques
+                                .iter()
+                                .map(|id| {
+                                    substitutions
+                                        .get(id)
+                                        .cloned()
+                                        .unwrap_or(Type::Inconnu)
+                                })
+                                .map(|t| self.unificateur.résoudre(&t))
+                                .collect();
+                            Type::Paramétré(classe.clone(), arguments_type_instanciés)
+                        }
                     }
                     None => {
                         self.erreur(
@@ -2828,8 +3420,217 @@ impl Vérificateur {
                 }
             }
 
-            ExprAST::Attente { expr, .. } => self.vérifier_expression(expr)?,
+            ExprAST::Attente { expr, position } => {
+                if !self
+                    .contexte_fonction_courant()
+                    .is_some_and(|contexte| contexte.est_async)
+                {
+                    self.erreur(
+                        position.clone(),
+                        "L'expression 'attends' est autorisée uniquement dans une fonction asynchrone",
+                    );
+                }
+                self.vérifier_expression(expr)?
+            }
         })
+    }
+
+    fn analyser_sélectionner(
+        &mut self,
+        type_valeur: Type,
+        cas: &[(PatternAST, BlocAST)],
+        par_défaut: &Option<BlocAST>,
+        position: &Position,
+    ) {
+        let mut littéraux_couverts = HashSet::new();
+        let mut bool_vrai_couvert = false;
+        let mut bool_faux_couvert = false;
+        let mut nul_couvert = false;
+        let mut capture_tout_vu = false;
+
+        for (pattern, _) in cas {
+            let position_pattern = pattern.position().clone();
+            let domaine_totalement_couvert = match &type_valeur {
+                Type::Booléen => bool_vrai_couvert && bool_faux_couvert,
+                Type::Nul => nul_couvert,
+                _ => false,
+            };
+
+            if capture_tout_vu || domaine_totalement_couvert {
+                self.warning_avec_suggestion(
+                    GenreWarning::CodeMort,
+                    position_pattern,
+                    "Cas inatteignable: un motif précédent couvre déjà toutes les valeurs.",
+                    "Supprimez ce cas ou déplacez-le avant le motif générique.",
+                );
+                continue;
+            }
+
+            let littéraux = self.extraire_littéraux_pattern(pattern);
+            let mut littéraux_uniques = HashSet::new();
+            let mut déjà_couverts = Vec::new();
+            let mut nouveaux = Vec::new();
+
+            for littéral in littéraux {
+                if !littéraux_uniques.insert(littéral.clone()) {
+                    déjà_couverts.push(littéral);
+                    continue;
+                }
+                if littéraux_couverts.contains(&littéral) {
+                    déjà_couverts.push(littéral);
+                } else {
+                    nouveaux.push(littéral);
+                }
+            }
+
+            if !déjà_couverts.is_empty() {
+                let liste = self.formater_littéraux(&déjà_couverts);
+                if nouveaux.is_empty() {
+                    self.warning_avec_suggestion(
+                        GenreWarning::CodeMort,
+                        position_pattern,
+                        &format!(
+                            "Cas redondant: les littéraux suivants sont déjà couverts: {}.",
+                            liste
+                        ),
+                        "Supprimez ce cas ou fusionnez-le avec un cas précédent.",
+                    );
+                } else {
+                    self.warning_avec_suggestion(
+                        GenreWarning::CodeMort,
+                        position_pattern,
+                        &format!(
+                            "Motif partiellement redondant: ces littéraux sont déjà couverts: {}.",
+                            liste
+                        ),
+                        "Supprimez les alternatives redondantes pour clarifier le motif.",
+                    );
+                }
+            }
+
+            littéraux_couverts.extend(nouveaux);
+
+            if self.pattern_couvre_tout(pattern) {
+                capture_tout_vu = true;
+            }
+
+            match &type_valeur {
+                Type::Booléen => {
+                    let (couvre_vrai, couvre_faux) = self.couverture_bool_pattern(pattern);
+                    bool_vrai_couvert |= couvre_vrai;
+                    bool_faux_couvert |= couvre_faux;
+                }
+                Type::Nul => {
+                    if self.pattern_couvre_nul(pattern) {
+                        nul_couvert = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if par_défaut.is_some() || capture_tout_vu {
+            return;
+        }
+
+        match &type_valeur {
+            Type::Booléen => {
+                let mut manquants = Vec::new();
+                if !bool_vrai_couvert {
+                    manquants.push("vrai");
+                }
+                if !bool_faux_couvert {
+                    manquants.push("faux");
+                }
+
+                if !manquants.is_empty() {
+                    let cas_manquants = manquants
+                        .iter()
+                        .map(|v| format!("`cas {v}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    self.erreur_avec_suggestion(
+                        position.clone(),
+                        &format!(
+                            "Sélection non exhaustive sur booléen: cas manquants: {}.",
+                            manquants.join(", ")
+                        ),
+                        &format!("Ajoutez {} ou un `pardéfaut`.", cas_manquants),
+                    );
+                }
+            }
+            Type::Nul => {
+                if !nul_couvert {
+                    self.erreur_avec_suggestion(
+                        position.clone(),
+                        "Sélection non exhaustive sur `nul`: le cas `nul` est manquant.",
+                        "Ajoutez `cas nul` ou un `pardéfaut`.",
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn pattern_couvre_tout(&self, pattern: &PatternAST) -> bool {
+        match pattern {
+            PatternAST::Identifiant(_, _) | PatternAST::Jocker(_) => true,
+            PatternAST::Ou(patterns, _) => patterns.iter().any(|p| self.pattern_couvre_tout(p)),
+            _ => false,
+        }
+    }
+
+    fn pattern_couvre_nul(&self, pattern: &PatternAST) -> bool {
+        match pattern {
+            PatternAST::Nul(_) | PatternAST::Identifiant(_, _) | PatternAST::Jocker(_) => true,
+            PatternAST::Ou(patterns, _) => patterns.iter().any(|p| self.pattern_couvre_nul(p)),
+            _ => false,
+        }
+    }
+
+    fn couverture_bool_pattern(&self, pattern: &PatternAST) -> (bool, bool) {
+        match pattern {
+            PatternAST::LittéralBooléen(v, _) => (*v, !*v),
+            PatternAST::Identifiant(_, _) | PatternAST::Jocker(_) => (true, true),
+            PatternAST::Ou(patterns, _) => patterns
+                .iter()
+                .fold((false, false), |(vrai, faux), p| {
+                    let (pv, pf) = self.couverture_bool_pattern(p);
+                    (vrai || pv, faux || pf)
+                }),
+            _ => (false, false),
+        }
+    }
+
+    fn extraire_littéraux_pattern(&self, pattern: &PatternAST) -> Vec<LittéralPattern> {
+        match pattern {
+            PatternAST::LittéralBooléen(v, _) => vec![LittéralPattern::Booléen(*v)],
+            PatternAST::LittéralEntier(v, _) => vec![LittéralPattern::Entier(*v)],
+            PatternAST::LittéralTexte(v, _) => vec![LittéralPattern::Texte(v.clone())],
+            PatternAST::Nul(_) => vec![LittéralPattern::Nul],
+            PatternAST::Ou(patterns, _) => patterns
+                .iter()
+                .flat_map(|p| self.extraire_littéraux_pattern(p))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    fn formater_littéraux(&self, littéraux: &[LittéralPattern]) -> String {
+        let mut items = littéraux
+            .iter()
+            .map(|littéral| match littéral {
+                LittéralPattern::Booléen(v) => {
+                    format!("`{}`", if *v { "vrai" } else { "faux" })
+                }
+                LittéralPattern::Entier(v) => format!("`{}`", v),
+                LittéralPattern::Texte(v) => format!("`\"{}\"`", v),
+                LittéralPattern::Nul => "`nul`".to_string(),
+            })
+            .collect::<Vec<_>>();
+        items.sort();
+        items.dedup();
+        items.join(", ")
     }
 
     fn vérifier_pattern(&mut self, pattern: &PatternAST) -> Resultat<()> {
@@ -2868,7 +3669,7 @@ impl Vérificateur {
         Ok(())
     }
 
-    fn convertir_type(&mut self, type_ast: &TypeAST) -> Type {
+    fn convertir_type(&mut self, type_ast: &TypeAST, position: &Position) -> Type {
         match type_ast {
             TypeAST::Entier => Type::Entier,
             TypeAST::Décimal => Type::Décimal,
@@ -2876,30 +3677,72 @@ impl Vérificateur {
             TypeAST::Booléen => Type::Booléen,
             TypeAST::Nul => Type::Nul,
             TypeAST::Rien => Type::Rien,
-            TypeAST::Tableau(t, taille) => Type::Tableau(Box::new(self.convertir_type(t)), *taille),
-            TypeAST::Liste(t) => Type::Liste(Box::new(self.convertir_type(t))),
-            TypeAST::Pile(t) => Type::Pile(Box::new(self.convertir_type(t))),
-            TypeAST::File(t) => Type::File(Box::new(self.convertir_type(t))),
-            TypeAST::ListeChaînée(t) => Type::ListeChaînée(Box::new(self.convertir_type(t))),
+            TypeAST::Tableau(t, taille) => {
+                Type::Tableau(Box::new(self.convertir_type(t, position)), *taille)
+            }
+            TypeAST::Liste(t) => Type::Liste(Box::new(self.convertir_type(t, position))),
+            TypeAST::Pile(t) => Type::Pile(Box::new(self.convertir_type(t, position))),
+            TypeAST::File(t) => Type::File(Box::new(self.convertir_type(t, position))),
+            TypeAST::ListeChaînée(t) => {
+                Type::ListeChaînée(Box::new(self.convertir_type(t, position)))
+            }
             TypeAST::Dictionnaire(k, v) => Type::Dictionnaire(
-                Box::new(self.convertir_type(k)),
-                Box::new(self.convertir_type(v)),
+                Box::new(self.convertir_type(k, position)),
+                Box::new(self.convertir_type(v, position)),
             ),
-            TypeAST::Ensemble(t) => Type::Ensemble(Box::new(self.convertir_type(t))),
+            TypeAST::Ensemble(t) => Type::Ensemble(Box::new(self.convertir_type(t, position))),
             TypeAST::Tuple(types) => {
-                Type::Tuple(types.iter().map(|t| self.convertir_type(t)).collect())
+                Type::Tuple(
+                    types
+                        .iter()
+                        .map(|t| self.convertir_type(t, position))
+                        .collect(),
+                )
             }
             TypeAST::Fonction(params, ret) => Type::Fonction(
-                params.iter().map(|t| self.convertir_type(t)).collect(),
-                Box::new(self.convertir_type(ret)),
+                params
+                    .iter()
+                    .map(|t| self.convertir_type(t, position))
+                    .collect(),
+                Box::new(self.convertir_type(ret, position)),
             ),
-            TypeAST::Classe(nom) => Type::Classe(nom.clone(), None),
-            TypeAST::Interface(nom) => Type::Interface(nom.clone()),
-            TypeAST::Paramétré(nom, args) => Type::Paramétré(
-                nom.clone(),
-                args.iter().map(|t| self.convertir_type(t)).collect(),
-            ),
-            TypeAST::Pointeur(inner) => Type::Pointeur(Box::new(self.convertir_type(inner))),
+            TypeAST::Classe(nom) => {
+                if let Some(type_param) = self.chercher_paramètre_type(nom) {
+                    return type_param;
+                }
+                if let Some(arité) = self.arités_types_nominales.get(nom) {
+                    if *arité > 0 {
+                        self.erreur(
+                            position.clone(),
+                            &format!("Le type '{}' attend {} argument(s) de type", nom, arité),
+                        );
+                    }
+                }
+                Type::Classe(nom.clone(), None)
+            }
+            TypeAST::Interface(nom) => {
+                if let Some(type_param) = self.chercher_paramètre_type(nom) {
+                    return type_param;
+                }
+                Type::Interface(nom.clone())
+            }
+            TypeAST::Paramétré(nom, args) => {
+                if self.chercher_paramètre_type(nom).is_some() {
+                    self.erreur(
+                        position.clone(),
+                        &format!("Le paramètre de type '{}' n'accepte pas d'arguments", nom),
+                    );
+                    return Type::Inconnu;
+                }
+                self.vérifier_arité_type(nom, args.len(), position, "Le type");
+                Type::Paramétré(
+                    nom.clone(),
+                    args.iter().map(|t| self.convertir_type(t, position)).collect(),
+                )
+            }
+            TypeAST::Pointeur(inner) => {
+                Type::Pointeur(Box::new(self.convertir_type(inner, position)))
+            }
             TypeAST::PointeurVide => Type::PointeurVide,
             TypeAST::CInt => Type::CInt,
             TypeAST::CLong => Type::CLong,

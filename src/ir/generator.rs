@@ -2,7 +2,7 @@ use crate::ir::{IRBloc, IRFonction, IRInstruction, IRModule, IROp, IRStruct, IRT
 use crate::parser::ast::*;
 use crate::semantic::symbols::{GenreSymbole, MéthodeClasseSymbole, TableSymboles};
 use crate::semantic::types::Type;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 pub struct GénérateurIR {
     compteur_temp: usize,
@@ -12,6 +12,15 @@ pub struct GénérateurIR {
     classe_courante: Option<String>,
     classes_dynamiques: HashMap<String, String>,
     types_locaux: HashMap<String, Type>,
+    substitutions_type: Vec<HashMap<String, Type>>,
+    fonctions_génériques: HashMap<String, DéclarationFonctionAST>,
+    classes_génériques: HashMap<String, DéclarationClasseAST>,
+    instanciations_fonctions: HashMap<(String, Vec<Type>), String>,
+    instanciations_classes: HashMap<(String, Vec<Type>), String>,
+    file_instanciations_fonctions: VecDeque<(String, Vec<Type>, String)>,
+    file_instanciations_classes: VecDeque<(String, Vec<Type>, String)>,
+    fonctions_instanciées_émises: HashSet<String>,
+    classes_instanciées_émises: HashSet<String>,
 }
 
 impl GénérateurIR {
@@ -24,6 +33,15 @@ impl GénérateurIR {
             classe_courante: None,
             classes_dynamiques: HashMap::new(),
             types_locaux: HashMap::new(),
+            substitutions_type: Vec::new(),
+            fonctions_génériques: HashMap::new(),
+            classes_génériques: HashMap::new(),
+            instanciations_fonctions: HashMap::new(),
+            instanciations_classes: HashMap::new(),
+            file_instanciations_fonctions: VecDeque::new(),
+            file_instanciations_classes: VecDeque::new(),
+            fonctions_instanciées_émises: HashSet::new(),
+            classes_instanciées_émises: HashSet::new(),
         }
     }
 
@@ -39,18 +57,320 @@ impl GénérateurIR {
         nom
     }
 
+    fn normaliser_nom_symbole(nom: &str) -> String {
+        let mut résultat = String::new();
+        for c in nom.chars() {
+            match c {
+                'é' | 'è' | 'ê' | 'ë' => résultat.push('e'),
+                'à' | 'â' | 'ä' => résultat.push('a'),
+                'ù' | 'û' | 'ü' => résultat.push('u'),
+                'î' | 'ï' => résultat.push('i'),
+                'ô' | 'ö' => résultat.push('o'),
+                'ç' => résultat.push('c'),
+                c if c.is_ascii_alphanumeric() || c == '_' => résultat.push(c),
+                _ => résultat.push('_'),
+            }
+        }
+        if résultat.is_empty() {
+            "_".to_string()
+        } else {
+            résultat
+        }
+    }
+
+    fn encoder_type_pour_nom(&self, t: &Type) -> String {
+        match t {
+            Type::Entier => "E".to_string(),
+            Type::Décimal => "D".to_string(),
+            Type::Texte => "T".to_string(),
+            Type::Booléen => "B".to_string(),
+            Type::Nul => "N".to_string(),
+            Type::Rien => "R".to_string(),
+            Type::Tableau(inner, taille) => format!(
+                "A{}_{}",
+                self.encoder_type_pour_nom(inner),
+                taille.unwrap_or(0)
+            ),
+            Type::Liste(inner) => format!("L{}", self.encoder_type_pour_nom(inner)),
+            Type::Pile(inner) => format!("P{}", self.encoder_type_pour_nom(inner)),
+            Type::File(inner) => format!("F{}", self.encoder_type_pour_nom(inner)),
+            Type::ListeChaînée(inner) => format!("LC{}", self.encoder_type_pour_nom(inner)),
+            Type::Dictionnaire(k, v) => format!(
+                "M{}_{}",
+                self.encoder_type_pour_nom(k),
+                self.encoder_type_pour_nom(v)
+            ),
+            Type::Ensemble(inner) => format!("S{}", self.encoder_type_pour_nom(inner)),
+            Type::Tuple(types) => {
+                let encodés: Vec<String> =
+                    types.iter().map(|ty| self.encoder_type_pour_nom(ty)).collect();
+                format!("U{}_{}", types.len(), encodés.join("_"))
+            }
+            Type::Fonction(params, ret) => {
+                let params_encodés: Vec<String> = params
+                    .iter()
+                    .map(|ty| self.encoder_type_pour_nom(ty))
+                    .collect();
+                format!(
+                    "FN{}_{}_{}",
+                    params.len(),
+                    params_encodés.join("_"),
+                    self.encoder_type_pour_nom(ret)
+                )
+            }
+            Type::Classe(nom, _) => {
+                let nom_norm = Self::normaliser_nom_symbole(nom);
+                format!("C{}_{}", nom_norm.len(), nom_norm)
+            }
+            Type::Interface(nom) => {
+                let nom_norm = Self::normaliser_nom_symbole(nom);
+                format!("I{}_{}", nom_norm.len(), nom_norm)
+            }
+            Type::Paramétré(nom, args) => {
+                let nom_norm = Self::normaliser_nom_symbole(nom);
+                let encodés: Vec<String> =
+                    args.iter().map(|ty| self.encoder_type_pour_nom(ty)).collect();
+                format!("G{}_{}_{}", nom_norm.len(), nom_norm, encodés.join("_"))
+            }
+            Type::Inconnu => "Q".to_string(),
+            Type::Variable(id) => format!("V{}", id),
+            Type::Pointeur(inner) => format!("PTR{}", self.encoder_type_pour_nom(inner)),
+            Type::PointeurVide => "PV".to_string(),
+            Type::CInt => "CI".to_string(),
+            Type::CLong => "CL".to_string(),
+            Type::CDouble => "CD".to_string(),
+            Type::CChar => "CC".to_string(),
+            Type::Externe(nom, params, ret) => {
+                let nom_norm = Self::normaliser_nom_symbole(nom);
+                let params_encodés: Vec<String> = params
+                    .iter()
+                    .map(|ty| self.encoder_type_pour_nom(ty))
+                    .collect();
+                format!(
+                    "X{}_{}_{}_{}",
+                    nom_norm.len(),
+                    nom_norm,
+                    params_encodés.join("_"),
+                    self.encoder_type_pour_nom(ret)
+                )
+            }
+            Type::Module(nom) => {
+                let nom_norm = Self::normaliser_nom_symbole(nom);
+                format!("MO{}_{}", nom_norm.len(), nom_norm)
+            }
+        }
+    }
+
+    fn suffixe_instanciation_types(&self, args: &[Type]) -> String {
+        if args.is_empty() {
+            "void".to_string()
+        } else {
+            args.iter()
+                .map(|t| self.encoder_type_pour_nom(t))
+                .collect::<Vec<_>>()
+                .join("__")
+        }
+    }
+
+    fn nom_instanciation_générique(&self, base: &str, args: &[Type]) -> String {
+        let base_norm = Self::normaliser_nom_symbole(base);
+        format!(
+            "{}__gen__{}",
+            base_norm,
+            self.suffixe_instanciation_types(args)
+        )
+    }
+
+    fn indexer_déclarations_génériques(&mut self, programme: &ProgrammeAST) {
+        self.fonctions_génériques.clear();
+        self.classes_génériques.clear();
+        self.instanciations_fonctions.clear();
+        self.instanciations_classes.clear();
+        self.file_instanciations_fonctions.clear();
+        self.file_instanciations_classes.clear();
+        self.fonctions_instanciées_émises.clear();
+        self.classes_instanciées_émises.clear();
+        self.substitutions_type.clear();
+
+        for instr in &programme.instructions {
+            match instr {
+                InstrAST::Fonction(décl) if !décl.paramètres_type.is_empty() => {
+                    self.fonctions_génériques
+                        .insert(décl.nom.clone(), décl.clone());
+                }
+                InstrAST::Classe(décl) if !décl.paramètres_type.is_empty() => {
+                    self.classes_génériques.insert(décl.nom.clone(), décl.clone());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn type_substitué(&self, nom: &str) -> Option<Type> {
+        self.substitutions_type
+            .iter()
+            .rev()
+            .find_map(|substitutions| substitutions.get(nom).cloned())
+    }
+
+    fn pousser_substitutions_type(&mut self, substitutions: HashMap<String, Type>) {
+        self.substitutions_type.push(substitutions);
+    }
+
+    fn retirer_substitutions_type(&mut self) {
+        self.substitutions_type.pop();
+    }
+
+    fn substitutions_depuis_paramètres(
+        &self,
+        paramètres_type: &[String],
+        arguments_type: &[Type],
+    ) -> HashMap<String, Type> {
+        let mut substitutions = HashMap::new();
+        for (index, paramètre) in paramètres_type.iter().enumerate() {
+            if let Some(argument) = arguments_type.get(index) {
+                substitutions.insert(paramètre.clone(), argument.clone());
+            }
+        }
+        substitutions
+    }
+
+    fn substituer_type_selon_noms(
+        &self,
+        type_source: &Type,
+        substitutions: &HashMap<String, Type>,
+    ) -> Type {
+        match type_source {
+            Type::Classe(nom, _) => substitutions
+                .get(nom)
+                .cloned()
+                .unwrap_or_else(|| type_source.clone()),
+            Type::Paramétré(nom, args) => Type::Paramétré(
+                nom.clone(),
+                args.iter()
+                    .map(|arg| self.substituer_type_selon_noms(arg, substitutions))
+                    .collect(),
+            ),
+            Type::Tableau(inner, n) => Type::Tableau(
+                Box::new(self.substituer_type_selon_noms(inner, substitutions)),
+                *n,
+            ),
+            Type::Liste(inner) => {
+                Type::Liste(Box::new(self.substituer_type_selon_noms(inner, substitutions)))
+            }
+            Type::Pile(inner) => {
+                Type::Pile(Box::new(self.substituer_type_selon_noms(inner, substitutions)))
+            }
+            Type::File(inner) => {
+                Type::File(Box::new(self.substituer_type_selon_noms(inner, substitutions)))
+            }
+            Type::ListeChaînée(inner) => Type::ListeChaînée(Box::new(
+                self.substituer_type_selon_noms(inner, substitutions),
+            )),
+            Type::Dictionnaire(k, v) => Type::Dictionnaire(
+                Box::new(self.substituer_type_selon_noms(k, substitutions)),
+                Box::new(self.substituer_type_selon_noms(v, substitutions)),
+            ),
+            Type::Ensemble(inner) => {
+                Type::Ensemble(Box::new(self.substituer_type_selon_noms(inner, substitutions)))
+            }
+            Type::Tuple(types) => Type::Tuple(
+                types
+                    .iter()
+                    .map(|t| self.substituer_type_selon_noms(t, substitutions))
+                    .collect(),
+            ),
+            Type::Fonction(params, ret) => Type::Fonction(
+                params
+                    .iter()
+                    .map(|t| self.substituer_type_selon_noms(t, substitutions))
+                    .collect(),
+                Box::new(self.substituer_type_selon_noms(ret, substitutions)),
+            ),
+            Type::Pointeur(inner) => {
+                Type::Pointeur(Box::new(self.substituer_type_selon_noms(inner, substitutions)))
+            }
+            _ => type_source.clone(),
+        }
+    }
+
+    fn instancier_type_nominal_si_besoin(&self, type_nominal: &Type) -> IRType {
+        match type_nominal {
+            Type::Entier => IRType::Entier,
+            Type::Décimal => IRType::Décimal,
+            Type::Texte => IRType::Texte,
+            Type::Booléen => IRType::Booléen,
+            Type::Nul => IRType::Nul,
+            Type::Rien => IRType::Vide,
+            Type::Tableau(inner, n) => {
+                IRType::Tableau(Box::new(self.instancier_type_nominal_si_besoin(inner)), *n)
+            }
+            Type::Liste(inner) => {
+                IRType::Liste(Box::new(self.instancier_type_nominal_si_besoin(inner)))
+            }
+            Type::Pile(inner) => {
+                IRType::Pile(Box::new(self.instancier_type_nominal_si_besoin(inner)))
+            }
+            Type::File(inner) => {
+                IRType::File(Box::new(self.instancier_type_nominal_si_besoin(inner)))
+            }
+            Type::ListeChaînée(inner) => {
+                IRType::ListeChaînée(Box::new(self.instancier_type_nominal_si_besoin(inner)))
+            }
+            Type::Dictionnaire(k, v) => IRType::Dictionnaire(
+                Box::new(self.instancier_type_nominal_si_besoin(k)),
+                Box::new(self.instancier_type_nominal_si_besoin(v)),
+            ),
+            Type::Ensemble(inner) => {
+                IRType::Ensemble(Box::new(self.instancier_type_nominal_si_besoin(inner)))
+            }
+            Type::Tuple(types) => IRType::Tuple(
+                types
+                    .iter()
+                    .map(|ty| self.instancier_type_nominal_si_besoin(ty))
+                    .collect(),
+            ),
+            Type::Fonction(params, ret) => IRType::Fonction(
+                Box::new(self.instancier_type_nominal_si_besoin(ret)),
+                params
+                    .iter()
+                    .map(|ty| self.instancier_type_nominal_si_besoin(ty))
+                    .collect(),
+            ),
+            Type::Classe(nom, _) => IRType::Struct(nom.clone(), Vec::new()),
+            Type::Interface(nom) => IRType::Struct(nom.clone(), Vec::new()),
+            Type::Paramétré(nom, args) => {
+                if self.classes_génériques.contains_key(nom) {
+                    let nom_inst = self.nom_instanciation_générique(nom, args);
+                    IRType::Struct(nom_inst, Vec::new())
+                } else {
+                    IRType::Struct(nom.clone(), Vec::new())
+                }
+            }
+            Type::Inconnu | Type::Variable(_) => IRType::Vide,
+            Type::Pointeur(inner) => {
+                IRType::Pointeur(Box::new(self.instancier_type_nominal_si_besoin(inner)))
+            }
+            Type::PointeurVide => IRType::Pointeur(Box::new(IRType::Entier)),
+            Type::CInt | Type::CLong | Type::CChar => IRType::Entier,
+            Type::CDouble => IRType::Décimal,
+            Type::Externe(_, _, ret) => self.instancier_type_nominal_si_besoin(ret),
+            Type::Module(_) => IRType::Vide,
+        }
+    }
+
     fn convertir_type_ir(&self, type_ast: &Type) -> IRType {
-        IRType::from(type_ast)
+        self.instancier_type_nominal_si_besoin(type_ast)
     }
 
     fn chercher_type_var(&self, nom: &str) -> IRType {
         if let Some(type_local) = self.types_locaux.get(nom) {
-            return IRType::from(type_local);
+            return self.convertir_type_ir(type_local);
         }
         if let Some(symbole) = self.table.chercher(nom) {
             match &symbole.genre {
-                GenreSymbole::Variable { type_sym, .. } => IRType::from(type_sym),
-                GenreSymbole::Fonction { type_retour, .. } => IRType::from(type_retour),
+                GenreSymbole::Variable { type_sym, .. } => self.convertir_type_ir(type_sym),
+                GenreSymbole::Fonction { type_retour, .. } => self.convertir_type_ir(type_retour),
                 GenreSymbole::ParamètreType => IRType::Entier,
                 _ => IRType::Entier,
             }
@@ -108,11 +428,31 @@ impl GénérateurIR {
                     }
                 }
             },
-            ExprAST::AppelFonction { appelé, .. } => match appelé.as_ref() {
+            ExprAST::AppelFonction {
+                appelé,
+                arguments_type,
+                ..
+            } => match appelé.as_ref() {
                 ExprAST::Identifiant(n, _) => {
+                    if let Some(décl) = self.fonctions_génériques.get(n) {
+                        let substitutions = self.substitutions_depuis_paramètres(
+                            &décl.paramètres_type,
+                            &arguments_type
+                                .iter()
+                                .map(|t| self.convertir_type_ast(t))
+                                .collect::<Vec<_>>(),
+                        );
+                        let type_retour = décl
+                            .type_retour
+                            .as_ref()
+                            .map(|t| self.convertir_type_ast(t))
+                            .unwrap_or(Type::Rien);
+                        return self
+                            .convertir_type_ir(&self.substituer_type_selon_noms(&type_retour, &substitutions));
+                    }
                     if let Some(symbole) = self.table.chercher(n) {
                         if let GenreSymbole::Fonction { type_retour, .. } = &symbole.genre {
-                            IRType::from(type_retour)
+                            self.convertir_type_ir(type_retour)
                         } else {
                             IRType::Entier
                         }
@@ -128,7 +468,7 @@ impl GénérateurIR {
                                     if let Some(GenreSymbole::Fonction { type_retour, .. }) =
                                         symboles.get(membre)
                                     {
-                                        return IRType::from(type_retour);
+                                        return self.convertir_type_ir(type_retour);
                                     }
                                 }
                             }
@@ -149,13 +489,13 @@ impl GénérateurIR {
             ExprAST::AccèsIndice { objet, .. } => {
                 if let Some(type_obj) = self.type_statique_expression(objet) {
                     match type_obj {
-                        Type::Dictionnaire(_, valeur) => IRType::from(&*valeur),
+                        Type::Dictionnaire(_, valeur) => self.convertir_type_ir(&*valeur),
                         Type::Liste(élément)
                         | Type::Tableau(élément, _)
                         | Type::Pile(élément)
                         | Type::File(élément)
                         | Type::ListeChaînée(élément)
-                        | Type::Ensemble(élément) => IRType::from(&*élément),
+                        | Type::Ensemble(élément) => self.convertir_type_ir(&*élément),
                         _ => IRType::Entier,
                     }
                 } else {
@@ -165,11 +505,25 @@ impl GénérateurIR {
             ExprAST::AccèsMembre { objet, membre, .. } => {
                 if let Some(type_obj) = self.type_statique_expression(objet) {
                     match type_obj {
-                        Type::Classe(classe, _) | Type::Paramétré(classe, _) => {
+                        Type::Classe(classe, _) => {
                             if let Some((_classe_champ, type_champ)) =
                                 self.type_champ_depuis_classe(&classe, membre)
                             {
-                                IRType::from(&type_champ)
+                                self.convertir_type_ir(&type_champ)
+                            } else {
+                                IRType::Entier
+                            }
+                        }
+                        Type::Paramétré(classe, args) => {
+                            let classe_résolue = if self.classes_génériques.contains_key(&classe) {
+                                self.nom_instanciation_générique(&classe, &args)
+                            } else {
+                                classe
+                            };
+                            if let Some((_classe_champ, type_champ)) =
+                                self.type_champ_depuis_classe(&classe_résolue, membre)
+                            {
+                                self.convertir_type_ir(&type_champ)
                             } else {
                                 IRType::Entier
                             }
@@ -189,17 +543,17 @@ impl GénérateurIR {
                         | Type::ListeChaînée(t) => match membre.as_str() {
                             "taille" | "longueur" => IRType::Entier,
                             "est_vide" => IRType::Booléen,
-                            "premier" | "dernier" | "tête" | "queue" => IRType::from(&*t),
+                            "premier" | "dernier" | "tête" | "queue" => self.convertir_type_ir(&*t),
                             _ => IRType::Entier,
                         },
                         Type::Dictionnaire(k, v) => match membre.as_str() {
                             "taille" | "longueur" => IRType::Entier,
                             "est_vide" => IRType::Booléen,
-                            "clés" => IRType::Liste(Box::new(IRType::from(&*k))),
-                            "valeurs" => IRType::Liste(Box::new(IRType::from(&*v))),
+                            "clés" => IRType::Liste(Box::new(self.convertir_type_ir(&*k))),
+                            "valeurs" => IRType::Liste(Box::new(self.convertir_type_ir(&*v))),
                             "paires" | "entrées" => IRType::Liste(Box::new(IRType::Tuple(vec![
-                                IRType::from(&*k),
-                                IRType::from(&*v),
+                                self.convertir_type_ir(&*k),
+                                self.convertir_type_ir(&*v),
                             ]))),
                             _ => IRType::Entier,
                         },
@@ -271,14 +625,35 @@ impl GénérateurIR {
             ExprAST::LittéralBooléen(_, _) => Some(Type::Booléen),
             ExprAST::LittéralNul(_) => Some(Type::Nul),
             ExprAST::Identifiant(nom, _) => self.type_statique_identifiant(nom),
-            ExprAST::AppelFonction { appelé, .. } => match appelé.as_ref() {
-                ExprAST::Identifiant(nom, _) => self.table.chercher(nom).and_then(|symbole| {
-                    if let GenreSymbole::Fonction { type_retour, .. } = &symbole.genre {
-                        Some(type_retour.clone())
+            ExprAST::AppelFonction {
+                appelé,
+                arguments_type,
+                ..
+            } => match appelé.as_ref() {
+                ExprAST::Identifiant(nom, _) => {
+                    if let Some(décl) = self.fonctions_génériques.get(nom) {
+                        let args: Vec<Type> = arguments_type
+                            .iter()
+                            .map(|t| self.convertir_type_ast(t))
+                            .collect();
+                        let substitutions =
+                            self.substitutions_depuis_paramètres(&décl.paramètres_type, &args);
+                        let type_retour = décl
+                            .type_retour
+                            .as_ref()
+                            .map(|t| self.convertir_type_ast(t))
+                            .unwrap_or(Type::Rien);
+                        Some(self.substituer_type_selon_noms(&type_retour, &substitutions))
                     } else {
-                        None
+                        self.table.chercher(nom).and_then(|symbole| {
+                            if let GenreSymbole::Fonction { type_retour, .. } = &symbole.genre {
+                                Some(type_retour.clone())
+                            } else {
+                                None
+                            }
+                        })
                     }
-                }),
+                }
                 ExprAST::AccèsMembre { objet, membre, .. } => {
                     let type_obj = self.type_statique_expression(objet)?;
                     match &type_obj {
@@ -357,7 +732,11 @@ impl GénérateurIR {
                     _ => None,
                 }
             }
-            ExprAST::Nouveau { classe, .. } => match classe.as_str() {
+            ExprAST::Nouveau {
+                classe,
+                arguments_type,
+                ..
+            } => match classe.as_str() {
                 "pile" => Some(Type::Pile(Box::new(Type::Entier))),
                 "file" => Some(Type::File(Box::new(Type::Entier))),
                 "liste_chaînée" | "liste_chainee" => {
@@ -367,7 +746,19 @@ impl GénérateurIR {
                 "dictionnaire" => {
                     Some(Type::Dictionnaire(Box::new(Type::Texte), Box::new(Type::Entier)))
                 }
-                _ => Some(Type::Classe(classe.clone(), None)),
+                _ => {
+                    if self.classes_génériques.contains_key(classe) && !arguments_type.is_empty() {
+                        Some(Type::Paramétré(
+                            classe.clone(),
+                            arguments_type
+                                .iter()
+                                .map(|t| self.convertir_type_ast(t))
+                                .collect(),
+                        ))
+                    } else {
+                        Some(Type::Classe(classe.clone(), None))
+                    }
+                }
             },
             ExprAST::Conditionnelle { alors, sinon, .. } => {
                 self.type_statique_expression(alors).or_else(|| {
@@ -962,16 +1353,24 @@ impl GénérateurIR {
     ) -> Option<(Vec<IRType>, IRType, bool, String, bool)> {
         match type_obj {
             Type::Classe(classe, _) | Type::Paramétré(classe, _) => {
+                let classe_résolue = match type_obj {
+                    Type::Paramétré(classe_nom, args)
+                        if self.classes_génériques.contains_key(classe_nom) =>
+                    {
+                        self.nom_instanciation_générique(classe_nom, args)
+                    }
+                    _ => classe.clone(),
+                };
                 let (_classe_impl, méthode_sym) =
-                    self.méthode_classe_ou_parent(classe, méthode)?;
+                    self.méthode_classe_ou_parent(&classe_résolue, méthode)?;
                 let types_args = méthode_sym
                     .paramètres
                     .iter()
-                    .map(|(_, t)| IRType::from(t))
+                    .map(|(_, t)| self.convertir_type_ir(t))
                     .collect();
-                let type_retour = IRType::from(&méthode_sym.type_retour);
+                let type_retour = self.convertir_type_ir(&méthode_sym.type_retour);
                 let dynamique = méthode_sym.est_virtuelle || méthode_sym.est_abstraite;
-                Some((types_args, type_retour, dynamique, classe.clone(), false))
+                Some((types_args, type_retour, dynamique, classe_résolue, false))
             }
             Type::Interface(interface) => {
                 let méthode_sym = self.table.chercher(interface).and_then(|sym| {
@@ -984,9 +1383,9 @@ impl GénérateurIR {
                 let types_args = méthode_sym
                     .paramètres
                     .iter()
-                    .map(|(_, t)| IRType::from(t))
+                    .map(|(_, t)| self.convertir_type_ir(t))
                     .collect();
-                let type_retour = IRType::from(&méthode_sym.type_retour);
+                let type_retour = self.convertir_type_ir(&méthode_sym.type_retour);
                 Some((types_args, type_retour, true, interface.clone(), true))
             }
             _ => None,
@@ -1000,7 +1399,14 @@ impl GénérateurIR {
 
         if let Some(type_local) = self.types_locaux.get(nom) {
             return match type_local {
-                Type::Classe(n, _) | Type::Paramétré(n, _) => Some(n.clone()),
+                Type::Classe(n, _) => Some(n.clone()),
+                Type::Paramétré(n, args) => {
+                    if self.classes_génériques.contains_key(n) {
+                        Some(self.nom_instanciation_générique(n, args))
+                    } else {
+                        Some(n.clone())
+                    }
+                }
                 _ => None,
             };
         }
@@ -1009,7 +1415,14 @@ impl GénérateurIR {
             .chercher(nom)
             .and_then(|symbole| match &symbole.genre {
                 GenreSymbole::Variable { type_sym, .. } => match type_sym {
-                    Type::Classe(nom, _) | Type::Paramétré(nom, _) => Some(nom.clone()),
+                    Type::Classe(nom, _) => Some(nom.clone()),
+                    Type::Paramétré(nom, args) => {
+                        if self.classes_génériques.contains_key(nom) {
+                            Some(self.nom_instanciation_générique(nom, args))
+                        } else {
+                            Some(nom.clone())
+                        }
+                    }
                     _ => None,
                 },
                 _ => None,
@@ -1019,10 +1432,29 @@ impl GénérateurIR {
     fn classe_pour_expression(&self, expr: &ExprAST) -> Option<String> {
         match expr {
             ExprAST::Identifiant(nom, _) => self.classe_pour_identifiant(nom),
-            ExprAST::Nouveau { classe, .. } => Some(classe.clone()),
+            ExprAST::Nouveau {
+                classe,
+                arguments_type,
+                ..
+            } => {
+                if self.classes_génériques.contains_key(classe) && !arguments_type.is_empty() {
+                    let args: Vec<Type> =
+                        arguments_type.iter().map(|t| self.convertir_type_ast(t)).collect();
+                    Some(self.nom_instanciation_générique(classe, &args))
+                } else {
+                    Some(classe.clone())
+                }
+            }
             ExprAST::Ceci(_) => self.classe_courante.clone(),
             _ => self.type_statique_expression(expr).and_then(|type_expr| match type_expr {
-                Type::Classe(n, _) | Type::Paramétré(n, _) => Some(n),
+                Type::Classe(n, _) => Some(n),
+                Type::Paramétré(n, args) => {
+                    if self.classes_génériques.contains_key(&n) {
+                        Some(self.nom_instanciation_générique(&n, &args))
+                    } else {
+                        Some(n)
+                    }
+                }
                 _ => None,
             }),
         }
@@ -1030,7 +1462,19 @@ impl GénérateurIR {
 
     fn classe_dynamique_depuis_expr(&self, expr: &ExprAST) -> Option<String> {
         match expr {
-            ExprAST::Nouveau { classe, .. } => Some(classe.clone()),
+            ExprAST::Nouveau {
+                classe,
+                arguments_type,
+                ..
+            } => {
+                if self.classes_génériques.contains_key(classe) && !arguments_type.is_empty() {
+                    let args: Vec<Type> =
+                        arguments_type.iter().map(|t| self.convertir_type_ast(t)).collect();
+                    Some(self.nom_instanciation_générique(classe, &args))
+                } else {
+                    Some(classe.clone())
+                }
+            }
             ExprAST::Identifiant(nom, _) => self.classe_pour_identifiant(nom),
             ExprAST::Ceci(_) => self.classe_courante.clone(),
             _ => None,
@@ -1065,6 +1509,7 @@ impl GénérateurIR {
 
     fn champs_aplatis_classe(&self, classe: &str) -> Vec<(String, IRType)> {
         fn accumuler(
+            générateur: &GénérateurIR,
             table: &TableSymboles,
             classe: &str,
             vus: &mut HashMap<String, IRType>,
@@ -1079,7 +1524,7 @@ impl GénérateurIR {
             });
 
             if let Some(p) = parent {
-                accumuler(table, &p, vus, ordre);
+                accumuler(générateur, table, &p, vus, ordre);
             }
 
             let champs = table.chercher(classe).and_then(|sym| {
@@ -1095,14 +1540,14 @@ impl GénérateurIR {
                     if !vus.contains_key(&nom) {
                         ordre.push(nom.clone());
                     }
-                    vus.insert(nom, IRType::from(&t));
+                    vus.insert(nom, générateur.convertir_type_ir(&t));
                 }
             }
         }
 
         let mut vus = HashMap::new();
         let mut ordre = Vec::new();
-        accumuler(&self.table, classe, &mut vus, &mut ordre);
+        accumuler(self, &self.table, classe, &mut vus, &mut ordre);
 
         let mut résultat = vec![("__typeid".to_string(), IRType::Entier)];
         for nom in ordre {
@@ -1115,7 +1560,14 @@ impl GénérateurIR {
 
     fn valeur_accès_membre(&mut self, objet: &ExprAST, membre: &str) -> Option<IRValeur> {
         let classe_obj = match self.type_statique_expression(objet) {
-            Some(Type::Classe(c, _)) | Some(Type::Paramétré(c, _)) => Some(c),
+            Some(Type::Classe(c, _)) => Some(c),
+            Some(Type::Paramétré(c, args)) => {
+                if self.classes_génériques.contains_key(&c) {
+                    Some(self.assurer_instanciation_classe(&c, &args))
+                } else {
+                    Some(c)
+                }
+            }
             _ => self.classe_pour_expression(objet),
         }?;
 
@@ -1125,7 +1577,7 @@ impl GénérateurIR {
             objet: Box::new(obj),
             membre: membre.to_string(),
             classe: classe_obj,
-            type_membre: IRType::from(&type_champ),
+            type_membre: self.convertir_type_ir(&type_champ),
         })
     }
 
@@ -1134,8 +1586,8 @@ impl GénérateurIR {
             return IRValeur::AccèsDictionnaire {
                 dictionnaire: Box::new(self.générer_expression(objet)),
                 clé: Box::new(self.générer_expression(indice)),
-                type_clé: IRType::from(&type_clé),
-                type_valeur: IRType::from(&type_valeur),
+                type_clé: self.convertir_type_ir(&type_clé),
+                type_valeur: self.convertir_type_ir(&type_valeur),
             };
         }
 
@@ -1182,6 +1634,409 @@ impl GénérateurIR {
             type_retour: type_retour_ir,
             blocs: Vec::new(),
             est_externe: true,
+        }
+    }
+
+    fn enregistrer_symbole_fonction_instanciée(
+        &mut self,
+        nom_source: &str,
+        nom_instancié: &str,
+        arguments_type: &[Type],
+    ) {
+        let Some(décl) = self.fonctions_génériques.get(nom_source).cloned() else {
+            return;
+        };
+        let substitutions =
+            self.substitutions_depuis_paramètres(&décl.paramètres_type, arguments_type);
+        self.pousser_substitutions_type(substitutions);
+
+        let paramètres = décl
+            .paramètres
+            .iter()
+            .map(|p| {
+                let type_param = p
+                    .type_ann
+                    .as_ref()
+                    .map(|t| self.convertir_type_ast(t))
+                    .unwrap_or(Type::Inconnu);
+                (p.nom.clone(), type_param)
+            })
+            .collect();
+
+        let type_retour = décl
+            .type_retour
+            .as_ref()
+            .map(|t| self.convertir_type_ast(t))
+            .unwrap_or(Type::Rien);
+
+        self.table.définir(
+            nom_instancié,
+            GenreSymbole::Fonction {
+                paramètres,
+                type_retour,
+                est_async: décl.est_async,
+            },
+        );
+
+        self.retirer_substitutions_type();
+    }
+
+    fn enregistrer_symbole_classe_instanciée(
+        &mut self,
+        nom_source: &str,
+        nom_instancié: &str,
+        arguments_type: &[Type],
+    ) {
+        let Some(décl) = self.classes_génériques.get(nom_source).cloned() else {
+            return;
+        };
+        let substitutions =
+            self.substitutions_depuis_paramètres(&décl.paramètres_type, arguments_type);
+        self.pousser_substitutions_type(substitutions);
+
+        let mut champs = HashMap::new();
+        let mut méthodes = HashMap::new();
+        let mut constructeur = None;
+
+        for membre in &décl.membres {
+            match membre {
+                MembreClasseAST::Champ { nom, type_ann, .. } => {
+                    let type_champ = type_ann
+                        .as_ref()
+                        .map(|t| self.convertir_type_ast(t))
+                        .unwrap_or(Type::Inconnu);
+                    champs.insert(nom.clone(), type_champ);
+                }
+                MembreClasseAST::Méthode {
+                    déclaration,
+                    est_virtuelle,
+                    est_abstraite,
+                    est_surcharge,
+                    ..
+                } => {
+                    let paramètres = déclaration
+                        .paramètres
+                        .iter()
+                        .map(|p| {
+                            let type_param = p
+                                .type_ann
+                                .as_ref()
+                                .map(|t| self.convertir_type_ast(t))
+                                .unwrap_or(Type::Inconnu);
+                            (p.nom.clone(), type_param)
+                        })
+                        .collect();
+                    let type_retour = déclaration
+                        .type_retour
+                        .as_ref()
+                        .map(|t| self.convertir_type_ast(t))
+                        .unwrap_or(Type::Rien);
+                    méthodes.insert(
+                        déclaration.nom.clone(),
+                        MéthodeClasseSymbole {
+                            paramètres,
+                            type_retour,
+                            est_virtuelle: *est_virtuelle,
+                            est_abstraite: *est_abstraite,
+                            est_surcharge: *est_surcharge,
+                        },
+                    );
+                }
+                MembreClasseAST::Constructeur { paramètres, .. } => {
+                    let paramètres_constructeur = paramètres
+                        .iter()
+                        .map(|p| {
+                            let type_param = p
+                                .type_ann
+                                .as_ref()
+                                .map(|t| self.convertir_type_ast(t))
+                                .unwrap_or(Type::Inconnu);
+                            (p.nom.clone(), type_param)
+                        })
+                        .collect();
+                    constructeur = Some(MéthodeClasseSymbole {
+                        paramètres: paramètres_constructeur,
+                        type_retour: Type::Inconnu,
+                        est_virtuelle: false,
+                        est_abstraite: false,
+                        est_surcharge: false,
+                    });
+                }
+            }
+        }
+
+        self.table.définir(
+            nom_instancié,
+            GenreSymbole::Classe {
+                parent: décl.parent.clone(),
+                interfaces: décl.interfaces.clone(),
+                champs,
+                méthodes,
+                constructeur,
+                est_abstraite: décl.est_abstraite,
+            },
+        );
+
+        self.retirer_substitutions_type();
+    }
+
+    fn assurer_instanciation_fonction(&mut self, nom: &str, arguments_type: &[Type]) -> String {
+        let clé = (nom.to_string(), arguments_type.to_vec());
+        if let Some(nom_instancié) = self.instanciations_fonctions.get(&clé) {
+            return nom_instancié.clone();
+        }
+
+        let nom_instancié = self.nom_instanciation_générique(nom, arguments_type);
+        self.instanciations_fonctions
+            .insert(clé, nom_instancié.clone());
+        self.enregistrer_symbole_fonction_instanciée(nom, &nom_instancié, arguments_type);
+        self.file_instanciations_fonctions.push_back((
+            nom.to_string(),
+            arguments_type.to_vec(),
+            nom_instancié.clone(),
+        ));
+        nom_instancié
+    }
+
+    fn assurer_instanciation_classe(&mut self, nom: &str, arguments_type: &[Type]) -> String {
+        let clé = (nom.to_string(), arguments_type.to_vec());
+        if let Some(nom_instancié) = self.instanciations_classes.get(&clé) {
+            return nom_instancié.clone();
+        }
+
+        let nom_instancié = self.nom_instanciation_générique(nom, arguments_type);
+        self.instanciations_classes
+            .insert(clé, nom_instancié.clone());
+        self.enregistrer_symbole_classe_instanciée(nom, &nom_instancié, arguments_type);
+        self.file_instanciations_classes.push_back((
+            nom.to_string(),
+            arguments_type.to_vec(),
+            nom_instancié.clone(),
+        ));
+        nom_instancié
+    }
+
+    fn générer_classe_avec_nom(
+        &mut self,
+        module: &mut IRModule,
+        décl: &DéclarationClasseAST,
+        nom_classe: &str,
+    ) {
+        module.structures.push(IRStruct {
+            nom: nom_classe.to_string(),
+            parent: décl.parent.clone(),
+            interfaces: décl.interfaces.clone(),
+            champs: self.champs_aplatis_classe(nom_classe),
+        });
+
+        let mut constructeur_explicit: Option<(Vec<(String, IRType)>, BlocAST)> = None;
+
+        for membre in &décl.membres {
+            match membre {
+                MembreClasseAST::Méthode { déclaration, .. } => {
+                    let nom_méth = format!("{}_{}", nom_classe, déclaration.nom);
+                    let ancienne_classe = self.classe_courante.clone();
+                    self.classe_courante = Some(nom_classe.to_string());
+                    let mut fn_ir = self.générer_fonction_avec_nom(déclaration, &nom_méth);
+                    self.classe_courante = ancienne_classe;
+                    fn_ir.paramètres.insert(
+                        0,
+                        (
+                            "ceci".to_string(),
+                            IRType::Struct(nom_classe.to_string(), Vec::new()),
+                        ),
+                    );
+                    module.fonctions.push(fn_ir);
+                }
+                MembreClasseAST::Constructeur {
+                    paramètres,
+                    corps,
+                    position: _,
+                } => {
+                    let mut param_ir: Vec<(String, IRType)> = Vec::new();
+                    for p in paramètres {
+                        let type_ir = if let Some(t) = &p.type_ann {
+                            self.convertir_type_ir(&self.convertir_type_ast(t))
+                        } else {
+                            self.chercher_type_var(&p.nom)
+                        };
+                        param_ir.push((p.nom.clone(), type_ir));
+                    }
+
+                    constructeur_explicit = Some((param_ir, corps.clone()));
+                }
+                _ => {}
+            }
+        }
+
+        let (params_constructeur, corps_constructeur) =
+            if let Some((params, corps)) = constructeur_explicit.clone() {
+                (params, Some(corps))
+            } else if let Some(parent) = &décl.parent {
+                let params_hérités = self
+                    .constructeur_classe_ou_parent(parent)
+                    .map(|c| {
+                        c.paramètres
+                            .iter()
+                            .map(|(nom, t)| (nom.clone(), self.convertir_type_ir(t)))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                (params_hérités, None)
+            } else {
+                (Vec::new(), None)
+            };
+
+        let mut paramètres_init = vec![(
+            "ceci".to_string(),
+            IRType::Struct(nom_classe.to_string(), Vec::new()),
+        )];
+        paramètres_init.extend(params_constructeur.clone());
+
+        let blocs_init = if let Some(corps) = corps_constructeur {
+            let a_base_explicite = corps
+                .instructions
+                .first()
+                .map(|instr| Self::instruction_est_appel_base(instr))
+                .unwrap_or(false);
+
+            let ancienne_classe = self.classe_courante.clone();
+            self.classe_courante = Some(nom_classe.to_string());
+            let anciens_types_locaux = self.types_locaux.clone();
+            self.types_locaux.clear();
+            self.types_locaux
+                .insert("ceci".to_string(), Type::Classe(nom_classe.to_string(), None));
+            for (nom, type_ir) in &params_constructeur {
+                let type_src = self.type_depuis_ir_type(type_ir);
+                self.types_locaux.insert(nom.clone(), type_src);
+            }
+            let mut blocs = self.générer_bloc(&corps);
+
+            if !a_base_explicite {
+                if let Some(parent) = &décl.parent {
+                    if let Some(entree) = blocs.first_mut() {
+                        entree.instructions.insert(
+                            0,
+                            IRInstruction::AppelFonction {
+                                destination: None,
+                                fonction: format!("{}__init", parent),
+                                arguments: vec![IRValeur::Référence("ceci".to_string())],
+                                type_retour: IRType::Vide,
+                            },
+                        );
+                    }
+                }
+            }
+
+            self.types_locaux = anciens_types_locaux;
+            self.classe_courante = ancienne_classe;
+            blocs
+        } else {
+            let mut instructions = Vec::new();
+            if let Some(parent) = &décl.parent {
+                let mut args_parent = vec![IRValeur::Référence("ceci".to_string())];
+                for (nom, _) in &params_constructeur {
+                    args_parent.push(IRValeur::Référence(nom.clone()));
+                }
+                instructions.push(IRInstruction::AppelFonction {
+                    destination: None,
+                    fonction: format!("{}__init", parent),
+                    arguments: args_parent,
+                    type_retour: IRType::Vide,
+                });
+            }
+            vec![IRBloc {
+                nom: "entree".to_string(),
+                instructions,
+            }]
+        };
+
+        module.fonctions.push(IRFonction {
+            nom: format!("{}__init", nom_classe),
+            paramètres: paramètres_init,
+            type_retour: IRType::Vide,
+            blocs: blocs_init,
+            est_externe: false,
+        });
+
+        let mut instructions_wrapper = vec![
+            IRInstruction::Allocation {
+                nom: "ceci".to_string(),
+                type_var: IRType::Struct(nom_classe.to_string(), Vec::new()),
+            },
+            IRInstruction::Affecter {
+                destination: "ceci".to_string(),
+                valeur: IRValeur::Allocation(IRType::Struct(nom_classe.to_string(), Vec::new())),
+                type_var: IRType::Struct(nom_classe.to_string(), Vec::new()),
+            },
+        ];
+
+        let mut args_init = vec![IRValeur::Référence("ceci".to_string())];
+        for (nom, _) in &params_constructeur {
+            args_init.push(IRValeur::Référence(nom.clone()));
+        }
+        instructions_wrapper.push(IRInstruction::AppelFonction {
+            destination: None,
+            fonction: format!("{}__init", nom_classe),
+            arguments: args_init,
+            type_retour: IRType::Vide,
+        });
+        instructions_wrapper.push(IRInstruction::Retourner(Some(IRValeur::Référence(
+            "ceci".to_string(),
+        ))));
+
+        module.fonctions.push(IRFonction {
+            nom: format!("{}_constructeur", nom_classe),
+            paramètres: params_constructeur,
+            type_retour: IRType::Struct(nom_classe.to_string(), Vec::new()),
+            blocs: vec![IRBloc {
+                nom: "entree".to_string(),
+                instructions: instructions_wrapper,
+            }],
+            est_externe: false,
+        });
+    }
+
+    fn traiter_instanciations_génériques(&mut self, module: &mut IRModule) {
+        loop {
+            let mut a_progressé = false;
+
+            while let Some((nom_source, args, nom_instancié)) =
+                self.file_instanciations_classes.pop_front()
+            {
+                if !self.classes_instanciées_émises.insert(nom_instancié.clone()) {
+                    continue;
+                }
+                let Some(décl) = self.classes_génériques.get(&nom_source).cloned() else {
+                    continue;
+                };
+                let substitutions = self.substitutions_depuis_paramètres(&décl.paramètres_type, &args);
+                self.pousser_substitutions_type(substitutions);
+                self.générer_classe_avec_nom(module, &décl, &nom_instancié);
+                self.retirer_substitutions_type();
+                a_progressé = true;
+            }
+
+            while let Some((nom_source, args, nom_instancié)) =
+                self.file_instanciations_fonctions.pop_front()
+            {
+                if !self.fonctions_instanciées_émises.insert(nom_instancié.clone()) {
+                    continue;
+                }
+                let Some(décl) = self.fonctions_génériques.get(&nom_source).cloned() else {
+                    continue;
+                };
+                let substitutions = self.substitutions_depuis_paramètres(&décl.paramètres_type, &args);
+                self.pousser_substitutions_type(substitutions);
+                let fonction = self.générer_fonction_avec_nom(&décl, &nom_instancié);
+                self.retirer_substitutions_type();
+                module.fonctions.push(fonction);
+                a_progressé = true;
+            }
+
+            if !a_progressé {
+                break;
+            }
         }
     }
 
@@ -1276,6 +2131,8 @@ impl GénérateurIR {
     }
 
     pub fn générer(&mut self, programme: &ProgrammeAST) -> IRModule {
+        self.indexer_déclarations_génériques(programme);
+
         let mut module = IRModule {
             fonctions: Vec::new(),
             structures: Vec::new(),
@@ -1294,198 +2151,19 @@ impl GénérateurIR {
         for instr in &programme.instructions {
             match instr {
                 InstrAST::Fonction(décl) => {
+                    if !décl.paramètres_type.is_empty() {
+                        continue;
+                    }
                     if let Some(fonction) = self.générer_fonction(décl) {
                         module.fonctions.push(fonction);
                     }
                 }
                 InstrAST::Externe { .. } => {}
                 InstrAST::Classe(décl) => {
-                    module.structures.push(IRStruct {
-                        nom: décl.nom.clone(),
-                        parent: décl.parent.clone(),
-                        interfaces: décl.interfaces.clone(),
-                        champs: self.champs_aplatis_classe(&décl.nom),
-                    });
-
-                    let mut constructeur_explicit: Option<(Vec<(String, IRType)>, BlocAST)> = None;
-
-                    for membre in &décl.membres {
-                        match membre {
-                            MembreClasseAST::Méthode { déclaration, .. } => {
-                                let nom_méth = format!("{}_{}", décl.nom, déclaration.nom);
-                                let ancienne_classe = self.classe_courante.clone();
-                                self.classe_courante = Some(décl.nom.clone());
-                                let mut fn_ir =
-                                    self.générer_fonction_avec_nom(déclaration, &nom_méth);
-                                self.classe_courante = ancienne_classe;
-                                fn_ir.paramètres.insert(
-                                    0,
-                                    (
-                                        "ceci".to_string(),
-                                        IRType::Struct(décl.nom.clone(), Vec::new()),
-                                    ),
-                                );
-                                module.fonctions.push(fn_ir);
-                            }
-                            MembreClasseAST::Constructeur {
-                                paramètres,
-                                corps,
-                                position: _,
-                            } => {
-                                let mut param_ir: Vec<(String, IRType)> = Vec::new();
-                                for p in paramètres {
-                                    let type_ir = if let Some(t) = &p.type_ann {
-                                        self.convertir_type_ir(&self.convertir_type_ast(t))
-                                    } else {
-                                        self.chercher_type_var(&p.nom)
-                                    };
-                                    param_ir.push((p.nom.clone(), type_ir));
-                                }
-
-                                constructeur_explicit = Some((param_ir, corps.clone()));
-                            }
-                            _ => {}
-                        }
+                    if !décl.paramètres_type.is_empty() {
+                        continue;
                     }
-
-                    let (params_constructeur, corps_constructeur) =
-                        if let Some((params, corps)) = constructeur_explicit.clone() {
-                            (params, Some(corps))
-                        } else if let Some(parent) = &décl.parent {
-                            let params_hérités = self
-                                .constructeur_classe_ou_parent(parent)
-                                .map(|c| {
-                                    c.paramètres
-                                        .iter()
-                                        .map(|(nom, t)| (nom.clone(), IRType::from(t)))
-                                        .collect()
-                                })
-                                .unwrap_or_default();
-                            (params_hérités, None)
-                        } else {
-                            (Vec::new(), None)
-                        };
-
-                    let mut paramètres_init = vec![(
-                        "ceci".to_string(),
-                        IRType::Struct(décl.nom.clone(), Vec::new()),
-                    )];
-                    paramètres_init.extend(params_constructeur.clone());
-
-                    let blocs_init = if let Some(corps) = corps_constructeur {
-                        let a_base_explicite = corps
-                            .instructions
-                            .first()
-                            .map(|instr| Self::instruction_est_appel_base(instr))
-                            .unwrap_or(false);
-
-                        let ancienne_classe = self.classe_courante.clone();
-                        self.classe_courante = Some(décl.nom.clone());
-                        let anciens_types_locaux = self.types_locaux.clone();
-                        self.types_locaux.clear();
-                        self.types_locaux
-                            .insert("ceci".to_string(), Type::Classe(décl.nom.clone(), None));
-                        for (nom, type_ir) in &params_constructeur {
-                            let type_src = match type_ir {
-                                IRType::Entier => Type::Entier,
-                                IRType::Décimal => Type::Décimal,
-                                IRType::Texte => Type::Texte,
-                                IRType::Booléen => Type::Booléen,
-                                IRType::Struct(nom, _) => Type::Classe(nom.clone(), None),
-                                _ => Type::Inconnu,
-                            };
-                            self.types_locaux.insert(nom.clone(), type_src);
-                        }
-                        let mut blocs = self.générer_bloc(&corps);
-
-                        if !a_base_explicite {
-                            if let Some(parent) = &décl.parent {
-                                if let Some(entree) = blocs.first_mut() {
-                                    entree.instructions.insert(
-                                        0,
-                                        IRInstruction::AppelFonction {
-                                            destination: None,
-                                            fonction: format!("{}__init", parent),
-                                            arguments: vec![IRValeur::Référence(
-                                                "ceci".to_string(),
-                                            )],
-                                            type_retour: IRType::Vide,
-                                        },
-                                    );
-                                }
-                            }
-                        }
-
-                        self.types_locaux = anciens_types_locaux;
-                        self.classe_courante = ancienne_classe;
-                        blocs
-                    } else {
-                        let mut instructions = Vec::new();
-                        if let Some(parent) = &décl.parent {
-                            let mut args_parent = vec![IRValeur::Référence("ceci".to_string())];
-                            for (nom, _) in &params_constructeur {
-                                args_parent.push(IRValeur::Référence(nom.clone()));
-                            }
-                            instructions.push(IRInstruction::AppelFonction {
-                                destination: None,
-                                fonction: format!("{}__init", parent),
-                                arguments: args_parent,
-                                type_retour: IRType::Vide,
-                            });
-                        }
-                        vec![IRBloc {
-                            nom: "entree".to_string(),
-                            instructions,
-                        }]
-                    };
-
-                    module.fonctions.push(IRFonction {
-                        nom: format!("{}__init", décl.nom),
-                        paramètres: paramètres_init,
-                        type_retour: IRType::Vide,
-                        blocs: blocs_init,
-                        est_externe: false,
-                    });
-
-                    let mut instructions_wrapper = vec![
-                        IRInstruction::Allocation {
-                            nom: "ceci".to_string(),
-                            type_var: IRType::Struct(décl.nom.clone(), Vec::new()),
-                        },
-                        IRInstruction::Affecter {
-                            destination: "ceci".to_string(),
-                            valeur: IRValeur::Allocation(IRType::Struct(
-                                décl.nom.clone(),
-                                Vec::new(),
-                            )),
-                            type_var: IRType::Struct(décl.nom.clone(), Vec::new()),
-                        },
-                    ];
-
-                    let mut args_init = vec![IRValeur::Référence("ceci".to_string())];
-                    for (nom, _) in &params_constructeur {
-                        args_init.push(IRValeur::Référence(nom.clone()));
-                    }
-                    instructions_wrapper.push(IRInstruction::AppelFonction {
-                        destination: None,
-                        fonction: format!("{}__init", décl.nom),
-                        arguments: args_init,
-                        type_retour: IRType::Vide,
-                    });
-                    instructions_wrapper.push(IRInstruction::Retourner(Some(
-                        IRValeur::Référence("ceci".to_string()),
-                    )));
-
-                    module.fonctions.push(IRFonction {
-                        nom: format!("{}_constructeur", décl.nom),
-                        paramètres: params_constructeur,
-                        type_retour: IRType::Struct(décl.nom.clone(), Vec::new()),
-                        blocs: vec![IRBloc {
-                            nom: "entree".to_string(),
-                            instructions: instructions_wrapper,
-                        }],
-                        est_externe: false,
-                    });
+                    self.générer_classe_avec_nom(&mut module, décl, &décl.nom);
                 }
                 InstrAST::Interface { .. } => {}
                 InstrAST::Constante {
@@ -1573,6 +2251,8 @@ impl GénérateurIR {
             );
         }
 
+        self.traiter_instanciations_génériques(&mut module);
+
         module
     }
 
@@ -1603,9 +2283,24 @@ impl GénérateurIR {
                 params.iter().map(|t| self.convertir_type_ast(t)).collect(),
                 Box::new(self.convertir_type_ast(ret)),
             ),
-            TypeAST::Classe(nom) => Type::Classe(nom.clone(), None),
+            TypeAST::Classe(nom) => self
+                .type_substitué(nom)
+                .unwrap_or_else(|| Type::Classe(nom.clone(), None)),
             TypeAST::Interface(nom) => Type::Interface(nom.clone()),
-            TypeAST::Paramétré(nom, _) => Type::Classe(nom.clone(), None),
+            TypeAST::Paramétré(nom, args) => {
+                if let Some(type_substitué) = self.type_substitué(nom) {
+                    if args.is_empty() {
+                        type_substitué
+                    } else {
+                        Type::Inconnu
+                    }
+                } else {
+                    Type::Paramétré(
+                        nom.clone(),
+                        args.iter().map(|t| self.convertir_type_ast(t)).collect(),
+                    )
+                }
+            }
             TypeAST::Pointeur(inner) => Type::Pointeur(Box::new(self.convertir_type_ast(inner))),
             TypeAST::PointeurVide => Type::PointeurVide,
             TypeAST::CInt => Type::Entier,
@@ -1643,7 +2338,7 @@ impl GénérateurIR {
             self.convertir_type_ir(&self.convertir_type_ast(rt))
         } else if let Some(symbole) = self.table.chercher(nom) {
             if let GenreSymbole::Fonction { type_retour, .. } = &symbole.genre {
-                IRType::from(type_retour)
+                self.convertir_type_ir(type_retour)
             } else {
                 IRType::Vide
             }
@@ -1917,19 +2612,23 @@ impl GénérateurIR {
                         .unwrap_or(Type::Liste(Box::new(Type::Entier)));
                     let type_itérable_ir = match &valeur_itérable {
                         IRValeur::Membre { type_membre, .. } => type_membre.clone(),
-                        _ => IRType::from(&type_itérable_src),
+                        _ => self.convertir_type_ir(&type_itérable_src),
                     };
                     let (type_élément_ir, type_élément_src) = match &type_itérable_src {
-                        Type::Dictionnaire(k, _) => (IRType::from(&*k.clone()), *k.clone()),
+                        Type::Dictionnaire(k, _) => {
+                            (self.convertir_type_ir(&*k.clone()), *k.clone())
+                        }
                         Type::Liste(t)
                         | Type::Tableau(t, _)
                         | Type::ListeChaînée(t)
-                        | Type::Ensemble(t) => (IRType::from(&*t.clone()), *t.clone()),
+                        | Type::Ensemble(t) => {
+                            (self.convertir_type_ir(&*t.clone()), *t.clone())
+                        }
                         Type::Texte => (IRType::Texte, Type::Texte),
                         _ => (IRType::Entier, Type::Inconnu),
                     };
                     let type_valeur_dict = match &type_itérable_src {
-                        Type::Dictionnaire(_, v) => Some(IRType::from(&*v.clone())),
+                        Type::Dictionnaire(_, v) => Some(self.convertir_type_ir(&*v.clone())),
                         _ => None,
                     };
                     let type_élément_src = match &type_élément_ir {
@@ -2174,7 +2873,7 @@ impl GénérateurIR {
                     })
                 };
                 let type_ir = if let Some(tl) = &type_local {
-                    IRType::from(tl)
+                    self.convertir_type_ir(tl)
                 } else {
                     self.type_pour_déclaration(nom, type_ann)
                 };
@@ -2343,9 +3042,31 @@ impl GénérateurIR {
             }
 
             ExprAST::AppelFonction {
-                appelé, arguments, ..
+                appelé,
+                arguments_type,
+                arguments,
+                ..
             } => match appelé.as_ref() {
                 ExprAST::Identifiant(n, _) => {
+                    if self.fonctions_génériques.contains_key(n) {
+                        if arguments_type.is_empty() {
+                            panic!(
+                                "Codegen générique non supporté: fournissez des arguments de type explicites pour '{}'",
+                                n
+                            );
+                        }
+                        let types_instanciés: Vec<Type> = arguments_type
+                            .iter()
+                            .map(|t| self.convertir_type_ast(t))
+                            .collect();
+                        let nom_instancié =
+                            self.assurer_instanciation_fonction(n, &types_instanciés);
+                        let args: Vec<IRValeur> = arguments
+                            .iter()
+                            .map(|a| self.générer_expression(a))
+                            .collect();
+                        return IRValeur::Appel(nom_instancié, args);
+                    }
                     if matches!(n.as_str(), "filtrer" | "transformer" | "mapper" | "somme" | "réduire") {
                         if let Some(appel_spécial) = self.générer_appel_module_liste(n, arguments) {
                             return appel_spécial;
@@ -2456,6 +3177,16 @@ impl GénérateurIR {
                                 }
                             } else {
                                 let nom_fn = match type_obj {
+                                    Type::Paramétré(classe, args)
+                                        if self.classes_génériques.contains_key(&classe) =>
+                                    {
+                                        let classe_instanciée =
+                                            self.assurer_instanciation_classe(&classe, &args);
+                                        let classe_impl = self
+                                            .classe_impl_méthode(&classe_instanciée, membre)
+                                            .unwrap_or(classe_instanciée);
+                                        format!("{}_{}", classe_impl, membre)
+                                    }
                                     Type::Classe(classe, _) | Type::Paramétré(classe, _) => {
                                         let classe_impl = self
                                             .classe_impl_méthode(&classe, membre)
@@ -2782,7 +3513,10 @@ impl GénérateurIR {
                 }
             }
             ExprAST::Nouveau {
-                classe, arguments, ..
+                classe,
+                arguments_type,
+                arguments,
+                ..
             } => {
                 if classe == "pile" {
                     return IRValeur::Appel("gal_pile_nouveau".to_string(), vec![IRValeur::Entier(8)]);
@@ -2798,6 +3532,25 @@ impl GénérateurIR {
                 }
                 if classe == "dictionnaire" {
                     return IRValeur::Appel("gal_dictionnaire_nouveau".to_string(), vec![]);
+                }
+                if self.classes_génériques.contains_key(classe) {
+                    if arguments_type.is_empty() {
+                        panic!(
+                            "Codegen générique non supporté: fournissez des arguments de type explicites pour la classe '{}'",
+                            classe
+                        );
+                    }
+                    let types_instanciés: Vec<Type> = arguments_type
+                        .iter()
+                        .map(|t| self.convertir_type_ast(t))
+                        .collect();
+                    let classe_instanciée =
+                        self.assurer_instanciation_classe(classe, &types_instanciés);
+                    let args: Vec<IRValeur> = arguments
+                        .iter()
+                        .map(|a| self.générer_expression(a))
+                        .collect();
+                    return IRValeur::Appel(format!("{}_constructeur", classe_instanciée), args);
                 }
                 let args: Vec<IRValeur> = arguments
                     .iter()

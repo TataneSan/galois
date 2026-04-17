@@ -240,19 +240,7 @@ impl Parser {
         }
 
         let nom = self.lire_identifiant("Attendu nom de fonction")?;
-
-        if self.token_actuel() == &Token::Inférieur {
-            self.avancer();
-            loop {
-                self.lire_identifiant("Attendu paramètre de type")?;
-                if self.token_actuel() == &Token::Virgule {
-                    self.avancer();
-                } else {
-                    break;
-                }
-            }
-            self.attendre(&Token::Supérieur, "Attendu '>' après paramètres de type")?;
-        }
+        let paramètres_type = self.parser_paramètres_type_déclaration()?;
 
         self.attendre(
             &Token::ParenthèseOuvrante,
@@ -274,6 +262,7 @@ impl Parser {
 
         Ok(DéclarationFonctionAST {
             nom,
+            paramètres_type,
             paramètres,
             type_retour,
             corps,
@@ -1166,6 +1155,7 @@ impl Parser {
                         "contient".to_string(),
                         position.clone(),
                     )),
+                    arguments_type: Vec::new(),
                     arguments: vec![droite, gauche],
                     position,
                 };
@@ -1241,6 +1231,7 @@ impl Parser {
                     "intervalle".to_string(),
                     position.clone(),
                 )),
+                arguments_type: Vec::new(),
                 arguments: vec![gauche, droite],
                 position,
             };
@@ -1350,9 +1341,17 @@ impl Parser {
 
     fn parser_appel(&mut self) -> Resultat<ExprAST> {
         let mut expr = self.parser_primaire()?;
+        let mut arguments_type_en_attente: Option<Vec<TypeAST>> = None;
 
         loop {
             match self.token_actuel() {
+                Token::Inférieur if arguments_type_en_attente.is_none() => {
+                    if let Some(arguments_type) = self.essayer_parser_arguments_type_appel()? {
+                        arguments_type_en_attente = Some(arguments_type);
+                        continue;
+                    }
+                    break;
+                }
                 Token::ParenthèseOuvrante => {
                     let position = self.position_actuelle();
                     self.avancer();
@@ -1371,6 +1370,7 @@ impl Parser {
                     }
                     expr = ExprAST::AppelFonction {
                         appelé: Box::new(expr),
+                        arguments_type: arguments_type_en_attente.take().unwrap_or_default(),
                         arguments,
                         position,
                     };
@@ -1464,6 +1464,29 @@ impl Parser {
         Ok(expr)
     }
 
+    fn essayer_parser_arguments_type_appel(&mut self) -> Resultat<Option<Vec<TypeAST>>> {
+        if self.token_actuel() != &Token::Inférieur {
+            return Ok(None);
+        }
+
+        let sauvegarde = self.position;
+        let arguments_type = match self.parser_arguments_type() {
+            Ok(arguments_type) => arguments_type,
+            Err(_) => {
+                self.position = sauvegarde;
+                return Ok(None);
+            }
+        };
+
+        self.sauter_trivia();
+        if self.token_actuel() != &Token::ParenthèseOuvrante {
+            self.position = sauvegarde;
+            return Ok(None);
+        }
+
+        Ok(Some(arguments_type))
+    }
+
     fn parser_primaire(&mut self) -> Resultat<ExprAST> {
         let position = self.position_actuelle();
 
@@ -1505,7 +1528,7 @@ impl Parser {
                     classe.push_str(&self.lire_identifiant("Attendu nom après '.'")?);
                 }
 
-                self.sauter_paramètres_génériques()?;
+                let arguments_type = self.parser_arguments_type_optionnels()?;
 
                 if self.token_actuel() == &Token::AccoladeOuvrante {
                     self.avancer();
@@ -1523,6 +1546,7 @@ impl Parser {
                     self.attendre(&Token::AccoladeFermante, "Attendu '}'")?;
                     return Ok(ExprAST::Nouveau {
                         classe,
+                        arguments_type,
                         arguments,
                         position,
                     });
@@ -1544,6 +1568,7 @@ impl Parser {
                 }
                 Ok(ExprAST::Nouveau {
                     classe,
+                    arguments_type,
                     arguments,
                     position,
                 })

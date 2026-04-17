@@ -231,4 +231,8 @@ pub struct IRModule {
 }
 
 pub mod generator;
+pub mod optimisations;
 pub use generator::GénérateurIR;
+pub use optimisations::{
+    appliquer_élimination_code_mort, appliquer_optimisations_ir, appliquer_pliage_constantes,
+};

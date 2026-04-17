@@ -55,22 +55,32 @@ Devrait afficher :
 ```
 Galois - Compilateur de langage de programmation en français
 
-UTILISATION: galois <commande> [options]
+USAGE:
+  galois <commande> [arguments] [options]
 
 COMMANDES:
-  build, b <fichier> [-o sortie] [--release]  Compiler vers exécutable natif
-  run, r <fichier> [--release]                 Compiler et exécuter
-  repl [--release]                             Lancer une boucle REPL
-  compiler, comp, c <fichier> [-o sortie]     Compiler vers LLVM IR
-  init, nouveau <nom>                         Créer un nouveau projet
+  build, b <fichier> [-o sortie] [--release|-r]       Compiler vers exécutable natif
+  run, r <fichier> [--release|-r]                     Compiler et exécuter
+  repl [--release|-r]                                 Lancer une boucle REPL
+  compiler, comp, c <fichier> [-o sortie]             Compiler vers LLVM IR
+  init, nouveau <nom|chemin|.>                Créer un nouveau projet
   add, ajouter <paquet> [version]             Ajouter une dépendance
+  upgrade, maj <paquet> <version>             Mettre à jour une dépendance
+  lock, verrou                                Régénérer galois.lock
   lexer, lex <fichier>                        Afficher les tokens
   parser, parse, p <fichier>                  Afficher l'AST
-  vérifier, v <fichier>                       Vérifier les types
+  vérifier, verifier, v <fichier>             Vérifier les types
   ir <fichier>                                Afficher l'IR
   doc, documentation <fichier> [-o sortie]    Générer la documentation HTML
-  debug, débogue <fichier>                    Lancer le débogueur
-  aide, help                                  Afficher cette aide
+  debug, débogue, debogue <fichier>           Lancer le débogueur
+  aide, help, -h, --help                      Afficher cette aide
+  version, -V, --version                      Afficher la version
+
+OPTIONS (portée commande):
+  -o, --output <fichier>  Fichier de sortie (build/compiler/doc)
+  -r, --release           Optimisations (build/run/repl)
+  -h, --help              Aide globale
+  -V, --version           Version globale
 ```
 
 ## Dépendances runtime

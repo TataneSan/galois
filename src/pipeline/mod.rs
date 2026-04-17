@@ -3,7 +3,7 @@ mod etapes;
 
 use crate::codegen::GénérateurLLVM;
 use crate::error::{Diagnostics, Erreur, Position, Resultat, Snippet};
-use crate::ir::{GénérateurIR, IRModule};
+use crate::ir::{appliquer_optimisations_ir, GénérateurIR, IRModule};
 use crate::lexer::Scanner;
 use crate::parser::{Parser, ProgrammeAST};
 use crate::semantic::symbols::TableSymboles;
@@ -124,7 +124,8 @@ impl Pipeline {
 
         let table = vérificateur.table.clone();
         let mut générateur = GénérateurIR::nouveau(table.clone());
-        let module_ir = générateur.générer(&programme);
+        let mut module_ir = générateur.générer(&programme);
+        appliquer_optimisations_ir(&mut module_ir);
 
         Ok(RésultatPipeline {
             résultat: module_ir,

@@ -114,8 +114,10 @@
 | `fonction` | Déclaration de fonction |
 | `retourne` | Retour de fonction |
 | `récursif` | Fonction récursive |
-| `asynchrone` | Fonction asynchrone (non implémenté) |
-| `attends` | Attente asynchrone (non implémenté) |
+| `asynchrone` | Fonction asynchrone (MVP synchrone) |
+| `attends` | Attente asynchrone (MVP synchrone, seulement en contexte async) |
+
+> Limites actuelles : `asynchrone`/`attends` sont abaissés de manière synchrone (pas de scheduler ni d'exécution concurrente).
 
 ### Déclarations
 
@@ -688,6 +690,13 @@ sélectionner valeur
 fin
 ```
 
+### Couverture et atteignabilité
+
+- Pour les `sélectionner` sur `booléen`, la vérification signale un cas non exhaustif si `vrai`/`faux` ne sont pas couverts (et sans `pardéfaut`).
+- Un `cas` placé après un motif générique (`cas _`, `cas nom`) est signalé comme inatteignable.
+- Un littéral déjà couvert par un `cas` précédent est signalé comme redondant.
+- Les diagnostics proposent une correction (ajouter un `cas` manquant, ajouter `pardéfaut`, supprimer/déplacer un `cas`).
+
 ---
 
 ## FFI - Interface avec C
@@ -959,6 +968,8 @@ résultat.afficher_diagnostics();
 
 ### Codes d'Erreur
 
+Codes génériques (par défaut):
+
 | Code | Type | Description |
 |------|------|-------------|
 | E001 | Lexicale | Erreur lors de l'analyse lexicale |
@@ -966,6 +977,26 @@ résultat.afficher_diagnostics();
 | E003 | Sémantique | Erreur sémantique |
 | E004 | Type | Erreur de typage |
 | E005 | Runtime | Erreur d'exécution |
+
+Codes spécifiques courants (package/manifeste):
+
+| Code | Domaine | Description |
+|------|---------|-------------|
+| E510 | Package | `galois init`: collision avec un fichier existant |
+| E511 | Package | `galois init`: répertoire cible non vide |
+| E512 | Package | `galois init`: inspection de la cible impossible (permissions/accès) |
+| E516 | Package | `galois add`: `galois.toml` absent |
+| E519 | Manifeste | Ligne TOML invalide |
+| E520 | Manifeste | Section `[package]` manquante |
+| E521 | Manifeste | Champ obligatoire manquant |
+| E522 | Lockfile | `galois.lock` absent |
+| E525 | Lockfile | Lockfile invalide/corrompu |
+| E527 | Lockfile | Version de lockfile non supportée |
+| E528 | Package | `galois init`: nom/chemin cible invalide |
+| E529 | Package | Nom de dépendance invalide |
+| E530 | Package | Contrainte de version invalide |
+| E531 | Package | Conflit de version sur `galois add` |
+| E532 | Package | `galois upgrade`: dépendance absente |
 
 ### Codes d'Avertissement
 
@@ -1000,27 +1031,33 @@ Le compilateur collecte plusieurs erreurs avant de s'arrêter, permettant de voi
 
 ### Commandes
 
-| Commande | Raccourci | Description |
-|----------|-----------|-------------|
+| Commande | Alias | Description |
+|----------|-------|-------------|
 | `build` | `b` | Compiler vers exécutable |
 | `run` | `r` | Compiler et exécuter |
-| `compiler` | `c` | Compiler vers LLVM IR |
-| `init` | - | Créer un nouveau projet |
-| `add` | - | Ajouter une dépendance |
+| `repl` | - | Lancer la boucle interactive |
+| `compiler` | `comp`, `c` | Compiler vers LLVM IR |
+| `init` | `nouveau` | Créer un nouveau projet |
+| `add` | `ajouter` | Ajouter une dépendance |
+| `upgrade` | `maj` | Mettre à jour une dépendance |
+| `lock` | `verrou` | Régénérer `galois.lock` |
 | `lexer` | `lex` | Afficher les tokens |
-| `parser` | `p` | Afficher l'AST |
-| `vérifier` | `v` | Vérifier les types |
+| `parser` | `parse`, `p` | Afficher l'AST |
+| `vérifier` | `verifier`, `v` | Vérifier les types |
 | `ir` | - | Afficher l'IR |
-| `doc` | - | Générer la documentation |
-| `debug` | - | Compiler avec debug |
+| `doc` | `documentation` | Générer la documentation |
+| `debug` | `débogue`, `debogue` | Compiler avec debug |
+| `aide` | `help`, `-h`, `--help` | Afficher l'aide CLI |
+| `version` | `-V`, `--version` | Afficher la version CLI |
 
 ### Options
 
 | Option | Description |
 |--------|-------------|
-| `-o, --output <fichier>` | Fichier de sortie |
-| `-r, --release` | Optimisations (-O3, strip) |
-| `--keep` | Garder les fichiers intermédiaires |
+| `-o, --output <fichier>` | Fichier de sortie (`build`, `compiler`, `doc`) |
+| `-r, --release` | Optimisations (`build`, `run`, `repl`) |
+| `-h, --help` | Aide globale |
+| `-V, --version` | Version globale |
 
 ### Exemples
 
@@ -1037,7 +1074,10 @@ galois run programme.gal
 # Création de projet
 galois init mon_projet
 cd mon_projet
-galois build
+galois build src/main.gal
+
+# Initialisation du dossier courant (vide)
+galois init .
 
 # Débogage
 galois lexer programme.gal

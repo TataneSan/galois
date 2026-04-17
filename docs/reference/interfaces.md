@@ -14,6 +14,9 @@ interface Comparable<T>
 fin
 ```
 
+L'arité des paramètres de type est vérifiée lors de l'utilisation des interfaces
+(`Comparable<Nombre, Texte>` est refusé).
+
 ## Implémentation
 
 Une classe implémente une interface avec `implémente` :
@@ -61,6 +64,9 @@ classe Nombre implémente Affichable, Comparable<Nombre>
     fin
 fin
 ```
+
+> Limite actuelle : les arguments de type d'interface sont validés au typage
+> (syntaxe + arité), mais les contraintes avancées ne sont pas encore supportées.
 
 ## Interface comme type
 

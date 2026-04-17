@@ -103,6 +103,16 @@ sélectionner valeur
 fin
 ```
 
+### Analyse de couverture des `cas`
+
+Le vérificateur signale désormais :
+
+- une **sélection non exhaustive** pour les domaines finis simples (notamment `booléen`) quand des valeurs manquent et qu'il n'y a pas de `pardéfaut`;
+- les **cas inatteignables** placés après un motif générique (`cas _`, `cas nom`) ou après une couverture déjà complète;
+- les **cas redondants** qui répètent un littéral déjà couvert.
+
+Les diagnostics incluent une suggestion (ajouter un `cas` manquant, un `pardéfaut`, ou supprimer/déplacer le cas redondant).
+
 ## Interrompre et continuer
 
 ### `interrompre`

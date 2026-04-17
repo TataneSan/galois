@@ -65,7 +65,10 @@ galois run programme.gal
 ```bash
 galois init mon_projet
 cd mon_projet
-galois run principal.gal
+galois run src/main.gal
+
+# Ou initialiser le dossier courant (s'il est vide)
+galois init .
 ```
 
 ### Inspecter le code
@@ -152,9 +155,36 @@ src/
 ## Documentation
 
 - [Référence complète du langage](docs/reference/langage.md)
-- [Architecture du compilateur](docs/ARCHITECTURE.md)
+- [Architecture du compilateur](docs/architecture.md)
 - [Diagnostics et erreurs](docs/reference/diagnostics.md)
 - [Démarrage rapide](docs/guides/demarrage.md)
+
+## Benchmarks
+
+Le dépôt inclut une suite Criterion couvrant des charges déterministes :
+
+- **Compilation** : chemin `Pipeline::llvm` sur un programme Galois généré de façon stable
+- **Runtime** : opérations de collections (`Liste`) et cycle allocation/collecte du GC
+
+```bash
+cargo bench --bench benchmark_suite
+
+# smoke rapide (utile en CI/local)
+cargo bench --bench benchmark_suite -- --quick
+```
+
+Criterion affiche un résumé clair (`time`, `thrpt`) et conserve l'historique dans `target/criterion/`.
+
+## Checklist qualité avant release
+
+Avant chaque publication, exécuter les garde-fous suivants :
+
+1. **Tests Rust** : `cargo test --quiet`
+2. **Validation des exemples + cohérence docs/code** : `python3 test_docs.py`
+   - exemples de blocs `galois` des docs ;
+   - tableaux CLI commandes/options (`docs/reference/cli.md`) ;
+   - codes diagnostics (`docs/reference/diagnostics.md`) ;
+   - champs `[package]` (`docs/reference/paquets.md`).
 
 ## Licence
 

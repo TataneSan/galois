@@ -102,6 +102,50 @@ impl Parser {
         Ok(())
     }
 
+    pub(super) fn parser_paramètres_type_déclaration(&mut self) -> Resultat<Vec<String>> {
+        if self.token_actuel() != &Token::Inférieur {
+            return Ok(Vec::new());
+        }
+
+        self.avancer();
+        let mut paramètres = Vec::new();
+        loop {
+            paramètres.push(self.lire_identifiant("Attendu paramètre de type")?);
+            if self.token_actuel() == &Token::Virgule {
+                self.avancer();
+            } else {
+                break;
+            }
+        }
+        self.attendre(&Token::Supérieur, "Attendu '>' après paramètres de type")?;
+        Ok(paramètres)
+    }
+
+    pub(super) fn parser_arguments_type(&mut self) -> Resultat<Vec<TypeAST>> {
+        self.attendre(&Token::Inférieur, "Attendu '<' avant arguments de type")?;
+
+        let mut arguments = Vec::new();
+        loop {
+            arguments.push(self.parser_type()?);
+            if self.token_actuel() == &Token::Virgule {
+                self.avancer();
+            } else {
+                break;
+            }
+        }
+
+        self.attendre(&Token::Supérieur, "Attendu '>' après arguments de type")?;
+        Ok(arguments)
+    }
+
+    pub(super) fn parser_arguments_type_optionnels(&mut self) -> Resultat<Vec<TypeAST>> {
+        if self.token_actuel() == &Token::Inférieur {
+            self.parser_arguments_type()
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
     pub(super) fn parser_corps_lambda(&mut self, position: &Position) -> Resultat<ExprAST> {
         if self.token_actuel() == &Token::NouvelleLigne {
             self.sauter_nouvelles_lignes();

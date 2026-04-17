@@ -124,6 +124,26 @@ fin
 
 Le mot-clé `attends` attend le résultat d'une opération asynchrone.
 
+MVP actuel (abaissement synchrone) :
+
+- `attends` est autorisé uniquement dans une fonction `asynchrone`.
+- Les types de `retourne` sont vérifiés dans les fonctions `asynchrone` comme dans les fonctions classiques.
+- L'exécution reste synchrone : pas de scheduler, pas de concurrence réelle, pas de type `Future/Promise` exposé.
+
+Exemple exécutable avec le comportement MVP :
+
+```galois
+asynchrone fonction incrémenter(x: entier): entier
+    retourne x + 1
+fin
+
+asynchrone fonction calculer(): entier
+    retourne attends(incrémenter(41))
+fin
+
+afficher(calculer())
+```
+
 ## Fonctions génériques
 
 Les fonctions peuvent être paramétrées par des types :
@@ -132,7 +152,16 @@ Les fonctions peuvent être paramétrées par des types :
 fonction identité<T>(x: T): T
     retourne x
 fin
+
+soit a = identité<entier>(42)   // arguments de type explicites
 ```
+
+Règles actuelles :
+
+- L'arité des arguments de type est vérifiée (`identité<entier, texte>(...)` est refusé).
+- Le backend IR/LLVM monomorphise les fonctions génériques utilisées avec arguments de type explicites.
+- L'inférence de type générique à l'appel (`identité(42)`) n'est pas supportée en codegen IR/LLVM : utilisez une instanciation explicite.
+- Les contraintes de type (`T: ...`) ne sont pas encore supportées.
 
 ## Appel de fonction
 

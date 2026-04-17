@@ -109,9 +109,12 @@ src/
 │   ├── gestionnaire.rs  # Gestion projets
 │   └── manifeste.rs     # galois.toml
 │
-└── pipeline/            # Pipeline de compilation
-    ├── mod.rs           # Pipeline principal
-    └── etapes.rs        # Étapes configurables
+├── pipeline/            # Pipeline de compilation
+│   ├── mod.rs           # Pipeline principal
+│   └── etapes.rs        # Étapes configurables
+│
+└── tooling/             # API outillage (base intégration LSP)
+    └── mod.rs           # Analyse lexer/parser/types + diagnostics structurés
 ```
 
 ## Structures de Données Principales

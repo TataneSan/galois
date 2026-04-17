@@ -26,8 +26,8 @@ use codegen::GénérateurLLVM;
 use compiler::{CompilateurNatif, OptionsCompilation};
 use debugger::{Débogueur, TableDebug};
 use doc::GénérateurDoc;
-use error::{Diagnostics, Resultat, Snippet};
-use ir::GénérateurIR;
+use error::{Diagnostics, Resultat, Snippet, SortieDiagnosticsJson};
+use ir::{appliquer_optimisations_ir, GénérateurIR};
 use lexer::Scanner;
 use package::GestionnairePaquets;
 use parser::Parser;
@@ -38,23 +38,29 @@ enum Commande {
         entrée: String,
         sortie: Option<String>,
         release: bool,
+        format_diagnostics: FormatDiagnostics,
     },
     Run {
         entrée: String,
         release: bool,
+        format_diagnostics: FormatDiagnostics,
     },
     Compiler {
         entrée: String,
         sortie: String,
+        format_diagnostics: FormatDiagnostics,
     },
     Lexer {
         entrée: String,
+        format_diagnostics: FormatDiagnostics,
     },
     Parser {
         entrée: String,
+        format_diagnostics: FormatDiagnostics,
     },
     Vérifier {
         entrée: String,
+        format_diagnostics: FormatDiagnostics,
     },
     IR {
         entrée: String,
@@ -66,6 +72,11 @@ enum Commande {
         nom: String,
         version: String,
     },
+    Upgrade {
+        nom: String,
+        version: String,
+    },
+    Lock,
     Doc {
         entrée: String,
         sortie: Option<String>,
@@ -77,36 +88,175 @@ enum Commande {
         release: bool,
     },
     Aide,
+    Version,
 }
 
-fn parser_args_fichier_et_sortie(args: &[String], index_départ: usize) -> (Option<String>, Option<String>) {
-    let mut entrée = None;
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FormatDiagnostics {
+    Humain,
+    Json,
+}
+
+impl FormatDiagnostics {
+    fn depuis_argument(commande: &str, valeur: &str) -> Self {
+        match valeur {
+            "humain" | "human" => Self::Humain,
+            "json" => Self::Json,
+            _ => quitter_sur_erreur_cli(
+                &format!(
+                    "format de diagnostics invalide `{}` pour `{}` (attendu: humain|json)",
+                    valeur, commande
+                ),
+                &format!("galois {} ... --diagnostics-format <humain|json>", commande),
+            ),
+        }
+    }
+}
+
+struct ArgumentsCommande {
+    positionnels: Vec<String>,
+    sortie: Option<String>,
+    release: bool,
+    format_diagnostics: FormatDiagnostics,
+}
+
+fn quitter_sur_erreur_cli(message: &str, usage: &str) -> ! {
+    eprintln!("Erreur: {message}");
+    if !usage.is_empty() {
+        eprintln!("Usage: {usage}");
+    }
+    eprintln!("Astuce: utilisez `galois --help`.");
+    process::exit(1);
+}
+
+fn signaler_option_invalide(commande: &str, option: &str) -> ! {
+    match option {
+        "-o" | "--output" => quitter_sur_erreur_cli(
+            &format!(
+                "l'option {option} n'est pas valable pour `{commande}` (utilisable avec build, compiler et doc)"
+            ),
+            &format!("galois {commande} ..."),
+        ),
+        "-r" | "--release" => quitter_sur_erreur_cli(
+            &format!(
+                "l'option {option} n'est pas valable pour `{commande}` (utilisable avec build, run et repl)"
+            ),
+            &format!("galois {commande} ..."),
+        ),
+        "--diagnostics-format" => quitter_sur_erreur_cli(
+            &format!(
+                "l'option {option} n'est pas valable pour `{commande}` (utilisable avec build, run, compiler, vérifier, parser et lexer)"
+            ),
+            &format!("galois {commande} ..."),
+        ),
+        _ => quitter_sur_erreur_cli(
+            &format!("option inconnue `{option}` pour `{commande}`"),
+            &format!("galois {commande} ..."),
+        ),
+    }
+}
+
+fn parser_arguments_commande(
+    commande: &str,
+    args: &[String],
+    autoriser_sortie: bool,
+    autoriser_release: bool,
+    autoriser_format_diagnostics: bool,
+) -> ArgumentsCommande {
+    let mut positionnels = Vec::new();
     let mut sortie = None;
-    let mut i = index_départ;
+    let mut release = false;
+    let mut format_diagnostics = FormatDiagnostics::Humain;
+    let mut i = 0;
 
     while i < args.len() {
         match args[i].as_str() {
             "-o" | "--output" => {
+                if !autoriser_sortie {
+                    signaler_option_invalide(commande, args[i].as_str());
+                }
                 if i + 1 >= args.len() {
-                    eprintln!("Erreur: valeur attendue après {}", args[i]);
-                    process::exit(1);
+                    quitter_sur_erreur_cli(
+                        &format!("valeur attendue après {}", args[i]),
+                        &format!("galois {commande} ..."),
+                    );
                 }
                 sortie = Some(args[i + 1].clone());
                 i += 2;
             }
-            arg if arg.starts_with('-') => {
+            "-r" | "--release" => {
+                if !autoriser_release {
+                    signaler_option_invalide(commande, args[i].as_str());
+                }
+                release = true;
                 i += 1;
             }
-            _ => {
-                if entrée.is_none() {
-                    entrée = Some(args[i].clone());
+            "--diagnostics-format" => {
+                if !autoriser_format_diagnostics {
+                    signaler_option_invalide(commande, "--diagnostics-format");
                 }
+                if i + 1 >= args.len() {
+                    quitter_sur_erreur_cli(
+                        "--diagnostics-format attend une valeur (humain|json)",
+                        &format!("galois {commande} ... --diagnostics-format <humain|json>"),
+                    );
+                }
+                format_diagnostics = FormatDiagnostics::depuis_argument(commande, &args[i + 1]);
+                i += 2;
+            }
+            arg if arg.starts_with("--diagnostics-format=") => {
+                if !autoriser_format_diagnostics {
+                    signaler_option_invalide(commande, "--diagnostics-format");
+                }
+                let valeur = arg
+                    .split_once('=')
+                    .map(|(_, valeur)| valeur)
+                    .unwrap_or_default();
+                if valeur.is_empty() {
+                    quitter_sur_erreur_cli(
+                        "--diagnostics-format attend une valeur (humain|json)",
+                        &format!("galois {commande} ... --diagnostics-format <humain|json>"),
+                    );
+                }
+                format_diagnostics = FormatDiagnostics::depuis_argument(commande, valeur);
+                i += 1;
+            }
+            arg if arg.starts_with('-') => {
+                signaler_option_invalide(commande, arg);
+            }
+            _ => {
+                positionnels.push(args[i].clone());
                 i += 1;
             }
         }
     }
 
-    (entrée, sortie)
+    ArgumentsCommande {
+        positionnels,
+        sortie,
+        release,
+        format_diagnostics,
+    }
+}
+
+fn valider_positionnels(
+    commande: &str,
+    positionnels: &[String],
+    minimum: usize,
+    maximum: usize,
+    message_manquant: &str,
+    usage: &str,
+) {
+    if positionnels.len() < minimum {
+        quitter_sur_erreur_cli(message_manquant, usage);
+    }
+    if positionnels.len() > maximum {
+        let inattendus = positionnels[maximum..].join(" ");
+        quitter_sur_erreur_cli(
+            &format!("arguments inattendus pour `{commande}`: {inattendus}"),
+            usage,
+        );
+    }
 }
 
 fn analyser_arguments() -> Commande {
@@ -117,121 +267,236 @@ fn analyser_arguments() -> Commande {
     }
 
     match args[1].as_str() {
+        "aide" | "help" | "-h" | "--help" => Commande::Aide,
+        "version" | "-V" | "--version" => Commande::Version,
         "build" | "b" => {
-            let (entrée_opt, sortie) = parser_args_fichier_et_sortie(&args, 2);
-            let Some(entrée) = entrée_opt else {
-                eprintln!("Erreur: fichier source requis");
-                process::exit(1);
-            };
-            let release = args.iter().any(|a| a == "--release" || a == "-r");
+            let analyse = parser_arguments_commande("build", &args[2..], true, true, true);
+            valider_positionnels(
+                "build",
+                &analyse.positionnels,
+                1,
+                1,
+                "fichier source requis",
+                "galois build <fichier.gal> [-o sortie] [--release|-r]",
+            );
             Commande::Build {
-                entrée,
-                sortie,
-                release,
+                entrée: analyse.positionnels[0].clone(),
+                sortie: analyse.sortie,
+                release: analyse.release,
+                format_diagnostics: analyse.format_diagnostics,
             }
         }
         "run" | "r" => {
-            let (entrée_opt, _) = parser_args_fichier_et_sortie(&args, 2);
-            let Some(entrée) = entrée_opt else {
-                eprintln!("Erreur: fichier source requis");
-                process::exit(1);
-            };
-            let release = args.iter().any(|a| a == "--release" || a == "-r");
-            Commande::Run { entrée, release }
+            let analyse = parser_arguments_commande("run", &args[2..], false, true, true);
+            valider_positionnels(
+                "run",
+                &analyse.positionnels,
+                1,
+                1,
+                "fichier source requis",
+                "galois run <fichier.gal> [--release|-r]",
+            );
+            Commande::Run {
+                entrée: analyse.positionnels[0].clone(),
+                release: analyse.release,
+                format_diagnostics: analyse.format_diagnostics,
+            }
         }
         "repl" => {
-            let release = args.iter().any(|a| a == "--release" || a == "-r");
-            Commande::Repl { release }
+            let analyse = parser_arguments_commande("repl", &args[2..], false, true, false);
+            valider_positionnels(
+                "repl",
+                &analyse.positionnels,
+                0,
+                0,
+                "la commande repl n'accepte pas d'argument positionnel",
+                "galois repl [--release|-r]",
+            );
+            Commande::Repl {
+                release: analyse.release,
+            }
         }
         "compiler" | "comp" | "c" => {
-            let (entrée_opt, sortie_opt) = parser_args_fichier_et_sortie(&args, 2);
-            let Some(entrée) = entrée_opt else {
-                eprintln!("Erreur: fichier source requis");
-                process::exit(1);
-            };
-            let sortie = if let Some(sortie) = sortie_opt {
+            let analyse = parser_arguments_commande("compiler", &args[2..], true, false, true);
+            valider_positionnels(
+                "compiler",
+                &analyse.positionnels,
+                1,
+                1,
+                "fichier source requis",
+                "galois compiler <fichier.gal> [-o sortie.ll]",
+            );
+            let entrée = analyse.positionnels[0].clone();
+            let sortie = if let Some(sortie) = analyse.sortie {
                 sortie
             } else {
                 let chemin = Path::new(&entrée);
                 chemin.with_extension("ll").to_string_lossy().to_string()
             };
-            Commande::Compiler { entrée, sortie }
+            Commande::Compiler {
+                entrée,
+                sortie,
+                format_diagnostics: analyse.format_diagnostics,
+            }
         }
         "lexer" | "lex" => {
-            if args.len() < 3 {
-                eprintln!("Erreur: fichier source requis");
-                process::exit(1);
-            }
+            let analyse = parser_arguments_commande("lexer", &args[2..], false, false, true);
+            valider_positionnels(
+                "lexer",
+                &analyse.positionnels,
+                1,
+                1,
+                "fichier source requis",
+                "galois lexer <fichier.gal>",
+            );
             Commande::Lexer {
-                entrée: args[2].clone(),
+                entrée: analyse.positionnels[0].clone(),
+                format_diagnostics: analyse.format_diagnostics,
             }
         }
         "parser" | "parse" | "p" => {
-            if args.len() < 3 {
-                eprintln!("Erreur: fichier source requis");
-                process::exit(1);
-            }
+            let analyse = parser_arguments_commande("parser", &args[2..], false, false, true);
+            valider_positionnels(
+                "parser",
+                &analyse.positionnels,
+                1,
+                1,
+                "fichier source requis",
+                "galois parser <fichier.gal>",
+            );
             Commande::Parser {
-                entrée: args[2].clone(),
+                entrée: analyse.positionnels[0].clone(),
+                format_diagnostics: analyse.format_diagnostics,
             }
         }
         "vérifier" | "verifier" | "v" => {
-            if args.len() < 3 {
-                eprintln!("Erreur: fichier source requis");
-                process::exit(1);
-            }
+            let analyse = parser_arguments_commande("vérifier", &args[2..], false, false, true);
+            valider_positionnels(
+                "vérifier",
+                &analyse.positionnels,
+                1,
+                1,
+                "fichier source requis",
+                "galois vérifier <fichier.gal>",
+            );
             Commande::Vérifier {
-                entrée: args[2].clone(),
+                entrée: analyse.positionnels[0].clone(),
+                format_diagnostics: analyse.format_diagnostics,
             }
         }
         "ir" => {
-            if args.len() < 3 {
-                eprintln!("Erreur: fichier source requis");
-                process::exit(1);
-            }
+            let analyse = parser_arguments_commande("ir", &args[2..], false, false, false);
+            valider_positionnels(
+                "ir",
+                &analyse.positionnels,
+                1,
+                1,
+                "fichier source requis",
+                "galois ir <fichier.gal>",
+            );
             Commande::IR {
-                entrée: args[2].clone(),
+                entrée: analyse.positionnels[0].clone(),
             }
         }
-        "aide" | "help" | "-h" | "--help" => Commande::Aide,
         "init" | "nouveau" => {
-            if args.len() < 3 {
-                eprintln!("Erreur: nom du projet requis");
-                process::exit(1);
-            }
+            let analyse = parser_arguments_commande("init", &args[2..], false, false, false);
+            valider_positionnels(
+                "init",
+                &analyse.positionnels,
+                1,
+                1,
+                "nom ou chemin du projet requis",
+                "galois init <nom_ou_chemin>",
+            );
             Commande::Init {
-                nom: args[2].clone(),
+                nom: analyse.positionnels[0].clone(),
             }
         }
         "add" | "ajouter" => {
-            if args.len() < 3 {
-                eprintln!("Erreur: nom du paquet requis");
-                process::exit(1);
-            }
-            let nom = args[2].clone();
-            let version = args.get(3).cloned().unwrap_or_else(|| "*".to_string());
+            let analyse = parser_arguments_commande("add", &args[2..], false, false, false);
+            valider_positionnels(
+                "add",
+                &analyse.positionnels,
+                1,
+                2,
+                "nom du paquet requis",
+                "galois add <nom_du_paquet> [version]",
+            );
+            let nom = analyse.positionnels[0].clone();
+            let version = analyse
+                .positionnels
+                .get(1)
+                .cloned()
+                .unwrap_or_else(|| "*".to_string());
             Commande::Add { nom, version }
         }
+        "upgrade" | "maj" => {
+            let analyse = parser_arguments_commande("upgrade", &args[2..], false, false, false);
+            valider_positionnels(
+                "upgrade",
+                &analyse.positionnels,
+                2,
+                2,
+                "nom du paquet et version requis",
+                "galois upgrade <nom_du_paquet> <version>",
+            );
+            Commande::Upgrade {
+                nom: analyse.positionnels[0].clone(),
+                version: analyse.positionnels[1].clone(),
+            }
+        }
+        "lock" | "verrou" => {
+            let analyse = parser_arguments_commande("lock", &args[2..], false, false, false);
+            valider_positionnels(
+                "lock",
+                &analyse.positionnels,
+                0,
+                0,
+                "la commande lock n'accepte pas d'argument",
+                "galois lock",
+            );
+            Commande::Lock
+        }
         "doc" | "documentation" => {
-            let (entrée_opt, sortie) = parser_args_fichier_et_sortie(&args, 2);
-            let Some(entrée) = entrée_opt else {
-                eprintln!("Erreur: fichier source requis");
-                process::exit(1);
-            };
-            Commande::Doc { entrée, sortie }
+            let analyse = parser_arguments_commande("doc", &args[2..], true, false, false);
+            valider_positionnels(
+                "doc",
+                &analyse.positionnels,
+                1,
+                1,
+                "fichier source requis",
+                "galois doc <fichier.gal> [-o sortie]",
+            );
+            Commande::Doc {
+                entrée: analyse.positionnels[0].clone(),
+                sortie: analyse.sortie,
+            }
         }
         "debug" | "débogue" | "debogue" => {
-            if args.len() < 3 {
-                eprintln!("Erreur: fichier source requis");
-                process::exit(1);
-            }
+            let analyse = parser_arguments_commande("debug", &args[2..], false, false, false);
+            valider_positionnels(
+                "debug",
+                &analyse.positionnels,
+                1,
+                1,
+                "fichier source requis",
+                "galois debug <fichier.gal>",
+            );
             Commande::Debug {
-                entrée: args[2].clone(),
+                entrée: analyse.positionnels[0].clone(),
             }
         }
+        option if option.starts_with('-') => {
+            quitter_sur_erreur_cli(
+                &format!("option globale inconnue `{option}`"),
+                "galois <commande> [arguments] [options]",
+            );
+        }
         _ => {
-            eprintln!("Commande inconnue: {}", args[1]);
-            process::exit(1);
+            quitter_sur_erreur_cli(
+                &format!("Commande inconnue: {}", args[1]),
+                "galois <commande> [arguments] [options]",
+            );
         }
     }
 }
@@ -255,6 +520,22 @@ fn extraire_snippet(
     Snippet::nouveau(ligne_source, ligne, colonne_début, colonne_fin)
 }
 
+fn enrichir_spans_secondaires_avec_snippets(
+    spans_secondaires: &mut [error::SpanSecondaire],
+    source: &str,
+) {
+    for span in spans_secondaires {
+        if span.snippet.is_none() {
+            span.snippet = Some(extraire_snippet(
+                source,
+                span.position.ligne,
+                span.position.colonne,
+                span.position.colonne,
+            ));
+        }
+    }
+}
+
 fn enrichir_erreur_avec_snippet(mut erreur: error::Erreur, source: &str) -> error::Erreur {
     if erreur.snippet.is_none() {
         let snippet = extraire_snippet(
@@ -265,10 +546,41 @@ fn enrichir_erreur_avec_snippet(mut erreur: error::Erreur, source: &str) -> erro
         );
         erreur.snippet = Some(snippet);
     }
+    enrichir_spans_secondaires_avec_snippets(&mut erreur.spans_secondaires, source);
     erreur
 }
 
-fn afficher_diagnostics(diagnostics: &Diagnostics, source: &str) {
+fn enrichir_diagnostics_avec_snippets(diagnostics: &Diagnostics, source: &str) -> Diagnostics {
+    let mut diagnostics_enrichis = diagnostics.clone();
+
+    for warning in &mut diagnostics_enrichis.warnings {
+        if warning.snippet.is_none() {
+            warning.snippet = Some(extraire_snippet(
+                source,
+                warning.position.ligne,
+                warning.position.colonne,
+                warning.position.colonne,
+            ));
+        }
+        enrichir_spans_secondaires_avec_snippets(&mut warning.spans_secondaires, source);
+    }
+
+    for erreur in &mut diagnostics_enrichis.erreurs {
+        if erreur.snippet.is_none() {
+            erreur.snippet = Some(extraire_snippet(
+                source,
+                erreur.position.ligne,
+                erreur.position.colonne,
+                erreur.position.colonne,
+            ));
+        }
+        enrichir_spans_secondaires_avec_snippets(&mut erreur.spans_secondaires, source);
+    }
+
+    diagnostics_enrichis
+}
+
+fn afficher_diagnostics_humains(diagnostics: &Diagnostics, source: &str) {
     for warning in &diagnostics.warnings {
         let mut w = warning.clone();
         if w.snippet.is_none() {
@@ -283,42 +595,97 @@ fn afficher_diagnostics(diagnostics: &Diagnostics, source: &str) {
     }
 }
 
+fn afficher_diagnostics_json(diagnostics: &Diagnostics, source: &str) {
+    let diagnostics_enrichis = enrichir_diagnostics_avec_snippets(diagnostics, source);
+    let sortie = SortieDiagnosticsJson::depuis_diagnostics(&diagnostics_enrichis);
+
+    if let Ok(json) = serde_json::to_string(&sortie) {
+        eprintln!("{}", json);
+    }
+}
+
+fn afficher_diagnostics(diagnostics: &Diagnostics, source: &str, format: FormatDiagnostics) {
+    match format {
+        FormatDiagnostics::Humain => afficher_diagnostics_humains(diagnostics, source),
+        FormatDiagnostics::Json => {
+            if diagnostics.a_warnings() || diagnostics.a_erreurs() {
+                afficher_diagnostics_json(diagnostics, source);
+            }
+        }
+    }
+}
+
+fn afficher_erreur(erreur: &error::Erreur, format: FormatDiagnostics) {
+    match format {
+        FormatDiagnostics::Humain => eprintln!("{}", erreur),
+        FormatDiagnostics::Json => {
+            let sortie = SortieDiagnosticsJson::depuis_erreur(erreur);
+            if let Ok(json) = serde_json::to_string(&sortie) {
+                eprintln!("{}", json);
+            } else {
+                eprintln!("{}", erreur);
+            }
+        }
+    }
+}
+
 fn afficher_aide() {
     println!("Galois - Compilateur de langage de programmation en français");
     println!();
     println!("USAGE:");
-    println!("  galois <commande> [options]");
+    println!("  galois <commande> [arguments] [options]");
     println!();
     println!("COMMANDES:");
-    println!("  build, b <fichier> [-o sortie] [--release]  Compiler vers exécutable natif");
-    println!("  run, r <fichier> [--release]                 Compiler et exécuter");
-    println!("  repl [--release]                             Lancer une boucle REPL");
-    println!("  compiler, comp, c <fichier> [-o sortie]     Compiler vers LLVM IR");
-    println!("  init, nouveau <nom>                         Créer un nouveau projet");
+    println!("  build, b <fichier> [-o sortie] [--release|-r]       Compiler vers exécutable natif");
+    println!("  run, r <fichier> [--release|-r]                     Compiler et exécuter");
+    println!("  repl [--release|-r]                                 Lancer une boucle REPL");
+    println!("  compiler, comp, c <fichier> [-o sortie]             Compiler vers LLVM IR");
+    println!("  init, nouveau <nom|chemin|.>                Créer un nouveau projet");
     println!("  add, ajouter <paquet> [version]             Ajouter une dépendance");
+    println!("  upgrade, maj <paquet> <version>             Mettre à jour une dépendance");
+    println!("  lock, verrou                                Régénérer galois.lock");
     println!("  lexer, lex <fichier>                        Afficher les tokens");
     println!("  parser, parse, p <fichier>                  Afficher l'AST");
-    println!("  vérifier, v <fichier>                       Vérifier les types");
+    println!("  vérifier, verifier, v <fichier>             Vérifier les types");
     println!("  ir <fichier>                                Afficher l'IR");
     println!("  doc, documentation <fichier> [-o sortie]    Générer la documentation HTML");
-    println!("  debug, débogue <fichier>                    Lancer le débogueur");
-    println!("  aide, help                                  Afficher cette aide");
+    println!("  debug, débogue, debogue <fichier>           Lancer le débogueur");
+    println!("  aide, help, -h, --help                      Afficher cette aide");
+    println!("  version, -V, --version                      Afficher la version");
     println!();
-    println!("OPTIONS:");
-    println!("  -o, --output <fichier>  Fichier de sortie");
-    println!("  -r, --release           Optimisations (-O3, strip)");
-    println!("  --keep                  Garder les fichiers intermédiaires");
+    println!("OPTIONS (portée commande):");
+    println!("  -o, --output <fichier>  Fichier de sortie (build/compiler/doc)");
+    println!("  -r, --release           Optimisations (build/run/repl)");
+    println!(
+        "  --diagnostics-format <humain|json>  Format des diagnostics (build/run/compiler/vérifier/parser/lexer)"
+    );
+    println!("  -h, --help              Aide globale");
+    println!("  -V, --version           Version globale");
+    println!();
+    println!("CODES DE SORTIE:");
+    println!("  0  Succès (ou affichage de l'aide/version)");
+    println!("  1  Erreur CLI, compilation ou exécution");
+    println!("  run propage le code de sortie du programme exécuté");
     println!();
     println!("EXEMPLES:");
     println!("  galois init mon_projet");
+    println!("  galois init .");
     println!("  galois build programme.gal");
+    println!("  galois build programme.gal --diagnostics-format json");
     println!("  galois build programme.gal --release -o app");
     println!("  galois run programme.gal");
     println!("  galois repl");
     println!("  galois add maths 1.0");
+    println!("  galois upgrade maths 2.0.0");
+    println!("  galois lock");
     println!("  galois compiler programme.gal -o programme.ll");
     println!("  galois lexer programme.gal");
     println!("  galois parser programme.gal");
+    println!("  galois --version");
+}
+
+fn afficher_version() {
+    println!("galois {}", env!("CARGO_PKG_VERSION"));
 }
 
 fn identifiant_temporaire(préfixe: &str, extension: Option<&str>) -> PathBuf {
@@ -383,7 +750,8 @@ fn pipeline_llvm(chemin: &str) -> Resultat<RésultatPipeline<Vec<u8>>> {
 
     let table = vérificateur.table.clone();
     let mut générateur_ir = GénérateurIR::nouveau(table);
-    let module_ir = générateur_ir.générer(&programme);
+    let mut module_ir = générateur_ir.générer(&programme);
+    appliquer_optimisations_ir(&mut module_ir);
 
     let mut générateur_llvm = GénérateurLLVM::nouveau();
     Ok(RésultatPipeline {
@@ -392,11 +760,16 @@ fn pipeline_llvm(chemin: &str) -> Resultat<RésultatPipeline<Vec<u8>>> {
     })
 }
 
-fn exécuter_build(chemin: &str, sortie: Option<String>, release: bool) -> Resultat<()> {
+fn exécuter_build(
+    chemin: &str,
+    sortie: Option<String>,
+    release: bool,
+    format_diagnostics: FormatDiagnostics,
+) -> Resultat<()> {
     let source = lire_source(chemin)?;
     let résultat = pipeline_llvm(chemin)?;
 
-    afficher_diagnostics(&résultat.diagnostics, &source);
+    afficher_diagnostics(&résultat.diagnostics, &source, format_diagnostics);
 
     let options = OptionsCompilation {
         fichier_entrée: chemin.into(),
@@ -413,11 +786,15 @@ fn exécuter_build(chemin: &str, sortie: Option<String>, release: bool) -> Resul
     Ok(())
 }
 
-fn compiler_et_exécuter_programme(chemin: &str, release: bool) -> Resultat<process::ExitStatus> {
+fn compiler_et_exécuter_programme(
+    chemin: &str,
+    release: bool,
+    format_diagnostics: FormatDiagnostics,
+) -> Resultat<process::ExitStatus> {
     let source = lire_source(chemin)?;
     let résultat = pipeline_llvm(chemin)?;
 
-    afficher_diagnostics(&résultat.diagnostics, &source);
+    afficher_diagnostics(&résultat.diagnostics, &source, format_diagnostics);
 
     let sortie_temporaire = identifiant_temporaire("galois_run_bin", None);
 
@@ -645,8 +1022,8 @@ fn lire_entrée_repl() -> Resultat<EntréeRepl> {
     })
 }
 
-fn exécuter_run(chemin: &str, release: bool) -> Resultat<()> {
-    let status = compiler_et_exécuter_programme(chemin, release)?;
+fn exécuter_run(chemin: &str, release: bool, format_diagnostics: FormatDiagnostics) -> Resultat<()> {
+    let status = compiler_et_exécuter_programme(chemin, release, format_diagnostics)?;
 
     let code = status.code().unwrap_or(1);
     if code != 0 {
@@ -789,7 +1166,7 @@ fn exécuter_repl(release: bool) -> Resultat<()> {
     Ok(())
 }
 
-fn exécuter_lexer(chemin: &str) -> Resultat<()> {
+fn exécuter_lexer(chemin: &str, _format_diagnostics: FormatDiagnostics) -> Resultat<()> {
     let source = lire_source(chemin)?;
 
     let mut scanner = Scanner::nouveau(&source, chemin);
@@ -804,7 +1181,7 @@ fn exécuter_lexer(chemin: &str) -> Resultat<()> {
     Ok(())
 }
 
-fn exécuter_parser(chemin: &str) -> Resultat<()> {
+fn exécuter_parser(chemin: &str, _format_diagnostics: FormatDiagnostics) -> Resultat<()> {
     let source = lire_source(chemin)?;
 
     let mut scanner = Scanner::nouveau(&source, chemin);
@@ -822,7 +1199,7 @@ fn exécuter_parser(chemin: &str) -> Resultat<()> {
     Ok(())
 }
 
-fn exécuter_vérification(chemin: &str) -> Resultat<()> {
+fn exécuter_vérification(chemin: &str, format_diagnostics: FormatDiagnostics) -> Resultat<()> {
     let source = lire_source(chemin)?;
 
     let mut scanner = Scanner::nouveau(&source, chemin);
@@ -840,7 +1217,7 @@ fn exécuter_vérification(chemin: &str) -> Resultat<()> {
         .vérifier(&programme)
         .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
-    afficher_diagnostics(&diagnostics, &source);
+    afficher_diagnostics(&diagnostics, &source, format_diagnostics);
 
     if diagnostics.nombre_warnings() > 0 {
         println!(
@@ -872,11 +1249,12 @@ fn exécuter_ir(chemin: &str) -> Resultat<()> {
         .vérifier(&programme)
         .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
-    afficher_diagnostics(&diagnostics, &source);
+    afficher_diagnostics(&diagnostics, &source, FormatDiagnostics::Humain);
 
     let table = vérificateur.table.clone();
     let mut générateur = GénérateurIR::nouveau(table);
-    let module_ir = générateur.générer(&programme);
+    let mut module_ir = générateur.générer(&programme);
+    appliquer_optimisations_ir(&mut module_ir);
 
     println!("{:#?}", module_ir);
 
@@ -944,7 +1322,7 @@ fn exécuter_debug(chemin: &str) -> Resultat<()> {
     table.générer_depuis_programme(&programme);
 
     let résultat = pipeline_llvm(chemin)?;
-    afficher_diagnostics(&résultat.diagnostics, &source);
+    afficher_diagnostics(&résultat.diagnostics, &source, FormatDiagnostics::Humain);
 
     let options = OptionsCompilation {
         fichier_entrée: chemin.into(),
@@ -971,7 +1349,11 @@ fn exécuter_debug(chemin: &str) -> Resultat<()> {
     Ok(())
 }
 
-fn exécuter_compilation(chemin: &str, sortie: &str) -> Resultat<()> {
+fn exécuter_compilation(
+    chemin: &str,
+    sortie: &str,
+    format_diagnostics: FormatDiagnostics,
+) -> Resultat<()> {
     let source = lire_source(chemin)?;
 
     let mut scanner = Scanner::nouveau(&source, chemin);
@@ -989,11 +1371,12 @@ fn exécuter_compilation(chemin: &str, sortie: &str) -> Resultat<()> {
         .vérifier(&programme)
         .map_err(|e| enrichir_erreur_avec_snippet(e, &source))?;
 
-    afficher_diagnostics(&diagnostics, &source);
+    afficher_diagnostics(&diagnostics, &source, format_diagnostics);
 
     let table = vérificateur.table.clone();
     let mut générateur_ir = GénérateurIR::nouveau(table);
-    let module_ir = générateur_ir.générer(&programme);
+    let mut module_ir = générateur_ir.générer(&programme);
+    appliquer_optimisations_ir(&mut module_ir);
 
     let mut générateur_llvm = GénérateurLLVM::nouveau();
     let llvm_ir = générateur_llvm.générer(&module_ir);
@@ -1193,16 +1576,48 @@ fn afficher_instruction(instr: &parser::InstrAST, indent: &str, niveau: usize) {
     }
 }
 
+impl Commande {
+    fn format_diagnostics(&self) -> FormatDiagnostics {
+        match self {
+            Commande::Build {
+                format_diagnostics, ..
+            }
+            | Commande::Run {
+                format_diagnostics, ..
+            }
+            | Commande::Compiler {
+                format_diagnostics, ..
+            }
+            | Commande::Lexer {
+                format_diagnostics, ..
+            }
+            | Commande::Parser {
+                format_diagnostics, ..
+            }
+            | Commande::Vérifier {
+                format_diagnostics, ..
+            } => *format_diagnostics,
+            _ => FormatDiagnostics::Humain,
+        }
+    }
+}
+
 fn main() {
     let commande = analyser_arguments();
+    let format_diagnostics = commande.format_diagnostics();
 
     let résultat = match commande {
         Commande::Build {
             entrée,
             sortie,
             release,
-        } => exécuter_build(&entrée, sortie, release),
-        Commande::Run { entrée, release } => exécuter_run(&entrée, release),
+            format_diagnostics,
+        } => exécuter_build(&entrée, sortie, release, format_diagnostics),
+        Commande::Run {
+            entrée,
+            release,
+            format_diagnostics,
+        } => exécuter_run(&entrée, release, format_diagnostics),
         Commande::Init { nom } => {
             let gestionnaire = GestionnairePaquets::nouveau(Path::new("."));
             gestionnaire.initialiser_projet(&nom)
@@ -1211,10 +1626,31 @@ fn main() {
             let gestionnaire = GestionnairePaquets::nouveau(Path::new("."));
             gestionnaire.ajouter_dépendance(&nom, &version)
         }
-        Commande::Compiler { entrée, sortie } => exécuter_compilation(&entrée, &sortie),
-        Commande::Lexer { entrée } => exécuter_lexer(&entrée),
-        Commande::Parser { entrée } => exécuter_parser(&entrée),
-        Commande::Vérifier { entrée } => exécuter_vérification(&entrée),
+        Commande::Upgrade { nom, version } => {
+            let gestionnaire = GestionnairePaquets::nouveau(Path::new("."));
+            gestionnaire.mettre_à_jour_dépendance(&nom, &version)
+        }
+        Commande::Lock => {
+            let gestionnaire = GestionnairePaquets::nouveau(Path::new("."));
+            gestionnaire.mettre_à_jour_lockfile()
+        }
+        Commande::Compiler {
+            entrée,
+            sortie,
+            format_diagnostics,
+        } => exécuter_compilation(&entrée, &sortie, format_diagnostics),
+        Commande::Lexer {
+            entrée,
+            format_diagnostics,
+        } => exécuter_lexer(&entrée, format_diagnostics),
+        Commande::Parser {
+            entrée,
+            format_diagnostics,
+        } => exécuter_parser(&entrée, format_diagnostics),
+        Commande::Vérifier {
+            entrée,
+            format_diagnostics,
+        } => exécuter_vérification(&entrée, format_diagnostics),
         Commande::IR { entrée } => exécuter_ir(&entrée),
         Commande::Doc { entrée, sortie } => exécuter_doc(&entrée, sortie),
         Commande::Debug { entrée } => exécuter_debug(&entrée),
@@ -1223,10 +1659,14 @@ fn main() {
             afficher_aide();
             return;
         }
+        Commande::Version => {
+            afficher_version();
+            return;
+        }
     };
 
     if let Err(erreur) = résultat {
-        eprintln!("{}", erreur);
+        afficher_erreur(&erreur, format_diagnostics);
         process::exit(1);
     }
 }

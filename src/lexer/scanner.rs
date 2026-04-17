@@ -307,7 +307,9 @@ impl Scanner {
             }
         }
 
-        if let Some(token) = self.mots_clés.get(ident.as_str()) {
+        if ident == "_" {
+            Token::Tiret
+        } else if let Some(token) = self.mots_clés.get(ident.as_str()) {
             token.clone()
         } else {
             Token::Identifiant(ident)

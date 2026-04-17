@@ -196,6 +196,76 @@ fn test_vérification_types_booléen() {
 }
 
 #[test]
+fn test_sélection_booléenne_exhaustive() {
+    let source = "soit drapeau = vrai
+sélectionner drapeau
+    cas vrai
+    cas faux
+fin";
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    assert!(vérif.vérifier(&programme).is_ok());
+}
+
+#[test]
+fn test_sélection_booléenne_non_exhaustive() {
+    let source = "soit drapeau = vrai
+sélectionner drapeau
+    cas vrai
+fin";
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    let erreur = vérif
+        .vérifier(&programme)
+        .expect_err("La sélection devrait être signalée non exhaustive");
+    assert!(erreur.message.contains("non exhaustive"));
+    assert!(
+        erreur
+            .suggestion
+            .as_deref()
+            .is_some_and(|s| s.contains("pardéfaut")),
+        "Une suggestion explicite est attendue"
+    );
+}
+
+#[test]
+fn test_sélection_cas_inatteignable_après_jocker() {
+    let source = "soit drapeau = vrai
+sélectionner drapeau
+    cas _
+    cas vrai
+fin";
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    let diagnostics = vérif
+        .vérifier(&programme)
+        .expect("La vérification doit réussir avec un avertissement");
+    assert!(diagnostics
+        .warnings
+        .iter()
+        .any(|w| w.message.contains("inatteignable")));
+}
+
+#[test]
+fn test_sélection_cas_redondant_littéral() {
+    let source = "soit drapeau = vrai
+sélectionner drapeau
+    cas vrai
+    cas vrai
+    cas faux
+fin";
+    let programme = parser_source(source);
+    let mut vérif = Vérificateur::nouveau();
+    let diagnostics = vérif
+        .vérifier(&programme)
+        .expect("La vérification doit réussir avec un avertissement");
+    assert!(diagnostics
+        .warnings
+        .iter()
+        .any(|w| w.message.contains("redondant")));
+}
+
+#[test]
 fn test_pipeline_complet() {
     let source = "soit x = 42\nafficher(x)";
     let tokens = scanner_source(source);
@@ -267,7 +337,7 @@ fn test_manifeste_sérialiser() {
 
 #[test]
 fn test_manifeste_parser() {
-    let toml = "[package]\nnom = \"hello\"\nversion = \"1.0.0\"\n";
+    let toml = "[package]\nnom = \"hello\"\nversion = \"1.0.0\"\npoint_entrée = \"src/main.gal\"\n";
     let manifeste = galois::package::Manifeste::parser_toml(toml).expect("Parsing échoué");
     assert_eq!(manifeste.package.nom, "hello");
     assert_eq!(manifeste.package.version, "1.0.0");
@@ -275,7 +345,7 @@ fn test_manifeste_parser() {
 
 #[test]
 fn test_manifeste_dépendances() {
-    let toml = "[package]\nnom = \"test\"\nversion = \"0.1.0\"\n\n[dépendances]\nmaths = \"1.0\"\nhttp = \"0.3\"\n";
+    let toml = "[package]\nnom = \"test\"\nversion = \"0.1.0\"\npoint_entrée = \"src/main.gal\"\n\n[dépendances]\nmaths = \"1.0\"\nhttp = \"0.3\"\n";
     let manifeste = galois::package::Manifeste::parser_toml(toml).expect("Parsing échoué");
     assert_eq!(manifeste.dépendances.len(), 2);
     assert!(manifeste.dépendances.contains_key("maths"));

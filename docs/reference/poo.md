@@ -34,6 +34,28 @@ Règles vérifiées :
 - Si la classe déclare un `constructeur`, le nombre et le type des arguments de `nouveau` doivent correspondre
 - Si aucun constructeur n'est déclaré, seul `nouveau Classe()` (sans argument) est accepté
 
+### Classes génériques
+
+```galois
+classe Boite<T>
+    publique valeur: T
+
+    constructeur(valeur: T)
+        ceci.valeur = valeur
+    fin
+fin
+
+soit b = nouveau Boite<entier>(42)
+```
+
+Règles actuelles :
+
+- L'arité des arguments de type est vérifiée (`Boite<entier, texte>` est refusé).
+- Le backend IR/LLVM monomorphise les classes génériques instanciées avec arguments de type explicites.
+- `nouveau Boite(...)` sans arguments de type explicites n'est pas supporté en codegen IR/LLVM.
+- Les paramètres de type de classe sont disponibles dans les annotations de champs/méthodes.
+- Les contraintes de type avancées ne sont pas encore supportées.
+
 ## Visibilité
 
 Les membres peuvent avoir trois niveaux de visibilité :

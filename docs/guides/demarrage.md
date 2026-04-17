@@ -133,7 +133,10 @@ galois build bonjour.gal -o mon_programme
 ```bash
 galois init mon_projet
 cd mon_projet
-galois run principal.gal
+galois run src/main.gal
+
+# Alternative (dans un dossier vide)
+galois init .
 ```
 
 ## Comprendre les Erreurs

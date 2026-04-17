@@ -100,7 +100,7 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 ### Version 0.2.0 (Planifiée)
 - [ ] Génériques/Templates
 - [ ] Async/Await
-- [ ] Optimisations IR (constant folding, dead code elimination)
+- [x] Optimisations IR (constant folding, dead code elimination)
 - [ ] Tests unitaires pour runtime/collections et gc
 
 ### Version 0.3.0 (Planifiée)

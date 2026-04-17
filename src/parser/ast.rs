@@ -149,6 +149,7 @@ pub enum ExprAST {
 
     AppelFonction {
         appelé: Box<ExprAST>,
+        arguments_type: Vec<TypeAST>,
         arguments: Vec<ExprAST>,
         position: Position,
     },
@@ -213,6 +214,7 @@ pub enum ExprAST {
 
     Nouveau {
         classe: String,
+        arguments_type: Vec<TypeAST>,
         arguments: Vec<ExprAST>,
         position: Position,
     },
@@ -302,6 +304,24 @@ pub enum PatternAST {
         fin: Box<ExprAST>,
         position: Position,
     },
+}
+
+impl PatternAST {
+    pub fn position(&self) -> &Position {
+        match self {
+            PatternAST::Identifiant(_, position)
+            | PatternAST::LittéralEntier(_, position)
+            | PatternAST::LittéralTexte(_, position)
+            | PatternAST::LittéralBooléen(_, position)
+            | PatternAST::Nul(position)
+            | PatternAST::Jocker(position)
+            | PatternAST::Tuple(_, position)
+            | PatternAST::Liste(_, _, position)
+            | PatternAST::Ou(_, position)
+            | PatternAST::Intervalle { position, .. } => position,
+            PatternAST::Constructeur { position, .. } => position,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -412,6 +432,7 @@ pub struct BlocAST {
 #[derive(Debug, Clone)]
 pub struct DéclarationFonctionAST {
     pub nom: String,
+    pub paramètres_type: Vec<String>,
     pub paramètres: Vec<ParamètreAST>,
     pub type_retour: Option<TypeAST>,
     pub corps: BlocAST,
@@ -454,8 +475,11 @@ pub enum VisibilitéAST {
 #[derive(Debug, Clone)]
 pub struct DéclarationClasseAST {
     pub nom: String,
+    pub paramètres_type: Vec<String>,
     pub parent: Option<String>,
+    pub parent_arguments_type: Vec<TypeAST>,
     pub interfaces: Vec<String>,
+    pub interfaces_arguments_type: Vec<Vec<TypeAST>>,
     pub membres: Vec<MembreClasseAST>,
     pub est_abstraite: bool,
     pub position: Position,
@@ -472,6 +496,7 @@ pub struct SignatureMéthodeAST {
 #[derive(Debug, Clone)]
 pub struct DéclarationInterfaceAST {
     pub nom: String,
+    pub paramètres_type: Vec<String>,
     pub méthodes: Vec<SignatureMéthodeAST>,
     pub position: Position,
 }

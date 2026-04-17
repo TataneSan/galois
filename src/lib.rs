@@ -13,3 +13,4 @@ pub mod parser;
 pub mod pipeline;
 pub mod runtime;
 pub mod semantic;
+pub mod tooling;

@@ -1,5 +1,5 @@
 use crate::error::{Diagnostics, Resultat};
-use crate::ir::IRModule;
+use crate::ir::{appliquer_optimisations_ir, IRModule};
 use crate::lexer::{Scanner, TokenAvecPosition};
 use crate::parser::{Parser, ProgrammeAST};
 use crate::semantic::symbols::TableSymboles;
@@ -131,7 +131,8 @@ impl Étape for ÉtapeIR {
 
         let table = vérificateur.table.clone();
         let mut générateur = crate::ir::GénérateurIR::nouveau(table.clone());
-        let module = générateur.générer(&programme);
+        let mut module = générateur.générer(&programme);
+        appliquer_optimisations_ir(&mut module);
 
         self.module = Some(module.clone());
         self.table = Some(table);

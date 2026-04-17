@@ -13,38 +13,25 @@ impl Parser {
         };
 
         let nom = self.lire_identifiant("Attendu nom de classe")?;
+        let paramètres_type = self.parser_paramètres_type_déclaration()?;
 
-        if self.token_actuel() == &Token::Inférieur {
+        let (parent, parent_arguments_type) = if self.token_actuel() == &Token::Hérite {
             self.avancer();
-            while self.token_actuel() != &Token::Supérieur
-                && self.token_actuel() != &Token::FinDeFichier
-            {
-                self.avancer();
-            }
-            self.attendre(&Token::Supérieur, "Attendu '>' après paramètres de type")?;
-        }
-
-        let parent = if self.token_actuel() == &Token::Hérite {
-            self.avancer();
-            Some(self.lire_identifiant("Attendu nom de classe parente")?)
+            (
+                Some(self.lire_identifiant("Attendu nom de classe parente")?),
+                self.parser_arguments_type_optionnels()?,
+            )
         } else {
-            None
+            (None, Vec::new())
         };
 
         let mut interfaces = Vec::new();
+        let mut interfaces_arguments_type = Vec::new();
         if self.token_actuel() == &Token::Implémente {
             self.avancer();
             loop {
                 interfaces.push(self.lire_identifiant("Attendu nom d'interface")?);
-                if self.token_actuel() == &Token::Inférieur {
-                    self.avancer();
-                    while self.token_actuel() != &Token::Supérieur
-                        && self.token_actuel() != &Token::FinDeFichier
-                    {
-                        self.avancer();
-                    }
-                    self.attendre(&Token::Supérieur, "Attendu '>' après interface générique")?;
-                }
+                interfaces_arguments_type.push(self.parser_arguments_type_optionnels()?);
                 if self.token_actuel() == &Token::Virgule {
                     self.avancer();
                 } else {
@@ -87,8 +74,11 @@ impl Parser {
 
         Ok(InstrAST::Classe(DéclarationClasseAST {
             nom,
+            paramètres_type,
             parent,
+            parent_arguments_type,
             interfaces,
+            interfaces_arguments_type,
             membres,
             est_abstraite,
             position,
@@ -123,6 +113,8 @@ impl Parser {
         if self.token_actuel() == &Token::Virtuelle
             || self.token_actuel() == &Token::Abstraite
             || self.token_actuel() == &Token::Surcharge
+            || self.token_actuel() == &Token::Récursif
+            || self.token_actuel() == &Token::Asynchrone
             || self.token_actuel() == &Token::Fonction
         {
             let position = self.position_actuelle();
@@ -154,6 +146,7 @@ impl Parser {
                     self.avancer();
                 }
                 let nom = self.lire_identifiant("Attendu nom de fonction")?;
+                let paramètres_type = self.parser_paramètres_type_déclaration()?;
                 self.attendre(
                     &Token::ParenthèseOuvrante,
                     "Attendu '(' après nom de fonction",
@@ -183,6 +176,7 @@ impl Parser {
 
                 DéclarationFonctionAST {
                     nom,
+                    paramètres_type,
                     paramètres,
                     type_retour,
                     corps,
@@ -264,16 +258,7 @@ impl Parser {
         self.avancer();
 
         let nom = self.lire_identifiant("Attendu nom d'interface")?;
-
-        if self.token_actuel() == &Token::Inférieur {
-            self.avancer();
-            while self.token_actuel() != &Token::Supérieur
-                && self.token_actuel() != &Token::FinDeFichier
-            {
-                self.avancer();
-            }
-            self.attendre(&Token::Supérieur, "Attendu '>' après paramètres de type")?;
-        }
+        let paramètres_type = self.parser_paramètres_type_déclaration()?;
 
         self.sauter_nouvelles_lignes();
         if self.token_actuel() == &Token::Indentation {
@@ -345,6 +330,7 @@ impl Parser {
 
         Ok(InstrAST::Interface(DéclarationInterfaceAST {
             nom,
+            paramètres_type,
             méthodes,
             position,
         }))
